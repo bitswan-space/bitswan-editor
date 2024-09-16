@@ -16,6 +16,17 @@ export async function getDeployDetails(notebookPath: string): Promise<DeployDeta
     let deploySecret = process.env.BITSWAN_DEPLOY_SECRET;
     let deployUrl = process.env.BITSWAN_DEPLOY_URL;
 
+    if (!deployUrl) {
+      deployUrl = await vscode.window.showInputBox({
+        prompt: 'Please enter your BITSWAN_DEPLOY_URL',
+        ignoreFocusOut: true
+      });
+      if (!deployUrl) {
+        vscode.window.showErrorMessage('BITSWAN_DEPLOY_URL is required for deployment.');
+        return null;
+      }
+    }
+
     // If deploySecret is not set, prompt the user
     if (!deploySecret) {
       deploySecret = await vscode.window.showInputBox({
@@ -30,17 +41,6 @@ export async function getDeployDetails(notebookPath: string): Promise<DeployDeta
     }
 
     // If deployUrl is not set, prompt the user
-    if (!deployUrl) {
-      deployUrl = await vscode.window.showInputBox({
-        prompt: 'Please enter your BITSWAN_DEPLOY_URL',
-        ignoreFocusOut: true
-      });
-      if (!deployUrl) {
-        vscode.window.showErrorMessage('BITSWAN_DEPLOY_URL is required for deployment.');
-        return null;
-      }
-    }
-
     return {
       notebookJson: JSON.stringify(notebookJson, null, 2),
       deploySecret,
