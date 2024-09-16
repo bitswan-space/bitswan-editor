@@ -25,3 +25,70 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+body {
+    padding: 0;
+    color: var(--vscode-foreground);
+    font-size: var(--vscode-font-size);
+    font-weight: var(--vscode-font-weight);
+    font-family: var(--vscode-font-family);
+    background-color: var(--vscode-sideBar-background);
+}
+.section {
+    padding: 0;
+    background: var(--vscode-sideBar-background);
+}
+.section-header {
+    display: flex;
+    align-items: center;
+    font-weight: bold;
+    font-size: 11px;
+    padding: 7px 0;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+.section-header:hover {
+    color: var(--vscode-list-hoverForeground);
+}
+.section-content {
+    display: flex;
+    flex-direction: column;
+    padding: 0 0 8px 20px;
+}
+.chevron {
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 5px;
+}
+.chevron::before {
+    content: '';
+    border-right: 1px solid currentColor;
+    border-bottom: 1px solid currentColor;
+    width: 7px;
+    height: 7px;
+    transform: rotate(-45deg);
+    transition: transform 0.1s ease;
+}
+.chevron.collapsed::before {
+    transform: rotate(-135deg);
+}
+select, button {
+    margin-top: 8px;
+    background: var(--vscode-dropdown-background);
+    color: var(--vscode-dropdown-foreground);
+    border: 1px solid var(--vscode-dropdown-border);
+    padding: 2px 4px;
+}
+button {
+    cursor: pointer;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    padding: 4px 8px;
+}
+button:hover {
+    background: var(--vscode-button-hoverBackground);
+}

@@ -4,16 +4,27 @@ import JSZip from 'jszip';
 import axios from 'axios';
 
 import { getDeployDetails } from './deploy_details';
-import { BitswanPREViewProvider } from './views/bitswan_pre';
+import { NotebookTreeDataProvider, NotebookItem } from './views/bitswan_pre';
 
-async function _deployCommand() {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor || path.extname(editor.document.fileName) !== '.ipynb') {
-        vscode.window.showErrorMessage('Please open a Jupyter notebook before deploying.');
+async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefined) {
+    let notebookPath: string | undefined;
+
+    if (notebookItemOrPath instanceof NotebookItem) {
+        notebookPath = notebookItemOrPath.resourceUri.fsPath;
+    } else if (typeof notebookItemOrPath === 'string') {
+        notebookPath = notebookItemOrPath;
+    } else {
+        let editor = vscode.window.activeTextEditor;
+        if (editor && path.extname(editor.document.fileName) === '.ipynb') {
+            notebookPath = editor.document.uri.fsPath;
+        }
+    }
+
+    if (!notebookPath) {
+        vscode.window.showErrorMessage('Unable to determine notebook path. Please select a notebook from the tree view or open one in the editor.');
         return;
     }
 
-    const notebookPath = editor.document.uri.fsPath;
     const details = await getDeployDetails(notebookPath);
     if (!details) {
         return;
@@ -56,40 +67,31 @@ async function _deployCommand() {
                 errorMessage = error.message;
             }
             vscode.window.showErrorMessage(`Deployment error: ${errorMessage}`);
-            throw error; // Re-throw to ensure the progress notification closes
+            return;
         }
     });
 }
 
 export function activate(context: vscode.ExtensionContext) {
-    const provider = new BitswanPREViewProvider(context.extensionUri);
+    const notebookTreeDataProvider = new NotebookTreeDataProvider();
+    vscode.window.createTreeView('bitswanPRE', {
+        treeDataProvider: notebookTreeDataProvider,
+        showCollapseAll: true
+    });
 
-    context.subscriptions.push(
-        vscode.window.registerWebviewViewProvider(BitswanPREViewProvider.viewType, provider)
-    );
+    vscode.window.registerTreeDataProvider('bitswanPRE', notebookTreeDataProvider);
 
-    let deployCommand = vscode.commands.registerCommand('extension.deployCurrentNotebook', _deployCommand);
+    let deployCommand = vscode.commands.registerCommand('bitswanPRE.deployNotebook', async (notebookItem: NotebookItem) => _deployCommand(notebookItem));
 
     context.subscriptions.push(deployCommand);
 
-    // Listen for changes in the active text editor
-    context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => {
-        provider.updateView();
-    }));
+    // Refresh the tree view when files change in the workspace
+    const watcher = vscode.workspace.createFileSystemWatcher('**/*.ipynb');
+    watcher.onDidCreate(() => notebookTreeDataProvider.refresh());
+    watcher.onDidDelete(() => notebookTreeDataProvider.refresh());
+    watcher.onDidChange(() => notebookTreeDataProvider.refresh());
 
-    // Listen for changes in text document
-    context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
-        if (event.document === vscode.window.activeTextEditor?.document) {
-            provider.updateView();
-        }
-    }));
-
-    // Listen for changes in the opened editors
-    context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(() => {
-        provider.updateView();
-    }));
+    context.subscriptions.push(watcher);
 }
-
-
 
 export function deactivate() { }
