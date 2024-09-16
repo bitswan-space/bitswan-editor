@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import axios from 'axios';
 
 import { getDeployDetails } from './deploy_details';
-import { NotebookTreeDataProvider, NotebookItem } from './views/bitswan_pre';
+import { NotebookTreeDataProvider, NotebookItem, FolderItem } from './views/bitswan_pre';
 
 async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefined) {
     let notebookPath: string | undefined;
@@ -53,7 +53,7 @@ async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefi
             if (response.status === 200) {
                 const status = response.data.status;
                 progress.report({ increment: 100, message: `Deployment successful: ${status}` });
-                vscode.window.showInformationMessage(`Deployment status: ${status}`);
+                vscode.window.showInformationMessage(`Deployment successful`);
             } else {
                 throw new Error(`Deployment failed with status ${response.status}`);
             }
@@ -80,13 +80,12 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     vscode.window.registerTreeDataProvider('bitswanPRE', notebookTreeDataProvider);
-
-    let deployCommand = vscode.commands.registerCommand('bitswanPRE.deployNotebook', async (notebookItem: NotebookItem) => _deployCommand(notebookItem));
+    let deployCommand = vscode.commands.registerCommand('bitswanPRE.deployNotebook', async (item: NotebookItem | FolderItem) => _deployCommand(item));
 
     context.subscriptions.push(deployCommand);
 
     // Refresh the tree view when files change in the workspace
-    const watcher = vscode.workspace.createFileSystemWatcher('**/*.ipynb');
+    const watcher = vscode.workspace.createFileSystemWatcher('**/main.ipynb');
     watcher.onDidCreate(() => notebookTreeDataProvider.refresh());
     watcher.onDidDelete(() => notebookTreeDataProvider.refresh());
     watcher.onDidChange(() => notebookTreeDataProvider.refresh());
