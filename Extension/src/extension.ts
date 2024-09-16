@@ -4,6 +4,12 @@ import * as path from 'path';
 import JSZip from 'jszip';
 import axios from 'axios';
 
+interface DeployDetails {
+    notebookJson: string;
+    deploySecret: string;
+    deployUrl: string;
+}
+
 export function activate(context: vscode.ExtensionContext) {
     const provider = new DeploymentViewProvider(context.extensionUri);
 
@@ -19,19 +25,32 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         const notebookPath = editor.document.uri.fsPath;
-        const notebookContents = fs.readFileSync(notebookPath, 'utf8');
+        const details = await getDeployDetails(notebookPath);
+
+        if (!details) {
+            return;
+        }
 
         try {
+            const deployUrl = new URL(path.join(details.deployUrl, "__jupyter-deploy-pipeline/"));
+            deployUrl.searchParams.append("secret", details.deploySecret);
+            deployUrl.searchParams.append("restart", "true");
+
+            vscode.window.showInformationMessage('Packing for deployment...');
+
             const zip = new JSZip();
-            zip.file(path.basename(notebookPath), notebookContents);
+            zip.file('main.ipynb', details.notebookJson);
             const zipContents = await zip.generateAsync({ type: 'nodebuffer' });
 
-            const response = await axios.post('YOUR_DEPLOYMENT_URL', zipContents, {
+            vscode.window.showInformationMessage('Uploading to server...');
+
+            const response = await axios.post(deployUrl.toString(), zipContents, {
                 headers: { 'Content-Type': 'application/zip' },
             });
 
             if (response.status === 200) {
-                vscode.window.showInformationMessage('Notebook deployed successfully!');
+                const status = response.data.status;
+                vscode.window.showInformationMessage(`Deployment status: ${status}`);
             } else {
                 vscode.window.showErrorMessage('Deployment failed. Please try again.');
             }
@@ -59,6 +78,32 @@ export function activate(context: vscode.ExtensionContext) {
         provider.updateView();
     }));
 }
+
+async function getDeployDetails(notebookPath: string): Promise<DeployDetails | null> {
+    try {
+        const notebookContents = await fs.promises.readFile(notebookPath, 'utf8');
+        const notebookJson = JSON.parse(notebookContents);
+
+        // Get environment variables
+        const deploySecret = process.env.BITSWAN_DEPLOY_SECRET;
+        const deployUrl = process.env.BITSWAN_DEPLOY_URL;
+
+        if (!deploySecret || !deployUrl) {
+            vscode.window.showErrorMessage('Please set BITSWAN_DEPLOY_SECRET and BITSWAN_DEPLOY_URL environment variables.');
+            return null;
+        }
+
+        return {
+            notebookJson: JSON.stringify(notebookJson, null, 2),
+            deploySecret,
+            deployUrl
+        };
+    } catch (error: any) {
+        vscode.window.showErrorMessage(`Error reading notebook: ${error.message}`);
+        return null;
+    }
+}
+
 
 class DeploymentViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'bitswanPRE';
