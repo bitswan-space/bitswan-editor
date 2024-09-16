@@ -5,6 +5,9 @@ import axios from 'axios';
 
 import { getDeployDetails } from './deploy_details';
 import { BitswanPREViewProvider } from './views/bitswan_pre';
+import { StatusBarManager } from './status_bar_manager';
+
+const statusBarManager = new StatusBarManager();
 
 async function _deployCommand() {
     const editor = vscode.window.activeTextEditor;
@@ -15,7 +18,6 @@ async function _deployCommand() {
 
     const notebookPath = editor.document.uri.fsPath;
     const details = await getDeployDetails(notebookPath);
-
     if (!details) {
         return;
     }
@@ -25,14 +27,12 @@ async function _deployCommand() {
         deployUrl.searchParams.append("secret", details.deploySecret);
         deployUrl.searchParams.append("restart", "true");
 
-        vscode.window.showInformationMessage('Packing for deployment...');
-
+        statusBarManager.showDeploymentProgress("Packing for deployment...");
         const zip = new JSZip();
         zip.file('main.ipynb', details.notebookJson);
         const zipContents = await zip.generateAsync({ type: 'nodebuffer' });
 
-        vscode.window.showInformationMessage('Uploading to server...');
-
+        statusBarManager.showDeploymentProgress("Uploading to server...");
         const response = await axios.post(deployUrl.toString(), zipContents, {
             headers: { 'Content-Type': 'application/zip' },
         });
@@ -40,11 +40,19 @@ async function _deployCommand() {
         if (response.status === 200) {
             const status = response.data.status;
             vscode.window.showInformationMessage(`Deployment status: ${status}`);
+            statusBarManager.showDeploymentSuccess();
         } else {
-            vscode.window.showErrorMessage('Deployment failed. Please try again.');
+            throw new Error(`Deployment failed with status ${response.status}`);
         }
     } catch (error: any) {
-        vscode.window.showErrorMessage(`Deployment error: ${error.message}`);
+        statusBarManager.showDeploymentFailure();
+        if (error.response) {
+            vscode.window.showErrorMessage(`Deployment error: Server responded with status ${error.response.status}`);
+        } else if (error.request) {
+            vscode.window.showErrorMessage('Deployment error: No response received from server');
+        } else {
+            vscode.window.showErrorMessage(`Deployment error: ${error.message}`);
+        }
     }
 }
 
