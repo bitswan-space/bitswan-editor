@@ -5,9 +5,6 @@ import axios from 'axios';
 
 import { getDeployDetails } from './deploy_details';
 import { BitswanPREViewProvider } from './views/bitswan_pre';
-import { StatusBarManager } from './status_bar_manager';
-
-const statusBarManager = new StatusBarManager();
 
 async function _deployCommand() {
     const editor = vscode.window.activeTextEditor;
@@ -22,38 +19,46 @@ async function _deployCommand() {
         return;
     }
 
-    try {
-        const deployUrl = new URL(path.join(details.deployUrl, "__jupyter-deploy-pipeline/"));
-        deployUrl.searchParams.append("secret", details.deploySecret);
-        deployUrl.searchParams.append("restart", "true");
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: "Deploying notebook",
+        cancellable: false
+    }, async (progress, token) => {
+        try {
+            const deployUrl = new URL(path.join(details.deployUrl, "__jupyter-deploy-pipeline/"));
+            deployUrl.searchParams.append("secret", details.deploySecret);
+            deployUrl.searchParams.append("restart", "true");
 
-        statusBarManager.showDeploymentProgress("Packing for deployment...");
-        const zip = new JSZip();
-        zip.file('main.ipynb', details.notebookJson);
-        const zipContents = await zip.generateAsync({ type: 'nodebuffer' });
+            progress.report({ increment: 0, message: "Packing for deployment..." });
+            const zip = new JSZip();
+            zip.file('main.ipynb', details.notebookJson);
+            const zipContents = await zip.generateAsync({ type: 'nodebuffer' });
 
-        statusBarManager.showDeploymentProgress("Uploading to server...");
-        const response = await axios.post(deployUrl.toString(), zipContents, {
-            headers: { 'Content-Type': 'application/zip' },
-        });
+            progress.report({ increment: 50, message: "Uploading to server..." });
+            const response = await axios.post(deployUrl.toString(), zipContents, {
+                headers: { 'Content-Type': 'application/zip' },
+            });
 
-        if (response.status === 200) {
-            const status = response.data.status;
-            vscode.window.showInformationMessage(`Deployment status: ${status}`);
-            statusBarManager.showDeploymentSuccess();
-        } else {
-            throw new Error(`Deployment failed with status ${response.status}`);
+            if (response.status === 200) {
+                const status = response.data.status;
+                progress.report({ increment: 100, message: `Deployment successful: ${status}` });
+                vscode.window.showInformationMessage(`Deployment status: ${status}`);
+            } else {
+                throw new Error(`Deployment failed with status ${response.status}`);
+            }
+        } catch (error: any) {
+            let errorMessage: string;
+            if (error.response) {
+                errorMessage = `Server responded with status ${error.response.status}`;
+            } else if (error.request) {
+                errorMessage = 'No response received from server';
+            } else {
+                errorMessage = error.message;
+            }
+            vscode.window.showErrorMessage(`Deployment error: ${errorMessage}`);
+            throw error; // Re-throw to ensure the progress notification closes
         }
-    } catch (error: any) {
-        statusBarManager.showDeploymentFailure();
-        if (error.response) {
-            vscode.window.showErrorMessage(`Deployment error: Server responded with status ${error.response.status}`);
-        } else if (error.request) {
-            vscode.window.showErrorMessage('Deployment error: No response received from server');
-        } else {
-            vscode.window.showErrorMessage(`Deployment error: ${error.message}`);
-        }
-    }
+    });
 }
 
 export function activate(context: vscode.ExtensionContext) {

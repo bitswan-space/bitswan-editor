@@ -12,7 +12,6 @@ export async function getDeployDetails(notebookPath: string): Promise<DeployDeta
     const notebookContents = await fs.promises.readFile(notebookPath, 'utf8');
     const notebookJson = JSON.parse(notebookContents);
 
-    // Get environment variables
     let deploySecret = process.env.BITSWAN_DEPLOY_SECRET;
     let deployUrl = process.env.BITSWAN_DEPLOY_URL;
 
@@ -27,7 +26,6 @@ export async function getDeployDetails(notebookPath: string): Promise<DeployDeta
       }
     }
 
-    // If deploySecret is not set, prompt the user
     if (!deploySecret) {
       deploySecret = await vscode.window.showInputBox({
         prompt: 'Please enter your BITSWAN_DEPLOY_SECRET',
@@ -40,7 +38,6 @@ export async function getDeployDetails(notebookPath: string): Promise<DeployDeta
       }
     }
 
-    // If deployUrl is not set, prompt the user
     return {
       notebookJson: JSON.stringify(notebookJson, null, 2),
       deploySecret,
