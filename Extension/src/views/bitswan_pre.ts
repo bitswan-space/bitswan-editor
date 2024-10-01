@@ -73,14 +73,17 @@ export class NotebookTreeDataProvider implements vscode.TreeDataProvider<vscode.
             return [];
         }
         const cwd = workspaceFolders[0].uri.fsPath;
-        return fs.readdirSync(cwd, { withFileTypes: true })
+        const folders = fs.readdirSync(cwd, { withFileTypes: true })
             .filter(dirent => dirent.isDirectory() && fs.existsSync(path.join(cwd, dirent.name, 'main.ipynb')))
             .map(dirent => new FolderItem(
                 dirent.name,
                 vscode.TreeItemCollapsibleState.Collapsed,
                 vscode.Uri.file(path.join(cwd, dirent.name))
             ));
+
+        return folders;
     }
+
 
     private getNotebooksInFolder(folderPath: string): NotebookItem[] {
         const notebookPath = path.join(folderPath, 'main.ipynb');

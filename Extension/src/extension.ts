@@ -2,6 +2,9 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import JSZip from 'jszip';
 import axios from 'axios';
+import FormData from "form-data"
+import { Readable } from 'stream';
+
 
 import { getDeployDetails } from './deploy_details';
 import { NotebookTreeDataProvider, NotebookItem, FolderItem } from './views/bitswan_pre';
@@ -30,25 +33,40 @@ async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefi
         return;
     }
 
+    const folderName = path.basename(path.dirname(notebookPath));
+
     await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: "Deploying notebook",
         cancellable: false
     }, async (progress, token) => {
         try {
-            const deployUrl = new URL(path.join(details.deployUrl, "__jupyter-deploy-pipeline/"));
-            deployUrl.searchParams.append("secret", details.deploySecret);
-            deployUrl.searchParams.append("restart", "true");
+            const deployUrl = new URL(path.join(details.deployUrl, "create", folderName));
+            // deployUrl.searchParams.append("secret", details.deploySecret);
+            // deployUrl.searchParams.append("restart", "true");
 
             progress.report({ increment: 0, message: "Packing for deployment..." });
             const zip = new JSZip();
             zip.file('main.ipynb', details.notebookJson);
+
             const zipContents = await zip.generateAsync({ type: 'nodebuffer' });
 
-            progress.report({ increment: 50, message: "Uploading to server..." });
-            const response = await axios.post(deployUrl.toString(), zipContents, {
-                headers: { 'Content-Type': 'application/zip' },
+            progress.report({ increment: 50, message: "Uploading to server " + deployUrl.toString() });
+
+            const readableStream = new Readable();
+            readableStream.push(zipContents);
+            readableStream.push(null);
+
+            const form = new FormData();
+            form.append('file', readableStream, {
+                filename: 'deployment.zip',
+                contentType: 'application/zip',
             });
+
+            const response = await axios.post(deployUrl.toString(), form, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            console.log("response", response);
 
             if (response.status === 200) {
                 const status = response.data.status;
@@ -60,6 +78,7 @@ async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefi
         } catch (error: any) {
             let errorMessage: string;
             if (error.response) {
+                console.log(error.response.data);
                 errorMessage = `Server responded with status ${error.response.status}`;
             } else if (error.request) {
                 errorMessage = 'No response received from server';
