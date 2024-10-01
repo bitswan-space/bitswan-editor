@@ -1,5 +1,6 @@
 {
   "name": "bitswan-pre",
+  "publisher": "bitswan-space",
   "displayName": "Bitswan PRE",
   "description": "Extension for interacting with Bitswan Pipeline Runtime Environment",
   "version": "0.0.1",
