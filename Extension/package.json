@@ -3,6 +3,10 @@
   "displayName": "Bitswan PRE",
   "description": "Extension for interacting with Bitswan Pipeline Runtime Environment",
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bitswan-space/BitswanVSCExtension.git"
+  },
   "engines": {
     "vscode": "^1.92.0"
   },

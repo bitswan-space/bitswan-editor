@@ -1,71 +1,17 @@
-# bitswan-pre README
+# bitswan-pre
 
-This is the README for your extension "bitswan-pre". After writing up a brief description, we recommend including the following sections.
+A VS Code extension that provides a way to interact with the Bitswan runtime, allowing you to simply deploy and manage your pipelines.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+A simple way to deploy and manage your pipelines.\
+You can easily deploy your pipeline by clicking the upload button in the new Bitswan tab in the sidebar, as seen in the image below.
 
-For example if there is an image subfolder under your extension project workspace:
+![Bitswan tab](resources/readme/pre.png)
 
-\!\[feature X\]\(images/feature-x.png\)
+This allows you to deploy either pipeline `test` or `test2` by clicking on the corresponding upload button. Possible deployments are discovered from the currently opened folder, where the extension looks for all subfolders containing `main.ipynb` files. For example, following folder structure would allow you to deploy `test` and `test2` pipelines:
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+![Bitswan folder structure](resources/readme/explorer.png)
 
-## Requirements
+Pipelines get deployed to a url specified either by environment variable `BITSWAN_DEPLOY_URL`, or by specifying it in the popup that appears after clicking the upload button.
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
-
-## Extension Settings
-
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
-
-## Known Issues
-
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
