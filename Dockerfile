@@ -49,8 +49,8 @@ RUN mkdir -p /extensions
 
 # Download GitHub Copilot extension
 ENV GITHUB_COPILOT_VERSION=1.235.1136
-RUN curl -L -o /extensions/github-copilot.vsix \
-            https://marketplace.visualstudio.com/_apis/public/gallery/publishers/GitHub/vsextensions/copilot/${GITHUB_COPILOT_VERSION}/vspackage
+RUN curl -L -o /extensions/github-copilot.vsix.gz \
+            https://marketplace.visualstudio.com/_apis/public/gallery/publishers/GitHub/vsextensions/copilot/${GITHUB_COPILOT_VERSION}/vspackage && gunzip /extensions/github-copilot.vsix.gz
 
 # Download Bitswan extension
 RUN curl -L -o /extensions/bitswan-extension.vsix \
