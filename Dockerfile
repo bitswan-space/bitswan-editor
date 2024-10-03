@@ -45,17 +45,19 @@ RUN . ${VENV_PATH}/bin/activate && \
     pip install -r /tmp/requirements.txt
 
 # Install VSCode extensions
-ENV EXTENSIONS_DIR=/home/coder/.local/share/code-server/extensions
+RUN mkdir -p /extensions
 
 # Download GitHub Copilot extension
 ENV GITHUB_COPILOT_VERSION=1.235.1136
 RUN curl -L -o /extensions/github-copilot.vsix \
             https://marketplace.visualstudio.com/_apis/public/gallery/publishers/GitHub/vsextensions/copilot/${GITHUB_COPILOT_VERSION}/vspackage
 
+# Download Bitswan extension
 RUN curl -L -o /extensions/bitswan-extension.vsix \
             https://bitswan-vscode-extension.s3.eu-north-1.amazonaws.com/bitswan-pre-0.0.1.vsix
 
 
+ENV EXTENSIONS_DIR=/home/coder/.local/share/code-server/extensions
 RUN mkdir -p ${EXTENSIONS_DIR} && \
     chown -R coder:coder /home/coder/.local && \
     chown -R coder:coder /extensions/
