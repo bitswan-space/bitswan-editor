@@ -52,6 +52,11 @@ ENV GITHUB_COPILOT_VERSION=1.235.1136
 RUN curl -L -o /extensions/github-copilot.vsix.gz \
             https://marketplace.visualstudio.com/_apis/public/gallery/publishers/GitHub/vsextensions/copilot/${GITHUB_COPILOT_VERSION}/vspackage && gunzip /extensions/github-copilot.vsix.gz
 
+# Download Pylance extension
+ENV PYLANCE_VERSION=2024.9.103
+RUN curl -L -o /extensions/pylance.vsix.gz \
+                https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-python/vsextensions/vscode-pylance/${PYLANCE_VERSION}/vspackage && gunzip /extensions/pylance.vsix.gz
+
 # Download Bitswan extension
 RUN curl -L -o /extensions/bitswan-extension.vsix \
             https://bitswan-vscode-extension.s3.eu-north-1.amazonaws.com/bitswan-pre-0.0.1.vsix
@@ -69,6 +74,7 @@ RUN code-server --install-extension ms-toolsai.jupyter
 
 RUN code-server --install-extension /extensions/bitswan-extension.vsix
 RUN code-server --install-extension /extensions/github-copilot.vsix
+RUN code-server --install-extension /extensions/pylance.vsix
 
 RUN sudo rm -rf /extensions
 
