@@ -1,0 +1,3 @@
+cython
+cysimdjson @ git+https://github.com/TeskaLabs/cysimdjson.git@24.12
+bspump @ git+https://github.com/bitswan-space/BitSwan.git@b42d3b01025d149c50a399dd7561eb25b00a10d4
