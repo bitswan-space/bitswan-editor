@@ -59,13 +59,14 @@ RUN curl -L -o /extensions/pylance.vsix.gz \
 
 # Download Bitswan extension
 RUN curl -L -o /extensions/bitswan-extension.vsix \
-            https://bitswan-vscode-extension.s3.eu-north-1.amazonaws.com/bitswan-pre-0.0.1.vsix
+            https://bitswan-vscode-extension.s3.eu-north-1.amazonaws.com/bitswan-pre-0.0.2.vsix
 
 
 ENV EXTENSIONS_DIR=/home/coder/.local/share/code-server/extensions
 RUN mkdir -p ${EXTENSIONS_DIR} && \
     chown -R coder:coder /home/coder/.local && \
-    chown -R coder:coder /extensions/
+    chown -R coder:coder /extensions/ && \
+    chown -R coder:coder /home/coder/workspace
 
 USER coder
 
