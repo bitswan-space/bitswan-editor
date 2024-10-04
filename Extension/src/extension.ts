@@ -75,6 +75,19 @@ async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefi
             } else {
                 throw new Error(`Deployment failed with status ${response.status}`);
             }
+
+            progress.report({ increment: 50, message: "Activating deployment..." });
+
+            const activateUrl = new URL(path.join(details.deployUrl, "deploy"));
+            const activationResponse = await axios.get(activateUrl.toString());
+
+            if (activationResponse.status === 200) {
+                const status = activationResponse.data.status;
+                progress.report({ increment: 100, message: `Container deployment successful: ${status}` });
+                vscode.window.showInformationMessage(`Container deployment successful`);
+            } else {
+                throw new Error(`Container deployment failed with status ${response.status}`);
+            }
         } catch (error: any) {
             let errorMessage: string;
             if (error.response) {
