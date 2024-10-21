@@ -48,6 +48,11 @@ async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefi
             progress.report({ increment: 0, message: "Packing for deployment..." });
             const zip = new JSZip();
             zip.file('main.ipynb', details.notebookJson);
+            if (details.confFile) {
+                zip.file('config.conf', details.confFile);
+            }
+
+            //FIXME: check what else to zip
 
             const zipContents = await zip.generateAsync({ type: 'nodebuffer' });
 
