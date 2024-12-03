@@ -40,6 +40,7 @@ export class NotebookItem extends vscode.TreeItem {
 export class NotebookTreeDataProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<vscode.TreeItem | undefined | null | void> = new vscode.EventEmitter<vscode.TreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<vscode.TreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
+    private outputChannel = vscode.window.createOutputChannel('BITSWAN');
 
     refresh(): void {
         this._onDidChangeTreeData.fire();
@@ -56,8 +57,8 @@ export class NotebookTreeDataProvider implements vscode.TreeDataProvider<vscode.
                 new DeploymentItem('Deployments', vscode.TreeItemCollapsibleState.Expanded)
             ]);
         } else if (element instanceof DeploymentItem) {
-            // Deployments section - show folders
-            return Promise.resolve(this.getFolders());
+            const folders = this.getFolders();
+            return Promise.resolve(folders);
         } else if (element instanceof FolderItem) {
             // Folder - show notebooks
             return Promise.resolve(this.getNotebooksInFolder(element.resourceUri.fsPath));
@@ -73,17 +74,38 @@ export class NotebookTreeDataProvider implements vscode.TreeDataProvider<vscode.
             return [];
         }
         const cwd = workspaceFolders[0].uri.fsPath;
-        const folders = fs.readdirSync(cwd, { withFileTypes: true })
-            .filter(dirent => dirent.isDirectory() && fs.existsSync(path.join(cwd, dirent.name, 'main.ipynb')))
-            .map(dirent => new FolderItem(
-                dirent.name,
-                vscode.TreeItemCollapsibleState.Collapsed,
-                vscode.Uri.file(path.join(cwd, dirent.name))
-            ));
-
-        return folders;
+        return this.findFoldersRecursively(cwd);
     }
 
+    private findFoldersRecursively(dirPath: string): FolderItem[] {
+        let results: FolderItem[] = [];
+        
+        // Read all entries in current directory
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+        
+        // Check if current directory has main.ipynb
+        if (fs.existsSync(path.join(dirPath, 'main.ipynb'))) {
+            // Only add if it's not the workspace root
+            if (dirPath !== vscode.workspace.workspaceFolders![0].uri.fsPath) {
+                const relativePath = path.relative(vscode.workspace.workspaceFolders![0].uri.fsPath, dirPath);
+                results.push(new FolderItem(
+                    relativePath,
+                    vscode.TreeItemCollapsibleState.Collapsed,
+                    vscode.Uri.file(dirPath)
+                ));
+            }
+        }
+
+        // Recursively check subdirectories
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                const fullPath = path.join(dirPath, entry.name);
+                results = results.concat(this.findFoldersRecursively(fullPath));
+            }
+        }
+
+        return results;
+    }
 
     private getNotebooksInFolder(folderPath: string): NotebookItem[] {
         const notebookPath = path.join(folderPath, 'main.ipynb');
