@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 codercom/code-server:4.93.1-ubuntu
+FROM --platform=linux/amd64 codercom/code-server:4.95.3-ubuntu
 
 ENV VENV_PATH=/home/coder/workspace/.bitswan
 
@@ -48,18 +48,18 @@ RUN . ${VENV_PATH}/bin/activate && \
 RUN mkdir -p /extensions
 
 # Download GitHub Copilot extension
-ENV GITHUB_COPILOT_VERSION=1.235.1136
+ENV GITHUB_COPILOT_VERSION=1.246.1243
 RUN curl -L -o /extensions/github-copilot.vsix.gz \
             https://marketplace.visualstudio.com/_apis/public/gallery/publishers/GitHub/vsextensions/copilot/${GITHUB_COPILOT_VERSION}/vspackage && gunzip /extensions/github-copilot.vsix.gz
 
 # Download Pylance extension
-ENV PYLANCE_VERSION=2024.9.103
+ENV PYLANCE_VERSION=2024.11.102
 RUN curl -L -o /extensions/pylance.vsix.gz \
                 https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-python/vsextensions/vscode-pylance/${PYLANCE_VERSION}/vspackage && gunzip /extensions/pylance.vsix.gz
 
 # Download Bitswan extension
 RUN curl -L -o /extensions/bitswan-extension.vsix \
-            https://bitswan-vscode-extension.s3.eu-north-1.amazonaws.com/bitswan-pre-0.0.2.vsix
+            https://bitswan-vscode-extension.s3.eu-north-1.amazonaws.com/bitswan-pre-0.0.3.vsix
 
 
 ENV EXTENSIONS_DIR=/home/coder/.local/share/code-server/extensions
