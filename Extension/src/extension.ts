@@ -40,8 +40,7 @@ async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefi
         return;
     }
 
-    const workspacePath = workspaceFolders[0].uri.fsPath;
-    const folderName = path.relative(workspacePath, path.dirname(notebookPath));
+    const folderName = path.basename(path.dirname(notebookPath));
 
     outputChannel.appendLine(`Folder name: ${folderName}`);
 
