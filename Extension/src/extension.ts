@@ -60,7 +60,7 @@ async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefi
             progress.report({ increment: 0, message: "Packing for deployment..." });
 
             // Zip the notebook folder and add it to the form
-            const zip = await zipDirectory(path.dirname(notebookPath));
+            const zip = await zipDirectory(path.dirname(notebookPath!));
             const stream = await zip2stream(zip);
             form.append('file', stream, {
                 filename: 'deployment.zip',
