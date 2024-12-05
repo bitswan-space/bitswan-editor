@@ -1,13 +1,11 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import JSZip from 'jszip';
-import axios from 'axios';
 import FormData from "form-data"
-import { Readable } from 'stream';
 
 
 import { getDeployDetails } from './deploy_details';
 import { NotebookTreeDataProvider, NotebookItem, FolderItem } from './views/bitswan_pre';
+import { activateDeployment, deploy, zip2stream, zipBsLib, zipDirectory } from './lib';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -36,7 +34,16 @@ async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefi
         return;
     }
 
-    const folderName = path.basename(path.dirname(notebookPath));
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) {
+        vscode.window.showErrorMessage('No workspace folder found');
+        return;
+    }
+
+    const workspacePath = workspaceFolders[0].uri.fsPath;
+    const folderName = path.relative(workspacePath, path.dirname(notebookPath));
+
+    outputChannel.appendLine(`Folder name: ${folderName}`);
 
     await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
@@ -44,91 +51,50 @@ async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefi
         cancellable: false
     }, async (progress, token) => {
         try {
-            const deployUrl = new URL(path.join(details.deployUrl, "create", folderName));
+            const form = new FormData();
+            const normalizedFolderName = folderName.replace(/\//g, '-');
+            const deployUrl = new URL(path.join(details.deployUrl, "create", normalizedFolderName));
+
+            outputChannel.appendLine(`Deploy URL: ${deployUrl.toString()}`);
 
             progress.report({ increment: 0, message: "Packing for deployment..." });
-            const zip = new JSZip();
-            zip.file('main.ipynb', details.notebookJson);
-            if (details.confFile) {
-                zip.file('pipelines.conf', details.confFile);
-            }
 
-            const zipContents = await zip.generateAsync({ type: 'nodebuffer' });
-            const readableStream = new Readable();
-            readableStream.push(zipContents);
-            readableStream.push(null);
-
-            const form = new FormData();
-            form.append('file', readableStream, {
+            // Zip the notebook folder and add it to the form
+            const zip = await zipDirectory(path.dirname(notebookPath));
+            const stream = await zip2stream(zip);
+            form.append('file', stream, {
                 filename: 'deployment.zip',
                 contentType: 'application/zip',
             });
 
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (workspaceFolders) {
-                const workspacePath = workspaceFolders[0].uri.fsPath;
-                const bitswanLibPath = path.join(workspacePath, 'bitswan_lib');
-                
-                if (await vscode.workspace.fs.stat(vscode.Uri.file(bitswanLibPath)).then(() => true, () => false)) {
-                    outputChannel.appendLine(`Found bitswan_lib folder at: ${bitswanLibPath}`);
-                    const libZip = new JSZip();
-                    
-                    const readDir = async (dirPath: string, relativePath: string = '') => {
-                        const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dirPath));
-                        for (const [name, type] of entries) {
-                            const fullPath = path.join(dirPath, name);
-                            const zipPath = path.join(relativePath, name);
-                            
-                            if (type === vscode.FileType.Directory) {
-                                await readDir(fullPath, zipPath);
-                            } else {
-                                const content = await vscode.workspace.fs.readFile(vscode.Uri.file(fullPath));
-                                libZip.file(zipPath, content);
-                            }
-                        }
-                    };
-                    
-                    await readDir(bitswanLibPath);
-                    const libZipContents = await libZip.generateAsync({ type: 'nodebuffer' });
-                    
-                    form.append('lib', new Readable({
-                        read() {
-                            this.push(libZipContents);
-                            this.push(null);
-                        }
-                    }), {
-                        filename: 'lib.zip',
-                        contentType: 'application/zip',
-                    });
-                }
-            }
+            // Zip bitswan lib folder and add it to the form
+            const bzLibZip = await zipBsLib(workspaceFolders[0].uri.fsPath);
+            const libStream = await zip2stream(bzLibZip);
+
+            progress.report({ increment: 25, message: "Zipping bitswan lib..." });
+            form.append('lib', libStream, {
+                filename: 'lib.zip',
+                contentType: 'application/zip',
+            });
 
             progress.report({ increment: 50, message: "Uploading to server " + deployUrl.toString() });
 
-            const response = await axios.post(deployUrl.toString(), form, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-            });
-            outputChannel.appendLine(`Deploy response: ${JSON.stringify(response.data)}`);
+            const success = await deploy(deployUrl.toString(), form);
 
-            if (response.status === 200) {
-                const status = response.data.status;
-                progress.report({ increment: 100, message: `Deployment successful: ${status}` });
+            if (success) {
+                progress.report({ increment: 100, message: "Deployment successful" });
                 vscode.window.showInformationMessage(`Deployment successful`);
             } else {
-                throw new Error(`Deployment failed with status ${response.status}`);
+                throw new Error(`Deployment failed`);
             }
-
             progress.report({ increment: 50, message: "Activating deployment..." });
 
-            const activateUrl = new URL(path.join(details.deployUrl, "deploy"));
-            const activationResponse = await axios.get(activateUrl.toString());
-
-            if (activationResponse.status === 200) {
-                const status = activationResponse.data.status;
-                progress.report({ increment: 100, message: `Container deployment successful: ${status}` });
+            const activationSuccess = await activateDeployment(path.join(details.deployUrl, "deploy").toString());
+            if (activationSuccess) {
+                progress.report({ increment: 100, message: `Container deployment successful` });
                 vscode.window.showInformationMessage(`Container deployment successful`);
             } else {
-                throw new Error(`Container deployment failed with status ${response.status}`);
+                throw new Error(`Container deployment failed`);
             }
         } catch (error: any) {
             let errorMessage: string;
@@ -150,22 +116,20 @@ export function activate(context: vscode.ExtensionContext) {
     // Create and show output channel immediately
     outputChannel = vscode.window.createOutputChannel('BitswanPRE');
     outputChannel.show(true); // true forces the output channel to take focus
-    
+
     outputChannel.appendLine('=====================================');
     outputChannel.appendLine('BitswanPRE Extension Activation Start');
     outputChannel.appendLine(`Activation Time: ${new Date().toISOString()}`);
     outputChannel.appendLine('=====================================');
-    
+
     // Add console.log for debugging in Debug Console
     console.log('BitswanPRE Extension Activating - Debug Console Test');
-    
+
     const notebookTreeDataProvider = new NotebookTreeDataProvider();
     vscode.window.createTreeView('bitswanPRE', {
         treeDataProvider: notebookTreeDataProvider,
         showCollapseAll: true
     });
-
-    console.log("activate");
 
     vscode.window.registerTreeDataProvider('bitswanPRE', notebookTreeDataProvider);
     let deployCommand = vscode.commands.registerCommand('bitswanPRE.deployNotebook', async (item: NotebookItem | FolderItem) => _deployCommand(item));
