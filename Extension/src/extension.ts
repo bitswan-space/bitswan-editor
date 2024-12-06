@@ -78,7 +78,7 @@ async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefi
 
             progress.report({ increment: 50, message: "Uploading to server " + deployUrl.toString() });
 
-            const success = await deploy(deployUrl.toString(), form);
+            const success = await deploy(deployUrl.toString(), form, details.deploySecret);
 
             if (success) {
                 progress.report({ increment: 100, message: "Deployment successful" });
@@ -88,7 +88,7 @@ async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefi
             }
             progress.report({ increment: 50, message: "Activating deployment..." });
 
-            const activationSuccess = await activateDeployment(path.join(details.deployUrl, "deploy").toString());
+            const activationSuccess = await activateDeployment(path.join(details.deployUrl, "deploy").toString(), details.deploySecret);
             if (activationSuccess) {
                 progress.report({ increment: 100, message: `Container deployment successful` });
                 vscode.window.showInformationMessage(`Container deployment successful`);

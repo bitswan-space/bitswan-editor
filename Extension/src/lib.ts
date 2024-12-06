@@ -45,16 +45,27 @@ export const zipBsLib = async (workspacePath: string) => {
 }
 
 
-export const deploy = async (deployUrl: string, form: FormData) => {
+export const deploy = async (deployUrl: string, form: FormData, secret: string) => {
   const response = await axios.post(deployUrl, form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: { 
+      'Content-Type': 'multipart/form-data',
+      'Authorization': `Bearer ${secret}`
+    },
   });
 
   return response.status == 200;
 }
 
-export const activateDeployment = async (deployUrl: string) => {
-  const response = await axios.get(deployUrl);
+export const activateDeployment = async (deployUrl: string, secret: string) => {
+  const response = await axios.post(
+    deployUrl,
+    {},
+    {
+      headers: {
+        'Authorization': `Bearer ${secret}`,
+      },
+    }
+  );
 
   return response.status == 200;
 }
