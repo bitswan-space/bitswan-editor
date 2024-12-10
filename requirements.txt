@@ -1,1 +1,1 @@
-bspump @ git+https://github.com/bitswan-space/BitSwan.git@a85e4de2fc827a06e25ebe2536a280f8a4e5fff3
+bspump @ git+https://github.com/bitswan-space/BitSwan.git@b793529e260e7897d2b99e71bd0ffec11a223596
