@@ -4,6 +4,7 @@ import JSZip from 'jszip';
 import { Readable } from 'stream';
 import axios from 'axios';
 import FormData from 'form-data';
+import fs from 'fs';
 
 export const zipDirectory = async (dirPath: string, relativePath: string = '', zipFile: JSZip = new JSZip()) => {
 
@@ -35,11 +36,14 @@ export const zip2stream = async (zipFile: JSZip) => {
 }
 
 
-export const zipBsLib = async (workspacePath: string) => {
-
+export const zipBsLib = async (workspacePath: string, zipFile: JSZip) => {
   const bitswanLibPath = path.join(workspacePath, 'bitswan_lib');
 
-  const zipFile = await zipDirectory(bitswanLibPath);
+  if (!fs.existsSync(bitswanLibPath)) {
+    return zipFile;
+  }
+
+  zipFile = await zipDirectory(bitswanLibPath, 'bitswan_lib', zipFile);
 
   return zipFile;
 }

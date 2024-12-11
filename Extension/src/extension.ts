@@ -59,20 +59,11 @@ async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefi
             progress.report({ increment: 0, message: "Packing for deployment..." });
 
             // Zip the notebook folder and add it to the form
-            const zip = await zipDirectory(path.dirname(notebookPath!));
+            let zip = await zipDirectory(path.dirname(notebookPath!), '');
+            zip = await zipBsLib(workspaceFolders[0].uri.fsPath, zip);
             const stream = await zip2stream(zip);
             form.append('file', stream, {
                 filename: 'deployment.zip',
-                contentType: 'application/zip',
-            });
-
-            // Zip bitswan lib folder and add it to the form
-            const bzLibZip = await zipBsLib(workspaceFolders[0].uri.fsPath);
-            const libStream = await zip2stream(bzLibZip);
-
-            progress.report({ increment: 25, message: "Zipping bitswan lib..." });
-            form.append('lib', libStream, {
-                filename: 'lib.zip',
                 contentType: 'application/zip',
             });
 
