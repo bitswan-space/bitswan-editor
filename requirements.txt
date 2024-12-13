@@ -1,1 +1,1 @@
-bspump @ git+https://github.com/bitswan-space/BitSwan.git@b793529e260e7897d2b99e71bd0ffec11a223596
+bitswan[dev]==2024.4.1
