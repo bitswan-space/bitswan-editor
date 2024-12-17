@@ -6,7 +6,7 @@ import axios from 'axios';
 import FormData from 'form-data';
 import fs from 'fs';
 
-export const zipDirectory = async (dirPath: string, relativePath: string = '', zipFile: JSZip = new JSZip()) => {
+export const zipDirectory = async (dirPath: string, relativePath: string = '', zipFile: JSZip = new JSZip(), outputChannel: vscode.OutputChannel) => {
 
   const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dirPath));
   for (const [name, type] of entries) {
@@ -14,9 +14,10 @@ export const zipDirectory = async (dirPath: string, relativePath: string = '', z
     const zipPath = path.join(relativePath, name);
 
     if (type === vscode.FileType.Directory) {
-      await zipDirectory(fullPath, zipPath, zipFile);
+      await zipDirectory(fullPath, zipPath, zipFile, outputChannel);
     } else {
       const content = await vscode.workspace.fs.readFile(vscode.Uri.file(fullPath));
+      outputChannel.appendLine(`Adding file ${fullPath}`);
       zipFile.file(zipPath, content);
     }
   }
@@ -33,19 +34,6 @@ export const zip2stream = async (zipFile: JSZip) => {
 
   return stream;
 
-}
-
-
-export const zipBsLib = async (workspacePath: string, zipFile: JSZip) => {
-  const bitswanLibPath = path.join(workspacePath, 'bitswan_lib');
-
-  if (!fs.existsSync(bitswanLibPath)) {
-    return zipFile;
-  }
-
-  zipFile = await zipDirectory(bitswanLibPath, 'bitswan_lib', zipFile);
-
-  return zipFile;
 }
 
 

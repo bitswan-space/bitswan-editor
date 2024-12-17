@@ -1,11 +1,13 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import FormData from "form-data"
+import JSZip from 'jszip';
+import fs from 'fs';
 
 
 import { getDeployDetails } from './deploy_details';
 import { NotebookTreeDataProvider, NotebookItem, FolderItem } from './views/bitswan_pre';
-import { activateDeployment, deploy, zip2stream, zipBsLib, zipDirectory } from './lib';
+import { activateDeployment, deploy, zip2stream, zipDirectory } from './lib';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -59,8 +61,15 @@ async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefi
             progress.report({ increment: 0, message: "Packing for deployment..." });
 
             // Zip the notebook folder and add it to the form
-            let zip = await zipDirectory(path.dirname(notebookPath!), '');
-            zip = await zipBsLib(workspaceFolders[0].uri.fsPath, zip);
+            let zip = await zipDirectory(path.dirname(notebookPath!), '', JSZip(), outputChannel);
+            const workspacePath = path.join(workspaceFolders[0].uri.fsPath, 'workspace')
+            const bitswanLibPath = path.join(workspacePath, 'bitswan_lib')
+            if (fs.existsSync(bitswanLibPath)) {
+                zip = await zipDirectory(bitswanLibPath, '', zip, outputChannel);
+                outputChannel.appendLine(`bitswan_lib found at ${bitswanLibPath}`);
+            } else {
+                outputChannel.appendLine(`Error. bitswan_lib not found at ${bitswanLibPath}`);
+            }
             const stream = await zip2stream(zip);
             form.append('file', stream, {
                 filename: 'deployment.zip',
