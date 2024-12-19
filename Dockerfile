@@ -4,6 +4,8 @@ ENV VENV_PATH=/tmp/.bitswan
 
 USER root
 
+RUN export PYTHONPATH=/home/coder/workspace/workspace/bitswan_lib:$PYTHONPATH
+
 # Set the timezone
 RUN ln -snf /usr/share/zoneinfo/$CONTAINER_TIMEZONE /etc/localtime && echo $CONTAINER_TIMEZONE > /etc/timezone
 
