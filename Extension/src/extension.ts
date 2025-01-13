@@ -21,7 +21,7 @@ async function _deployCommand(notebookItemOrPath: NotebookItem | string | undefi
         notebookPath = notebookItemOrPath;
     } else {
         let editor = vscode.window.activeTextEditor;
-        if (editor && path.extname(editor.document.fileName) === '.ipynb') {
+        if (editor && path.extname(editor.document.fileName) === '.conf') {
             notebookPath = editor.document.uri.fsPath;
         }
     }

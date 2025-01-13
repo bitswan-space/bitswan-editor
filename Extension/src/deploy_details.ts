@@ -11,7 +11,7 @@ export interface DeployDetails {
 export async function getDeployDetails(notebookPath: string): Promise<DeployDetails | null> {
   try {
     const notebookContents = await fs.promises.readFile(notebookPath, 'utf8');
-    const notebookJson = JSON.parse(notebookContents);
+    const notebookJson = {};
 
     const parentFolder = notebookPath.split('/').slice(0, -1).join('/');
     let configContents = undefined;
