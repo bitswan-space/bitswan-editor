@@ -13,5 +13,20 @@ This allows you to deploy either pipeline `test` or `test2` by clicking on the c
 
 ![Bitswan folder structure](resources/readme/explorer.png)
 
-Pipelines get deployed to a url specified either by environment variable `BITSWAN_DEPLOY_URL`, or by specifying it in the popup that appears after clicking the upload button.
+Pipelines get deployed to the url specified either by environment variable `BITSWAN_DEPLOY_URL`, or by specifying it in the popup that appears after clicking the upload button.
+
+## Development
+
+In case you are developing. You can use `vsce` to easily package and publish your extensions. 
+You need to have Node.js installed.
+Then run
+```sh
+npm install -g vsce
+```
+
+In case you want to create `.vsix`, you can do so by entering the root of repository and running 
+```shell
+vsce package
+```
+This will create `myExtension.vsix`, which you can then install in your Visual Studio Code.
 
