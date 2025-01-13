@@ -83,8 +83,8 @@ export class NotebookTreeDataProvider implements vscode.TreeDataProvider<vscode.
         // Read all entries in current directory
         const entries = fs.readdirSync(dirPath, { withFileTypes: true });
         
-        // Check if current directory has main.ipynb
-        if (fs.existsSync(path.join(dirPath, 'main.ipynb'))) {
+        // Check if current directory has pipelines.conf
+        if (fs.existsSync(path.join(dirPath, 'pipelines.conf'))) {
             // Only add if it's not the workspace root
             if (dirPath !== vscode.workspace.workspaceFolders![0].uri.fsPath) {
                 const relativePath = path.relative(vscode.workspace.workspaceFolders![0].uri.fsPath, dirPath);
@@ -108,9 +108,9 @@ export class NotebookTreeDataProvider implements vscode.TreeDataProvider<vscode.
     }
 
     private getNotebooksInFolder(folderPath: string): NotebookItem[] {
-        const notebookPath = path.join(folderPath, 'main.ipynb');
+        const notebookPath = path.join(folderPath, 'pipelines.conf');
         if (fs.existsSync(notebookPath)) {
-            return [new NotebookItem('main.ipynb', vscode.Uri.file(notebookPath))];
+            return [new NotebookItem('pipelines.conf', vscode.Uri.file(notebookPath))];
         }
         return [];
     }

@@ -9,7 +9,7 @@ You can easily deploy your pipeline by clicking the upload button in the new Bit
 
 ![Bitswan tab](resources/readme/pre.png)
 
-This allows you to deploy either pipeline `test` or `test2` by clicking on the corresponding upload button. Possible deployments are discovered from the currently opened folder, where the extension looks for all subfolders containing `main.ipynb` files. For example, following folder structure would allow you to deploy `test` and `test2` pipelines:
+This allows you to deploy either pipeline `test` or `test2` by clicking on the corresponding upload button. Possible deployments are discovered from the currently opened folder, where the extension looks for all subfolders containing `pipelines.conf` files. For example, following folder structure would allow you to deploy `test` and `test2` pipelines:
 
 ![Bitswan folder structure](resources/readme/explorer.png)
 
