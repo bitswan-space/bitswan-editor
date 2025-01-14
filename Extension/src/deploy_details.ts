@@ -1,31 +1,24 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
 
+/**
+ * This is a return interface which is given as a result of getDeployDetails function below.
+ */
 export interface DeployDetails {
-  notebookJson: string;
   deploySecret: string;
   deployUrl: string;
-  confFile: string | undefined;
 }
 
-export async function getDeployDetails(notebookPath: string): Promise<DeployDetails | null> {
+/**
+ * This function checks for deploySecret and deployUrl.
+ * Function returns deploySecret and deployUrl.
+ */
+export async function getDeployDetails(): Promise<DeployDetails | null> {
   try {
-    const notebookContents = await fs.promises.readFile(notebookPath, 'utf8');
-    const notebookJson = {};
-
-    const parentFolder = notebookPath.split('/').slice(0, -1).join('/');
-    let configContents = undefined;
-
-    const configFiles = (await fs.promises.readdir(parentFolder)).filter((file) => file.endsWith('.conf'));
-    if (configFiles.length !== 0) {
-      const configPath = `${parentFolder}/${configFiles[0]}`;
-      console.log(`Reading config file: ${configPath}`);
-      configContents = await fs.promises.readFile(configPath, 'utf8');
-    }
 
     let deploySecret = process.env.BITSWAN_DEPLOY_SECRET;
     let deployUrl = process.env.BITSWAN_DEPLOY_URL;
 
+    // ask for deploy url in case there is none defined
     if (!deployUrl) {
       deployUrl = await vscode.window.showInputBox({
         prompt: 'Please enter your BITSWAN_DEPLOY_URL',
@@ -37,6 +30,7 @@ export async function getDeployDetails(notebookPath: string): Promise<DeployDeta
       }
     }
 
+    // ask for deploy secret in case there is none defined
     if (!deploySecret) {
       deploySecret = await vscode.window.showInputBox({
         prompt: 'Please enter your BITSWAN_DEPLOY_SECRET',
@@ -50,11 +44,10 @@ export async function getDeployDetails(notebookPath: string): Promise<DeployDeta
     }
 
     return {
-      notebookJson: JSON.stringify(notebookJson, null, 2),
       deploySecret,
       deployUrl,
-      confFile: configContents
     };
+
   } catch (error: any) {
     vscode.window.showErrorMessage(`Error reading notebook: ${error.message}`);
     return null;

@@ -47,7 +47,7 @@
       "view/item/context": [
         {
           "command": "bitswanPRE.deployNotebook",
-          "when": "view == bitswanPRE && viewItem == notebook",
+          "when": "view == bitswanPRE && viewItem == folder",
           "group": "inline"
         }
       ]

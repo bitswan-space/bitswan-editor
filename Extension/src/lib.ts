@@ -4,7 +4,6 @@ import JSZip from 'jszip';
 import { Readable } from 'stream';
 import axios from 'axios';
 import FormData from 'form-data';
-import fs from 'fs';
 
 export const zipDirectory = async (dirPath: string, relativePath: string = '', zipFile: JSZip = new JSZip(), outputChannel: vscode.OutputChannel) => {
 
