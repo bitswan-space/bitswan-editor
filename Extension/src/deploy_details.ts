@@ -49,7 +49,7 @@ export async function getDeployDetails(): Promise<DeployDetails | null> {
     };
 
   } catch (error: any) {
-    vscode.window.showErrorMessage(`Error reading notebook: ${error.message}`);
+    vscode.window.showErrorMessage(`Error reading pipeline config: ${error.message}`);
     return null;
   }
 }

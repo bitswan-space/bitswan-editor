@@ -32,21 +32,21 @@
       "bitswan-pre-explorer": [
         {
           "id": "bitswanPRE",
-          "name": "Notebooks"
+          "name": "Pipelines"
         }
       ]
     },
     "commands": [
       {
-        "command": "bitswanPRE.deployNotebook",
-        "title": "Deploy Notebook",
+        "command": "bitswanPRE.deployPipeline",
+        "title": "Deploy Pipeline",
         "icon": "$(cloud-upload)"
       }
     ],
     "menus": {
       "view/item/context": [
         {
-          "command": "bitswanPRE.deployNotebook",
+          "command": "bitswanPRE.deployPipeline",
           "when": "view == bitswanPRE && viewItem == folder",
           "group": "inline"
         }

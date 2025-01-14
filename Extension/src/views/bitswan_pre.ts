@@ -35,7 +35,7 @@ export class FolderItem extends vscode.TreeItem {
  * This class is responsible for creation of folder browser within the bitswan extension.
  * It contains function refresh, getTreeItem, getChildren, which are called by VSC.
 */
-export class NotebookTreeDataProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
+export class DirectoryTreeDataProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<vscode.TreeItem | undefined | null | void> = new vscode.EventEmitter<vscode.TreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<vscode.TreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
