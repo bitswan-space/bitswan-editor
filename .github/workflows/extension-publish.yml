@@ -20,6 +20,8 @@ jobs:
           with:
             node-version: 18.x
         - run: npm install
+        - name: Install vsce
+          run: npm install -g @vscode/vsce
 
         - name: Update version from tag
           if: startsWith(github.ref, 'refs/tags/')
