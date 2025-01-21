@@ -1,0 +1,77 @@
+{
+  "name": "bitswan-pre",
+  "publisher": "bitswan-space",
+  "displayName": "Bitswan PRE",
+  "description": "Extension for interacting with Bitswan Pipeline Runtime Environment",
+  "version": "0.0.5",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bitswan-space/BitswanVSCExtension.git"
+  },
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:bitswanPRE"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "bitswan-pre-explorer",
+          "title": "Bitswan PRE",
+          "icon": "resources/bitswan-logo.svg"
+        }
+      ]
+    },
+    "views": {
+      "bitswan-pre-explorer": [
+        {
+          "id": "bitswanPRE",
+          "name": "Pipelines"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "bitswanPRE.deployPipeline",
+        "title": "Deploy Pipeline",
+        "icon": "$(cloud-upload)"
+      }
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "bitswanPRE.deployPipeline",
+          "when": "view == bitswanPRE && viewItem == folder",
+          "group": "inline"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^14.14.37",
+    "@types/vscode": "^1.92.0",
+    "@typescript-eslint/eslint-plugin": "^4.22.0",
+    "@typescript-eslint/parser": "^4.22.0",
+    "eslint": "^7.24.0",
+    "typescript": "^4.2.4"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "form-data": "^4.0.0",
+    "jszip": "^3.10.1"
+  }
+}
