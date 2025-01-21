@@ -1,0 +1,29 @@
+on:
+    push:
+      branches:
+        - main
+        - feat/extension-cicd
+  
+jobs:
+    build:
+        strategy:
+          matrix:
+            os: [macos-latest, ubuntu-latest, windows-latest]
+        defaults:
+            run:
+                working-directory: Extension
+        runs-on: ${{ matrix.os }}
+        steps:
+        - name: Checkout
+          uses: actions/checkout@v4
+        - name: Install Node.js
+          uses: actions/setup-node@v4
+          with:
+            node-version: 18.x
+        - run: npm install
+
+        - name: Publish
+          run: npm run deploy
+          env:
+            VSCE_PAT: ${{ secrets.VSCE_PAT }}
+    
