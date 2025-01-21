@@ -8,7 +8,7 @@ jobs:
     build:
         strategy:
           matrix:
-            os: [macos-latest, ubuntu-latest, windows-latest]
+            os: [ubuntu-latest]
         defaults:
             run:
                 working-directory: Extension
