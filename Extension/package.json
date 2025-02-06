@@ -1,12 +1,12 @@
 {
-  "name": "bitswan-pre",
-  "publisher": "bitswan-space",
-  "displayName": "Bitswan PRE",
-  "description": "Extension for interacting with Bitswan Pipeline Runtime Environment",
+  "name": "bitswan",
+  "publisher": "LibertyAcesLtd",
+  "displayName": "BitSwan",
+  "description": "BitSwan extension for Visual Studio Code",
   "version": "0.0.5",
   "repository": {
     "type": "git",
-    "url": "https://github.com/bitswan-space/BitswanVSCExtension.git"
+    "url": "https://github.com/bitswan-space/bitswan-editor/tree/main/Extension"
   },
   "engines": {
     "vscode": "^1.92.0"
@@ -15,7 +15,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:bitswanPRE"
+    "onView:bitswan"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -23,7 +23,7 @@
       "activitybar": [
         {
           "id": "bitswan-pre-explorer",
-          "title": "Bitswan PRE",
+          "title": "BitSwan",
           "icon": "resources/bitswan-logo.png"
         }
       ]
@@ -31,14 +31,14 @@
     "views": {
       "bitswan-pre-explorer": [
         {
-          "id": "bitswanPRE",
+          "id": "bitswan",
           "name": "Pipelines"
         }
       ]
     },
     "commands": [
       {
-        "command": "bitswanPRE.deployPipeline",
+        "command": "bitswan.deployPipeline",
         "title": "Deploy Pipeline",
         "icon": "$(cloud-upload)"
       }
@@ -46,8 +46,8 @@
     "menus": {
       "view/item/context": [
         {
-          "command": "bitswanPRE.deployPipeline",
-          "when": "view == bitswanPRE && viewItem == folder",
+          "command": "bitswan.deployPipeline",
+          "when": "view == bitswan && viewItem == folder",
           "group": "inline"
         }
       ]
