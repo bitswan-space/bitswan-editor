@@ -1,4 +1,4 @@
-# bitswan-pre
+# BitSwan VSC Extension
 
 A VS Code extension that provides a way to interact with the Bitswan runtime, allowing you to simply deploy and manage your pipelines.
 

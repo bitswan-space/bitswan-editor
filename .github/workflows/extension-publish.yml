@@ -1,0 +1,54 @@
+on:
+    push:
+      tags:
+        - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+  
+jobs:
+    build:
+        strategy:
+          matrix:
+            os: [ubuntu-latest]
+        defaults:
+            run:
+                working-directory: Extension
+        runs-on: ${{ matrix.os }}
+        steps:
+        - name: Checkout
+          uses: actions/checkout@v4
+        - name: Install Node.js
+          uses: actions/setup-node@v4
+          with:
+            node-version: 18.x
+        - run: npm install
+        - name: Install vsce
+          run: npm install -g @vscode/vsce
+
+        - name: Update version from tag
+          if: startsWith(github.ref, 'refs/tags/')
+          run: |
+            TAG_VERSION=$(echo ${{ github.ref_name }} | sed 's/^v//')
+            npm version $TAG_VERSION --no-git-tag-version
+
+        - name: Package Extension
+          if: startsWith(github.ref, 'refs/tags/')
+          run: vsce package
+
+        - name: Publish to Marketplace
+          if: startsWith(github.ref, 'refs/tags/')
+          run: npm run deploy
+          env:
+            VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+        - name: Create Release
+          if: startsWith(github.ref, 'refs/tags/')
+          uses: softprops/action-gh-release@v1
+          with:
+            files: Extension/*.vsix
+            generate_release_notes: true
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
