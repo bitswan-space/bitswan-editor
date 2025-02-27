@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { GitOpsItem } from './views/bitswan_pre';
 
 /**
  * This is a return interface which is given as a result of getDeployDetails function below.
@@ -12,11 +13,21 @@ export interface DeployDetails {
  * This function checks for deploySecret and deployUrl.
  * Function returns deploySecret and deployUrl.
  */
-export async function getDeployDetails(): Promise<DeployDetails | null> {
+export async function getDeployDetails(context: vscode.ExtensionContext): Promise<DeployDetails | null> {
   try {
+    // get active gitops instance from global state
+    const activeGitOpsInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance')
 
-    let deploySecret = process.env.BITSWAN_DEPLOY_SECRET;
-    let deployUrl = process.env.BITSWAN_DEPLOY_URL;
+    var deploySecret;
+    var deployUrl
+    if (activeGitOpsInstance) {
+      deploySecret = activeGitOpsInstance.secret;
+      deployUrl = activeGitOpsInstance.url;
+    }
+    else if (process.env.BITSWAN_DEPLOY_SECRET && process.env.BITSWAN_DEPLOY_URL) {
+      deploySecret = process.env.BITSWAN_DEPLOY_SECRET;
+      deployUrl = process.env.BITSWAN_DEPLOY_URL;
+    }
 
     // ask for deploy url in case there is none defined
     if (!deployUrl) {

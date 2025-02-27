@@ -41,6 +41,26 @@
         "command": "bitswanPRE.deployPipeline",
         "title": "Deploy Pipeline",
         "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "bitswanPRE.addGitOps",
+        "title": "Add GitOps",
+        "icon": "$(add)"
+      },
+      {
+        "command": "bitswanPRE.editGitOps",
+        "title": "Edit GitOps",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "bitswanPRE.deleteGitOps",
+        "title": "Delete GitOps",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "bitswanPRE.activateGitOps",
+        "title": "Activate GitOps",
+        "icon": "$(check)"
       }
     ],
     "menus": {
@@ -48,6 +68,26 @@
         {
           "command": "bitswanPRE.deployPipeline",
           "when": "view == bitswanPRE && viewItem == folder",
+          "group": "inline"
+        },
+        {
+          "command": "bitswanPRE.editGitOps",
+          "when": "view == bitswanPRE && viewItem == gitops",
+          "group": "inline"
+        },
+        {
+          "command": "bitswanPRE.deleteGitOps",
+          "when": "view == bitswanPRE && viewItem == gitops",
+          "group": "inline"
+        },
+        {
+          "command": "bitswanPRE.activateGitOps",
+          "when": "view == bitswanPRE && viewItem == gitops",
+          "group": "inline"
+        },
+        {
+          "command": "bitswanPRE.addGitOps",
+          "when": "view == bitswanPRE && viewItem == gitopsSection",
           "group": "inline"
         }
       ]

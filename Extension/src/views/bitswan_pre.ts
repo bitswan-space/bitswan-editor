@@ -8,10 +8,11 @@ import * as path from 'path';
 export class DeploymentItem extends vscode.TreeItem {
     constructor(
         public readonly label: string,
+        public readonly contextValue: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState
     ) {
         super(label, collapsibleState);
-        this.contextValue = 'deployment';
+        this.contextValue = contextValue;
     }
 }
 
@@ -31,6 +32,21 @@ export class FolderItem extends vscode.TreeItem {
     }
 }
 
+export class GitOpsItem extends vscode.TreeItem {
+    constructor(
+        public readonly label: string,
+        public readonly url: string,
+        public readonly secret: string,
+        public readonly active: boolean = false
+    ) {
+        super(label, vscode.TreeItemCollapsibleState.None);
+        this.tooltip = `${this.label}`;
+        this.description = this.active ? '(active)' : '';
+        this.contextValue = 'gitops';
+        this.iconPath = new vscode.ThemeIcon('cloud');
+    }
+}
+
 /**
  * This class is responsible for creation of folder browser within the bitswan extension.
  * It contains function refresh, getTreeItem, getChildren, which are called by VSC.
@@ -38,6 +54,8 @@ export class FolderItem extends vscode.TreeItem {
 export class DirectoryTreeDataProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<vscode.TreeItem | undefined | null | void> = new vscode.EventEmitter<vscode.TreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<vscode.TreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
+
+    constructor(private readonly context: vscode.ExtensionContext) {}
 
     refresh(): void {
         this._onDidChangeTreeData.fire();
@@ -52,16 +70,20 @@ export class DirectoryTreeDataProvider implements vscode.TreeDataProvider<vscode
         if (!element) {
             // Root level
             return Promise.resolve([
-                new DeploymentItem('Deployments', vscode.TreeItemCollapsibleState.Expanded)
+                new DeploymentItem('Deployments', 'deployment', vscode.TreeItemCollapsibleState.Expanded),
+                new DeploymentItem('Gitopses', 'gitopsSection', vscode.TreeItemCollapsibleState.Expanded)
             ]);
         } else if (element instanceof DeploymentItem) {
             // Search folder
-            const folders = this.getFolders();
-            return Promise.resolve(folders);
-        } else {
-            // Leaf nodes
-            return Promise.resolve([]);
-        }
+            if (element.label === 'Deployments') {
+                const folders = this.getFolders();
+                return Promise.resolve(folders);
+            } else if (element.label === 'Gitopses') {
+                const gitopses = this.getGitOpses();
+                return Promise.resolve(gitopses);
+            }
+        } 
+        return Promise.resolve([]);
     }
 
     // This function initiates recursive searching of directories
@@ -72,6 +94,15 @@ export class DirectoryTreeDataProvider implements vscode.TreeDataProvider<vscode
         }
         const cwd = workspaceFolders[0].uri.fsPath;
         return this.findFoldersRecursively(cwd);
+    }
+
+    private getGitOpses(): GitOpsItem[] {
+        const gitopsConfig = this.context.globalState.get<any[]>('gitopsInstances', []);
+        const activeInstance = this.context.globalState.get<GitOpsItem>('activeGitOpsInstance');
+        
+        return gitopsConfig.map(instance => 
+            new GitOpsItem(instance.name, instance.url, instance.secret, activeInstance && instance.url === activeInstance.url)
+        );
     }
 
     /**

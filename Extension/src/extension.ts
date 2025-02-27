@@ -6,16 +6,16 @@ import fs from 'fs';
 
 
 import { getDeployDetails } from './deploy_details';
-import {DirectoryTreeDataProvider, FolderItem} from './views/bitswan_pre';
+import {DirectoryTreeDataProvider, FolderItem, GitOpsItem} from './views/bitswan_pre';
 import { activateDeployment, deploy, zip2stream, zipDirectory } from './lib';
 
 // Defining logging channel
-let outputChannel: vscode.OutputChannel;
+export let outputChannel: vscode.OutputChannel;
 
 /**
  * This is Deploy Command which is registered as a Visual Studio code command
  */
-async function _deployCommand(folderItemOrPath: FolderItem | string | undefined) {
+async function _deployCommand(context: vscode.ExtensionContext, folderItemOrPath: FolderItem | string | undefined) {
     outputChannel.appendLine(`Deploying pipeline: ${folderItemOrPath}`);
     let pipelineConfPath: string | undefined;
 
@@ -40,7 +40,7 @@ async function _deployCommand(folderItemOrPath: FolderItem | string | undefined)
     }
 
     // get deployURL and deploySecret
-    const details = await getDeployDetails();
+    const details = await getDeployDetails(context);
     if (!details) {
         return;
     }
@@ -122,6 +122,82 @@ async function _deployCommand(folderItemOrPath: FolderItem | string | undefined)
     });
 }
 
+async function _addGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider) {
+    const name = await vscode.window.showInputBox({
+        prompt: 'Enter GitOps instance name',
+        placeHolder: 'e.g., Production GitOps',
+        ignoreFocusOut: true
+    });
+    if (!name) return;
+
+    const url = await vscode.window.showInputBox({
+        prompt: 'Enter GitOps URL',
+        placeHolder: 'https://gitops.example.com',
+        ignoreFocusOut: true
+    });
+    if (!url) return;
+
+    const secret = await vscode.window.showInputBox({
+        prompt: 'Enter GitOps secret token',
+        password: true,
+        ignoreFocusOut: true
+    });
+    if (!secret) return;
+
+    const instances = context.globalState.get<any[]>('gitopsInstances', []);
+    instances.push({ name, url, secret });
+    await context.globalState.update('gitopsInstances', instances);
+    treeDataProvider.refresh();
+}
+
+async function _editGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: GitOpsItem) {
+    const instances = context.globalState.get<any[]>('gitopsInstances', []);
+    const index = instances.findIndex(i => i.name === item.label);
+    if (index === -1) return;
+
+    const url = await vscode.window.showInputBox({
+        prompt: 'Enter new GitOps URL',
+        value: item.url,
+        ignoreFocusOut: true
+    });
+    if (!url) return;
+
+    const secret = await vscode.window.showInputBox({
+        prompt: 'Enter new GitOps secret token',
+        password: true,
+        ignoreFocusOut: true
+    });
+    if (!secret) return;
+
+    instances[index] = { ...instances[index], url, secret };
+    await context.globalState.update('gitopsInstances', instances);
+    // Clear active instance if it was edited
+    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
+    if (activeInstance && activeInstance.url === item.url) {
+        await context.globalState.update('activeGitOpsInstance', instances[index]);
+    }
+    treeDataProvider.refresh();
+}
+
+async function _deleteGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: GitOpsItem) {
+    const instances = context.globalState.get<any[]>('gitopsInstances', []);
+    await context.globalState.update('gitopsInstances', 
+        instances.filter(i => i.name !== item.label)
+    );
+    // Clear active instance if it was deleted
+    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
+    if (activeInstance && activeInstance.url === item.url) {
+        await context.globalState.update('activeGitOpsInstance', undefined
+        );
+    }
+    treeDataProvider.refresh();
+}
+
+async function _activateGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: GitOpsItem) {
+    await context.globalState.update('activeGitOpsInstance', item);
+    treeDataProvider.refresh();
+}
+
 /**
  * This method is called by VSC when extension is activated.
  */
@@ -140,17 +216,28 @@ export function activate(context: vscode.ExtensionContext) {
     console.log('BitswanPRE Extension Activating - Debug Console Test');
 
     // Create sidebar tree for browsing deployments
-    const directoryTreeDataProvider = new DirectoryTreeDataProvider();
+    const directoryTreeDataProvider = new DirectoryTreeDataProvider(context);
     vscode.window.createTreeView('bitswanPRE', {
         treeDataProvider: directoryTreeDataProvider,
         showCollapseAll: true
     });
 
+
+
     vscode.window.registerTreeDataProvider('bitswanPRE', directoryTreeDataProvider);
     // bind deployment to a command
-    let deployCommand = vscode.commands.registerCommand('bitswanPRE.deployPipeline', async (item: FolderItem) => _deployCommand(item));
+    let deployCommand = vscode.commands.registerCommand('bitswanPRE.deployPipeline', async (item: FolderItem) => _deployCommand(context, item));
+    let addGitOpsCommand = vscode.commands.registerCommand('bitswanPRE.addGitOps', async () => _addGitOpsCommand(context, directoryTreeDataProvider));
+    let editGitOpsCommand = vscode.commands.registerCommand('bitswanPRE.editGitOps', async (item: GitOpsItem) => _editGitOpsCommand(context, directoryTreeDataProvider, item));
+    let deleteGitOpsCommand = vscode.commands.registerCommand('bitswanPRE.deleteGitOps', async (item: GitOpsItem) => _deleteGitOpsCommand(context, directoryTreeDataProvider, item));
+    let activateGitOpsCommand = vscode.commands.registerCommand('bitswanPRE.activateGitOps', async (item: GitOpsItem) => _activateGitOpsCommand(context, directoryTreeDataProvider, item));
 
     context.subscriptions.push(deployCommand);
+    context.subscriptions.push(addGitOpsCommand);
+    context.subscriptions.push(editGitOpsCommand);
+    context.subscriptions.push(deleteGitOpsCommand);
+    context.subscriptions.push(activateGitOpsCommand);
+
 
     // Refresh the tree view when files change in the workspace
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
