@@ -204,33 +204,33 @@ async function _activateGitOpsCommand(context: vscode.ExtensionContext, treeData
 export function activate(context: vscode.ExtensionContext) {
 
     // Create and show output channel immediately
-    outputChannel = vscode.window.createOutputChannel('BitswanPRE');
+    outputChannel = vscode.window.createOutputChannel('BitSwan');
     outputChannel.show(true); // true forces the output channel to take focus
 
     outputChannel.appendLine('=====================================');
-    outputChannel.appendLine('BitswanPRE Extension Activation Start');
+    outputChannel.appendLine('BitSwan Extension Activation Start');
     outputChannel.appendLine(`Activation Time: ${new Date().toISOString()}`);
     outputChannel.appendLine('=====================================');
 
     // Add console.log for debugging in Debug Console
-    console.log('BitswanPRE Extension Activating - Debug Console Test');
+    console.log('BitSwan Extension Activating - Debug Console Test');
 
     // Create sidebar tree for browsing deployments
     const directoryTreeDataProvider = new DirectoryTreeDataProvider(context);
-    vscode.window.createTreeView('bitswanPRE', {
+    vscode.window.createTreeView('bitswan', {
         treeDataProvider: directoryTreeDataProvider,
         showCollapseAll: true
     });
 
 
 
-    vscode.window.registerTreeDataProvider('bitswanPRE', directoryTreeDataProvider);
+    vscode.window.registerTreeDataProvider('bitswan', directoryTreeDataProvider);
     // bind deployment to a command
-    let deployCommand = vscode.commands.registerCommand('bitswanPRE.deployPipeline', async (item: FolderItem) => _deployCommand(context, item));
-    let addGitOpsCommand = vscode.commands.registerCommand('bitswanPRE.addGitOps', async () => _addGitOpsCommand(context, directoryTreeDataProvider));
-    let editGitOpsCommand = vscode.commands.registerCommand('bitswanPRE.editGitOps', async (item: GitOpsItem) => _editGitOpsCommand(context, directoryTreeDataProvider, item));
-    let deleteGitOpsCommand = vscode.commands.registerCommand('bitswanPRE.deleteGitOps', async (item: GitOpsItem) => _deleteGitOpsCommand(context, directoryTreeDataProvider, item));
-    let activateGitOpsCommand = vscode.commands.registerCommand('bitswanPRE.activateGitOps', async (item: GitOpsItem) => _activateGitOpsCommand(context, directoryTreeDataProvider, item));
+    let deployCommand = vscode.commands.registerCommand('bitswan.deployPipeline', async (item: FolderItem) => _deployCommand(context, item));
+    let addGitOpsCommand = vscode.commands.registerCommand('bitswan.addGitOps', async () => _addGitOpsCommand(context, directoryTreeDataProvider));
+    let editGitOpsCommand = vscode.commands.registerCommand('bitswan.editGitOps', async (item: GitOpsItem) => _editGitOpsCommand(context, directoryTreeDataProvider, item));
+    let deleteGitOpsCommand = vscode.commands.registerCommand('bitswan.deleteGitOps', async (item: GitOpsItem) => _deleteGitOpsCommand(context, directoryTreeDataProvider, item));
+    let activateGitOpsCommand = vscode.commands.registerCommand('bitswan.activateGitOps', async (item: GitOpsItem) => _activateGitOpsCommand(context, directoryTreeDataProvider, item));
 
     context.subscriptions.push(deployCommand);
     context.subscriptions.push(addGitOpsCommand);

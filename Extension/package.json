@@ -43,22 +43,22 @@
         "icon": "$(cloud-upload)"
       },
       {
-        "command": "bitswanPRE.addGitOps",
+        "command": "bitswan.addGitOps",
         "title": "Add GitOps",
         "icon": "$(add)"
       },
       {
-        "command": "bitswanPRE.editGitOps",
+        "command": "bitswan.editGitOps",
         "title": "Edit GitOps",
         "icon": "$(edit)"
       },
       {
-        "command": "bitswanPRE.deleteGitOps",
+        "command": "bitswan.deleteGitOps",
         "title": "Delete GitOps",
         "icon": "$(trash)"
       },
       {
-        "command": "bitswanPRE.activateGitOps",
+        "command": "bitswan.activateGitOps",
         "title": "Activate GitOps",
         "icon": "$(check)"
       }
@@ -71,23 +71,23 @@
           "group": "inline"
         },
         {
-          "command": "bitswanPRE.editGitOps",
-          "when": "view == bitswanPRE && viewItem == gitops",
+          "command": "bitswan.editGitOps",
+          "when": "view == bitswan && viewItem == gitops",
           "group": "inline"
         },
         {
-          "command": "bitswanPRE.deleteGitOps",
-          "when": "view == bitswanPRE && viewItem == gitops",
+          "command": "bitswan.deleteGitOps",
+          "when": "view == bitswan && viewItem == gitops",
           "group": "inline"
         },
         {
-          "command": "bitswanPRE.activateGitOps",
-          "when": "view == bitswanPRE && viewItem == gitops",
+          "command": "bitswan.activateGitOps",
+          "when": "view == bitswan && viewItem == gitops",
           "group": "inline"
         },
         {
-          "command": "bitswanPRE.addGitOps",
-          "when": "view == bitswanPRE && viewItem == gitopsSection",
+          "command": "bitswan.addGitOps",
+          "when": "view == bitswan && viewItem == gitopsSection",
           "group": "inline"
         }
       ]
