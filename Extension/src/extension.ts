@@ -17,24 +17,26 @@ export let outputChannel: vscode.OutputChannel;
  */
 async function _deployCommand(context: vscode.ExtensionContext, folderItemOrPath: FolderItem | string | undefined) {
     outputChannel.appendLine(`Deploying pipeline: ${folderItemOrPath}`);
-    let pipelineConfPath: string | undefined;
+    let pipelineDeploymentPath: string | undefined;
 
     // create folder path out of provided argument. Its either folder, folder's path or it is not defined
     if (folderItemOrPath instanceof FolderItem) {
         const pipelinePathExists = path.join(folderItemOrPath.resourceUri.fsPath, 'pipelines.conf');
         if (fs.existsSync(pipelinePathExists)) {
-            pipelineConfPath = path.join(folderItemOrPath.resourceUri.fsPath, 'pipelines.conf');
+            pipelineDeploymentPath = path.join(folderItemOrPath.resourceUri.fsPath, 'pipelines.conf');
         }
     } else if (typeof folderItemOrPath === 'string') {
-        pipelineConfPath = folderItemOrPath;
+        pipelineDeploymentPath = folderItemOrPath;
     } else {
         let editor = vscode.window.activeTextEditor;
-        if (editor && path.extname(editor.document.fileName) === '.conf') {
-            pipelineConfPath = editor.document.uri.fsPath;
+        if (editor && (path.extname(editor.document.fileName) === '.conf' || path.extname(editor.document.fileName) === '.ipynb')) {
+            pipelineDeploymentPath = editor.document.uri.fsPath;
         }
     }
 
-    if (!pipelineConfPath) {
+    outputChannel.appendLine(`Pipeline deployment path: ${pipelineDeploymentPath}`);
+
+    if (!pipelineDeploymentPath) {
         vscode.window.showErrorMessage('Unable to determine pipeline config path. Please select a pipeline config from the tree view or open one in the editor.');
         return;
     }
@@ -51,7 +53,7 @@ async function _deployCommand(context: vscode.ExtensionContext, folderItemOrPath
         return;
     }
 
-    const folderName = path.basename(path.dirname(pipelineConfPath));
+    const folderName = path.basename(path.dirname(pipelineDeploymentPath));
 
     outputChannel.appendLine(`Folder name: ${folderName}`);
 
@@ -71,7 +73,7 @@ async function _deployCommand(context: vscode.ExtensionContext, folderItemOrPath
             progress.report({ increment: 0, message: "Packing for deployment..." });
 
             // Zip the pipeline config folder and add it to the form
-            let zip = await zipDirectory(path.dirname(pipelineConfPath!), '', JSZip(), outputChannel);
+            let zip = await zipDirectory(path.dirname(pipelineDeploymentPath), '', JSZip(), outputChannel);
             const workspacePath = path.join(workspaceFolders[0].uri.fsPath, 'workspace')
             const bitswanLibPath = path.join(workspacePath, 'bitswan_lib')
             if (fs.existsSync(bitswanLibPath)) {

@@ -19,15 +19,6 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
-    "notebookToolbar": [
-      {
-        "viewType": "jupyter-notebook",
-        "id": "bitswan.deployButton",
-        "title": "Deploy",
-        "icon": "resources/deploy.svg",
-        "when": "resourceScheme == 'file' && resourceExtname == '.ipynb'"
-      }
-    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -98,6 +89,13 @@
           "command": "bitswan.addGitOps",
           "when": "view == bitswan && viewItem == gitopsSection",
           "group": "inline"
+        }
+      ],
+      "notebook/toolbar": [
+        {
+          "command": "bitswan.deployPipeline",
+          "when": "notebookType == 'jupyter-notebook'",
+          "group": "navigation@1"
         }
       ]
     }
