@@ -1,12 +1,12 @@
 {
-  "name": "bitswan-pre",
-  "publisher": "bitswan-space",
-  "displayName": "Bitswan PRE",
-  "description": "Extension for interacting with Bitswan Pipeline Runtime Environment",
+  "name": "bitswan",
+  "publisher": "LibertyAcesLtd",
+  "displayName": "BitSwan",
+  "description": "BitSwan extension for Visual Studio Code",
   "version": "0.0.5",
   "repository": {
     "type": "git",
-    "url": "https://github.com/bitswan-space/BitswanVSCExtension.git"
+    "url": "https://github.com/bitswan-space/bitswan-editor/tree/main/Extension"
   },
   "engines": {
     "vscode": "^1.92.0"
@@ -15,7 +15,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:bitswanPRE"
+    "onView:bitswan"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -23,22 +23,22 @@
       "activitybar": [
         {
           "id": "bitswan-pre-explorer",
-          "title": "Bitswan PRE",
-          "icon": "resources/bitswan-logo.svg"
+          "title": "BitSwan",
+          "icon": "resources/bitswan-logo.png"
         }
       ]
     },
     "views": {
       "bitswan-pre-explorer": [
         {
-          "id": "bitswanPRE",
+          "id": "bitswan",
           "name": "Pipelines"
         }
       ]
     },
     "commands": [
       {
-        "command": "bitswanPRE.deployPipeline",
+        "command": "bitswan.deployPipeline",
         "title": "Deploy Pipeline",
         "icon": "$(cloud-upload)"
       }
@@ -46,8 +46,8 @@
     "menus": {
       "view/item/context": [
         {
-          "command": "bitswanPRE.deployPipeline",
-          "when": "view == bitswanPRE && viewItem == folder",
+          "command": "bitswan.deployPipeline",
+          "when": "view == bitswan && viewItem == folder",
           "group": "inline"
         }
       ]
@@ -59,7 +59,8 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "test": "node ./out/test/runTest.js",
+    "deploy": "vsce publish"
   },
   "devDependencies": {
     "@types/node": "^14.14.37",
@@ -72,6 +73,7 @@
   "dependencies": {
     "axios": "^1.7.7",
     "form-data": "^4.0.0",
-    "jszip": "^3.10.1"
+    "jszip": "^3.10.1",
+    "vsce": "^2.15.0"
   }
 }
