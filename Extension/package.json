@@ -19,6 +19,15 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "notebookToolbar": [
+      {
+        "viewType": "jupyter-notebook",
+        "id": "bitswan.deployButton",
+        "title": "Deploy",
+        "icon": "resources/deploy.svg",
+        "when": "resourceScheme == 'file' && resourceExtname == '.ipynb'"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {

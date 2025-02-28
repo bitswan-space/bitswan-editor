@@ -231,12 +231,14 @@ export function activate(context: vscode.ExtensionContext) {
     let editGitOpsCommand = vscode.commands.registerCommand('bitswan.editGitOps', async (item: GitOpsItem) => _editGitOpsCommand(context, directoryTreeDataProvider, item));
     let deleteGitOpsCommand = vscode.commands.registerCommand('bitswan.deleteGitOps', async (item: GitOpsItem) => _deleteGitOpsCommand(context, directoryTreeDataProvider, item));
     let activateGitOpsCommand = vscode.commands.registerCommand('bitswan.activateGitOps', async (item: GitOpsItem) => _activateGitOpsCommand(context, directoryTreeDataProvider, item));
+    let deployFromIpynb = vscode.commands.registerCommand('bitswan.deployButton', async () => { vscode.window.showInformationMessage('Deploying from ipynb') });
 
     context.subscriptions.push(deployCommand);
     context.subscriptions.push(addGitOpsCommand);
     context.subscriptions.push(editGitOpsCommand);
     context.subscriptions.push(deleteGitOpsCommand);
     context.subscriptions.push(activateGitOpsCommand);
+    context.subscriptions.push(deployFromIpynb);
 
 
     // Refresh the tree view when files change in the workspace
