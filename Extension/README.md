@@ -17,16 +17,17 @@ Pipelines get deployed to the url specified either by environment variable `BITS
 
 ## Development
 
-In case you are developing. You can use `vsce` to easily package and publish your extensions. 
+In case you are developing. You can use `vsce` to easily package and publish your extensions.
 You need to have Node.js installed.
 Then run
+
 ```sh
-npm install -g vsce
+npm install
 ```
 
-In case you want to create `.vsix`, you can do so by entering the root of repository and running 
+In case you want to create `.vsix`, you can do so by entering the root of repository and running
 ```shell
-vsce package
+npx vsce package
 ```
 This will create `myExtension.vsix`, which you can then install in your Visual Studio Code.
 
