@@ -90,6 +90,13 @@
           "when": "view == bitswan && viewItem == gitopsSection",
           "group": "inline"
         }
+      ],
+      "notebook/toolbar": [
+        {
+          "command": "bitswan.deployPipeline",
+          "when": "notebookType == 'jupyter-notebook'",
+          "group": "navigation@1"
+        }
       ]
     }
   },
