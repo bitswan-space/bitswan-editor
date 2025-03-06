@@ -73,7 +73,7 @@ async function _deployCommand(context: vscode.ExtensionContext, folderItemOrPath
             progress.report({ increment: 0, message: "Packing for deployment..." });
 
             // Zip the pipeline config folder and add it to the form
-            let zip = await zipDirectory(path.dirname(pipelineDeploymentPath), '', JSZip(), outputChannel);
+            let zip = await zipDirectory(path.dirname(pipelineDeploymentPath as string), '', JSZip(), outputChannel);
             const workspacePath = path.join(workspaceFolders[0].uri.fsPath, 'workspace')
             const bitswanLibPath = path.join(workspacePath, 'bitswan_lib')
             if (fs.existsSync(bitswanLibPath)) {
