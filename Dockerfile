@@ -81,4 +81,5 @@ RUN code-server --install-extension ms-toolsai.jupyter
 EXPOSE 9999
 
 WORKDIR /home/coder/workspace
+RUN rm /home/coder/.config/code-server/config.yaml # This is important to clear the password so that every instance doesn't have the samepassword
 ENTRYPOINT ["/usr/bin/update-entrypoint.sh", "/usr/bin/entrypoint.sh", "--bind-addr", "0.0.0.0:9999", "."]
