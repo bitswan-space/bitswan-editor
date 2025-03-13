@@ -7,7 +7,7 @@ import fs from 'fs';
 
 import { getDeployDetails } from './deploy_details';
 import {AutomationItem, DirectoryTreeDataProvider, FolderItem, GitOpsItem} from './views/bitswan_pre';
-import { activateDeployment, deploy, getAutomationLogs, getAutomations, restartAutomation, startAutomation, stopAutomation, zip2stream, zipDirectory } from './lib';
+import { activateAutomation, activateDeployment, deactivateAutomation, deploy, getAutomationLogs, getAutomations, restartAutomation, startAutomation, stopAutomation, zip2stream, zipDirectory } from './lib';
 
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
@@ -255,7 +255,7 @@ async function _restartAutomationCommand(context: vscode.ExtensionContext, treeD
                 progress.report({ increment: 100, message: "Restart successful" });
                 vscode.window.showInformationMessage(`Automation ${item.name} restarted successfully`);
             } else {
-                throw new Error("Failed to restart automation");
+                vscode.window.showErrorMessage(`Failed to restart automation ${item.name}`);
             }
         } catch (error: any) {
             let errorMessage = error.message || 'Unknown error occurred';
@@ -289,7 +289,7 @@ async function _startAutomationCommand(context: vscode.ExtensionContext, treeDat
                 progress.report({ increment: 100, message: "Start successful" });
                 vscode.window.showInformationMessage(`Automation ${item.name} started successfully`);
             } else {
-                throw new Error("Failed to start automation");
+                vscode.window.showErrorMessage(`Failed to start automation ${item.name}`);
             }
         } catch (error: any) {
             let errorMessage = error.message || 'Unknown error occurred';
@@ -323,7 +323,7 @@ async function _stopAutomationCommand(context: vscode.ExtensionContext, treeData
                 progress.report({ increment: 100, message: "Stop successful" });
                 vscode.window.showInformationMessage(`Automation ${item.name} stopped successfully`);
             } else {
-                throw new Error("Failed to stop automation");
+                vscode.window.showErrorMessage(`Failed to stop automation ${item.name}`);
             }
         } catch (error: any) {
             let errorMessage = error.message || 'Unknown error occurred';
@@ -397,6 +397,60 @@ async function _showAutomationLogsCommand(context: vscode.ExtensionContext, tree
     }
 }
 
+async function _activateAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: AutomationItem) {
+    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
+    if (!activeInstance) {
+        vscode.window.showErrorMessage('No active GitOps instance');
+        return;
+    }
+
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: `Activating automation ${item.name}...`,
+        cancellable: false
+    }, async (progress) => {
+        progress.report({ increment: 50 });
+        
+        const activateUrl = path.join(activeInstance.url, "automations", item.name, "activate").toString();
+        const activateResponse = await activateAutomation(activateUrl, activeInstance.secret);
+
+        progress.report({ increment: 100 });
+
+        if (activateResponse) {
+            vscode.window.showInformationMessage(`Automation ${item.name} activated successfully`);
+        } else {
+            vscode.window.showErrorMessage(`Failed to activate automation ${item.name}`);
+        }
+    });
+}
+
+async function _deactivateAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: AutomationItem) {
+    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
+    if (!activeInstance) {
+        vscode.window.showErrorMessage('No active GitOps instance');
+        return;
+    }
+
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: `Deactivating automation ${item.name}...`,
+        cancellable: false
+    }, async (progress) => {
+        progress.report({ increment: 50 });
+        
+        const deactivateUrl = path.join(activeInstance.url, "automations", item.name, "deactivate").toString();
+        const deactivateResponse = await deactivateAutomation(deactivateUrl, activeInstance.secret);
+
+        progress.report({ increment: 100 });
+
+        if (deactivateResponse) {
+            vscode.window.showInformationMessage(`Automation ${item.name} deactivated successfully`);
+        } else {
+            vscode.window.showErrorMessage(`Failed to deactivate automation ${item.name}`);
+        }
+    });
+}
+
 /**
  * This method is called by VSC when extension is activated.
  */
@@ -435,6 +489,8 @@ export function activate(context: vscode.ExtensionContext) {
     let stopAutomationCommand = vscode.commands.registerCommand('bitswan.stopAutomation', async (item: AutomationItem) => _stopAutomationCommand(context, directoryTreeDataProvider, item));
     let restartAutomationCommand = vscode.commands.registerCommand('bitswan.restartAutomation', async (item: AutomationItem) => _restartAutomationCommand(context, directoryTreeDataProvider, item));
     let showAutomationLogsCommand = vscode.commands.registerCommand('bitswan.showAutomationLogs', async (item: AutomationItem) => _showAutomationLogsCommand(context, directoryTreeDataProvider, item));
+    let activateAutomationCommand = vscode.commands.registerCommand('bitswan.activateAutomation', async (item: AutomationItem) => _activateAutomationCommand(context, directoryTreeDataProvider, item));
+    let deactivateAutomationCommand = vscode.commands.registerCommand('bitswan.deactivateAutomation', async (item: AutomationItem) => _deactivateAutomationCommand(context, directoryTreeDataProvider, item));
 
     context.subscriptions.push(deployCommand);
     context.subscriptions.push(addGitOpsCommand);

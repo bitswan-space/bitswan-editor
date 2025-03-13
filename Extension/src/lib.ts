@@ -127,3 +127,23 @@ export const getAutomationLogs = async (automationUrl: string, secret: string) =
 
   return response.data;
 }
+
+export const activateAutomation = async (automationUrl: string, secret: string) => {
+  const response = await axios.post(automationUrl, {}, {
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  return response.status == 200;
+}
+
+export const deactivateAutomation = async (automationUrl: string, secret: string) => {
+  const response = await axios.post(automationUrl, {}, {
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  return response.status == 200;
+}
