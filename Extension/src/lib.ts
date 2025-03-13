@@ -147,3 +147,13 @@ export const deactivateAutomation = async (automationUrl: string, secret: string
 
   return response.status == 200;
 }
+
+export const deleteAutomation = async (automationUrl: string, secret: string) => {
+  const response = await axios.delete(automationUrl, {
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  return response.status == 200;
+}
