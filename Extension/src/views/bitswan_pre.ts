@@ -119,7 +119,7 @@ export class DirectoryTreeDataProvider implements vscode.TreeDataProvider<vscode
         if (!element) {
             // Root level
             return Promise.resolve([
-                new DeploymentItem('Deployments', 'deployment', vscode.TreeItemCollapsibleState.Expanded),
+                new DeploymentItem('Deployments', 'deployment', vscode.TreeItemCollapsibleState.Collapsed),
                 new DeploymentItem('Workspaces', 'gitopsSection', vscode.TreeItemCollapsibleState.Expanded),
                 new DeploymentItem('Automations', 'automationSection', vscode.TreeItemCollapsibleState.Expanded)
             ]);
