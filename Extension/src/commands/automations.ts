@@ -1,11 +1,12 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { AutomationItem, DirectoryTreeDataProvider } from '../views/bitswan_pre';
-import { GitOpsItem } from '../views/bitswan_pre';
+import { AutomationItem } from  '../views/automations_view';
+import { GitOpsItem } from '../views/workspaces_view';
 import { activateAutomation, deactivateAutomation, deleteAutomation, getAutomationLogs, getAutomations, restartAutomation, startAutomation, stopAutomation } from '../lib';
 import { outputChannel, outputChannelsMap } from '../extension';
+import { AutomationsViewProvider } from '../views/automations_view';
 
-export async function startAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: AutomationItem) {
+export async function startAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
     const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (!activeInstance) {
         vscode.window.showErrorMessage('No active GitOps instance');
@@ -41,7 +42,7 @@ export async function startAutomationCommand(context: vscode.ExtensionContext, t
     });
 }
 
-export async function stopAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: AutomationItem) {
+export async function stopAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
     const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (!activeInstance) {
         vscode.window.showErrorMessage('No active GitOps instance');
@@ -77,7 +78,7 @@ export async function stopAutomationCommand(context: vscode.ExtensionContext, tr
     });
 }
 
-export async function restartAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: AutomationItem) {
+export async function restartAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
     const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (!activeInstance) {
         vscode.window.showErrorMessage('No active GitOps instance');
@@ -115,7 +116,7 @@ export async function restartAutomationCommand(context: vscode.ExtensionContext,
     });
 }
 
-export async function showAutomationLogsCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: AutomationItem) {
+export async function showAutomationLogsCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
     const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (!activeInstance) {
         vscode.window.showErrorMessage('No active GitOps instance');
@@ -179,7 +180,7 @@ export async function showAutomationLogsCommand(context: vscode.ExtensionContext
     }
 }
 
-export async function activateAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: AutomationItem) {
+export async function activateAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
     const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (!activeInstance) {
         vscode.window.showErrorMessage('No active GitOps instance');
@@ -208,7 +209,7 @@ export async function activateAutomationCommand(context: vscode.ExtensionContext
     });
 }
 
-export async function deactivateAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: AutomationItem) {
+export async function deactivateAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
     const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (!activeInstance) {
         vscode.window.showErrorMessage('No active GitOps instance');
@@ -237,7 +238,7 @@ export async function deactivateAutomationCommand(context: vscode.ExtensionConte
     });
 }
 
-export async function deleteAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: AutomationItem) {
+export async function deleteAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
     const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (!activeInstance) {
         vscode.window.showErrorMessage('No active GitOps instance');
@@ -280,7 +281,7 @@ export async function deleteAutomationCommand(context: vscode.ExtensionContext, 
     });
 }
 
-export async function refreshAutomationsCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider) {
+export async function refreshAutomationsCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider) {
     const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (!activeInstance) {
         vscode.window.showErrorMessage('No active GitOps instance');

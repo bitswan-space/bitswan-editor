@@ -1,11 +1,18 @@
 import * as vscode from 'vscode';
 
-import {AutomationItem, DirectoryTreeDataProvider, FolderItem, GitOpsItem} from './views/bitswan_pre';
+import { AutomationItem } from './views/automations_view';
+import { FolderItem } from './views/deployments_view';
+import { GitOpsItem } from './views/workspaces_view';
 
 // Import commands from the new command modules
 import * as automationCommands from './commands/automations';
 import * as workspaceCommands from './commands/workspaces';
 import * as deploymentCommands from './commands/deployments';
+
+// Import view providers
+import { DeploymentsViewProvider } from './views/deployments_view';
+import { WorkspacesViewProvider } from './views/workspaces_view';
+import { AutomationsViewProvider } from './views/automations_view';
 
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
@@ -14,7 +21,14 @@ export let outputChannel: vscode.OutputChannel;
 export const outputChannelsMap = new Map<string, vscode.OutputChannel>();
 
 // Store the refresh interval ID
-let automationRefreshInterval: NodeJS.Timer | undefined;
+export let automationRefreshInterval: NodeJS.Timer | undefined;
+
+export function setAutomationRefreshInterval(interval: NodeJS.Timer | undefined) {
+    if (automationRefreshInterval) {
+        clearInterval(automationRefreshInterval);
+    }
+    automationRefreshInterval = interval;
+}
 
 /**
  * This method is called by VSC when extension is activated.
@@ -32,54 +46,65 @@ export function activate(context: vscode.ExtensionContext) {
     // Add console.log for debugging in Debug Console
     console.log('BitSwan Extension Activating - Debug Console Test');
 
-    // Create sidebar tree for browsing deployments
-    const directoryTreeDataProvider = new DirectoryTreeDataProvider(context);
-    vscode.window.createTreeView('bitswan', {
-        treeDataProvider: directoryTreeDataProvider,
-        showCollapseAll: true
+    // Create view providers
+    const deploymentsProvider = new DeploymentsViewProvider(context);
+    const workspacesProvider = new WorkspacesViewProvider(context);
+    const automationsProvider = new AutomationsViewProvider(context);
+
+    // Register views
+    vscode.window.createTreeView('bitswan-deployments', {
+        treeDataProvider: deploymentsProvider,
     });
 
-    vscode.window.registerTreeDataProvider('bitswan', directoryTreeDataProvider);
+    vscode.window.createTreeView('bitswan-workspaces', {
+        treeDataProvider: workspacesProvider,
+    });
+
+    vscode.window.createTreeView('bitswan-automations', {
+        treeDataProvider: automationsProvider,
+    });
 
     // Register commands using the new command modules
     let deployCommand = vscode.commands.registerCommand('bitswan.deployPipeline', 
-        async (item: FolderItem) => deploymentCommands.deployCommand(context, directoryTreeDataProvider, item));
+        async (item: FolderItem) => deploymentCommands.deployCommand(context, deploymentsProvider, item));
     
     let addGitOpsCommand = vscode.commands.registerCommand('bitswan.addGitOps', 
-        async () => workspaceCommands.addGitOpsCommand(context, directoryTreeDataProvider));
+        async () => workspaceCommands.addGitOpsCommand(context, workspacesProvider));
     
     let editGitOpsCommand = vscode.commands.registerCommand('bitswan.editGitOps', 
-        async (item: GitOpsItem) => workspaceCommands.editGitOpsCommand(context, directoryTreeDataProvider, item));
+        async (item: GitOpsItem) => workspaceCommands.editGitOpsCommand(context, workspacesProvider, item));
     
     let deleteGitOpsCommand = vscode.commands.registerCommand('bitswan.deleteGitOps', 
-        async (item: GitOpsItem) => workspaceCommands.deleteGitOpsCommand(context, directoryTreeDataProvider, item));
+        async (item: GitOpsItem) => workspaceCommands.deleteGitOpsCommand(context, workspacesProvider, item));
     
     let activateGitOpsCommand = vscode.commands.registerCommand('bitswan.activateGitOps', 
-        async (item: GitOpsItem) => workspaceCommands.activateGitOpsCommand(context, directoryTreeDataProvider, item));
+        async (item: GitOpsItem) => {
+            await workspaceCommands.activateGitOpsCommand(context, workspacesProvider, item, automationsProvider); // Refresh automations when GitOps instance is activated
+        });
     
     let refreshAutomationsCommand = vscode.commands.registerCommand('bitswan.refreshAutomations', 
-        async () => automationCommands.refreshAutomationsCommand(context, directoryTreeDataProvider));
+        async () => automationCommands.refreshAutomationsCommand(context, automationsProvider));
     
     let startAutomationCommand = vscode.commands.registerCommand('bitswan.startAutomation', 
-        async (item: AutomationItem) => automationCommands.startAutomationCommand(context, directoryTreeDataProvider, item));
+        async (item: AutomationItem) => automationCommands.startAutomationCommand(context, automationsProvider, item));
     
     let stopAutomationCommand = vscode.commands.registerCommand('bitswan.stopAutomation', 
-        async (item: AutomationItem) => automationCommands.stopAutomationCommand(context, directoryTreeDataProvider, item));
+        async (item: AutomationItem) => automationCommands.stopAutomationCommand(context, automationsProvider, item));
     
     let restartAutomationCommand = vscode.commands.registerCommand('bitswan.restartAutomation', 
-        async (item: AutomationItem) => automationCommands.restartAutomationCommand(context, directoryTreeDataProvider, item));
+        async (item: AutomationItem) => automationCommands.restartAutomationCommand(context, automationsProvider, item));
     
     let showAutomationLogsCommand = vscode.commands.registerCommand('bitswan.showAutomationLogs', 
-        async (item: AutomationItem) => automationCommands.showAutomationLogsCommand(context, directoryTreeDataProvider, item));
+        async (item: AutomationItem) => automationCommands.showAutomationLogsCommand(context, automationsProvider, item));
     
     let activateAutomationCommand = vscode.commands.registerCommand('bitswan.activateAutomation', 
-        async (item: AutomationItem) => automationCommands.activateAutomationCommand(context, directoryTreeDataProvider, item));
+        async (item: AutomationItem) => automationCommands.activateAutomationCommand(context, automationsProvider, item));
     
     let deactivateAutomationCommand = vscode.commands.registerCommand('bitswan.deactivateAutomation', 
-        async (item: AutomationItem) => automationCommands.deactivateAutomationCommand(context, directoryTreeDataProvider, item));
+        async (item: AutomationItem) => automationCommands.deactivateAutomationCommand(context, automationsProvider, item));
     
     let deleteAutomationCommand = vscode.commands.registerCommand('bitswan.deleteAutomation', 
-        async (item: AutomationItem) => automationCommands.deleteAutomationCommand(context, directoryTreeDataProvider, item));
+        async (item: AutomationItem) => automationCommands.deleteAutomationCommand(context, automationsProvider, item));
 
     // Register all commands
     context.subscriptions.push(deployCommand);
@@ -96,20 +121,21 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(deactivateAutomationCommand);
     context.subscriptions.push(deleteAutomationCommand);
 
-    // Refresh the tree view when files change in the workspace
+    // Refresh the tree views when files change in the workspace
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
-    watcher.onDidCreate(() => directoryTreeDataProvider.refresh());
-    watcher.onDidDelete(() => directoryTreeDataProvider.refresh());
-    watcher.onDidChange(() => directoryTreeDataProvider.refresh());
+    watcher.onDidCreate(() => deploymentsProvider.refresh());
+    watcher.onDidDelete(() => deploymentsProvider.refresh());
+    watcher.onDidChange(() => deploymentsProvider.refresh());
 
     const activeGitOpsInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (activeGitOpsInstance) {
-        workspaceCommands.activateGitOpsCommand(context, directoryTreeDataProvider, activeGitOpsInstance);
+        workspaceCommands.activateGitOpsCommand(context, workspacesProvider, activeGitOpsInstance, automationsProvider);
+        automationsProvider.refresh();
     }
 
     context.subscriptions.push(watcher);
 
-    outputChannel.appendLine('Tree view provider registered');
+    outputChannel.appendLine('Tree views registered');
 }
 
 /**

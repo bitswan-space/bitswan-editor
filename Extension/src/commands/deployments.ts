@@ -4,12 +4,13 @@ import * as fs from 'fs';
 import FormData from 'form-data';
 import JSZip from 'jszip';
 
-import { DirectoryTreeDataProvider, FolderItem } from '../views/bitswan_pre';
+import { FolderItem } from '../views/deployments_view';
 import { activateDeployment, deploy, zip2stream, zipDirectory } from '../lib';
 import { getDeployDetails } from '../deploy_details';
 import { outputChannel } from '../extension';
+import { DeploymentsViewProvider } from '../views/deployments_view';
 
-export async function deployCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, folderItemOrPath: FolderItem | string | undefined) {
+export async function deployCommand(context: vscode.ExtensionContext, treeDataProvider: DeploymentsViewProvider, folderItemOrPath: FolderItem | string | undefined) {
     outputChannel.appendLine(`Deploying pipeline: ${folderItemOrPath}`);
     let pipelineDeploymentPath: string | undefined;
 
