@@ -169,16 +169,6 @@
           "group": "inline"
         },
         {
-          "command": "bitswan.addGitOps",
-          "when": "view == bitswan-workspaces",
-          "group": "navigation"
-        },
-        {
-          "command": "bitswan.refreshAutomations",
-          "when": "view == bitswan-automations",
-          "group": "navigation"
-        },
-        {
           "command": "bitswan.activateAutomation",
           "when": "view == bitswan-automations && viewItem =~ /^automation,inactive,/",
           "group": "inline@3"
