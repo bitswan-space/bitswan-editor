@@ -275,6 +275,8 @@ async function _restartAutomationCommand(context: vscode.ExtensionContext, treeD
             if (restartResponse) {
                 progress.report({ increment: 100, message: "Restart successful" });
                 vscode.window.showInformationMessage(`Automation ${item.name} restarted successfully`);
+                _refreshAutomationsCommand(context, treeDataProvider);
+                treeDataProvider.refresh();
             } else {
                 vscode.window.showErrorMessage(`Failed to restart automation ${item.name}`);
             }
@@ -309,6 +311,8 @@ async function _startAutomationCommand(context: vscode.ExtensionContext, treeDat
             if (startResponse) {
                 progress.report({ increment: 100, message: "Start successful" });
                 vscode.window.showInformationMessage(`Automation ${item.name} started successfully`);
+                _refreshAutomationsCommand(context, treeDataProvider);
+                treeDataProvider.refresh();
             } else {
                 vscode.window.showErrorMessage(`Failed to start automation ${item.name}`);
             }
@@ -343,6 +347,8 @@ async function _stopAutomationCommand(context: vscode.ExtensionContext, treeData
             if (stopResponse) {
                 progress.report({ increment: 100, message: "Stop successful" });
                 vscode.window.showInformationMessage(`Automation ${item.name} stopped successfully`);
+                _refreshAutomationsCommand(context, treeDataProvider);
+                treeDataProvider.refresh();
             } else {
                 vscode.window.showErrorMessage(`Failed to stop automation ${item.name}`);
             }
@@ -439,6 +445,8 @@ async function _activateAutomationCommand(context: vscode.ExtensionContext, tree
 
         if (activateResponse) {
             vscode.window.showInformationMessage(`Automation ${item.name} activated successfully`);
+            _refreshAutomationsCommand(context, treeDataProvider);
+            treeDataProvider.refresh();
         } else {
             vscode.window.showErrorMessage(`Failed to activate automation ${item.name}`);
         }
@@ -466,6 +474,8 @@ async function _deactivateAutomationCommand(context: vscode.ExtensionContext, tr
 
         if (deactivateResponse) {
             vscode.window.showInformationMessage(`Automation ${item.name} deactivated successfully`);
+            _refreshAutomationsCommand(context, treeDataProvider);
+            treeDataProvider.refresh();
         } else {
             vscode.window.showErrorMessage(`Failed to deactivate automation ${item.name}`);
         }
