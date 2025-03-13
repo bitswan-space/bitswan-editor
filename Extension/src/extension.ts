@@ -15,6 +15,9 @@ export let outputChannel: vscode.OutputChannel;
 // Map to track output channels
 const outputChannelsMap = new Map<string, vscode.OutputChannel>();
 
+// Store the refresh interval ID
+let automationRefreshInterval: NodeJS.Timer | undefined;
+
 /**
  * This is Deploy Command which is registered as a Visual Studio code command
  */
@@ -192,17 +195,35 @@ async function _deleteGitOpsCommand(context: vscode.ExtensionContext, treeDataPr
     // Clear active instance if it was deleted
     const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (activeInstance && activeInstance.url === item.url) {
-        await context.globalState.update('activeGitOpsInstance', undefined
-        );
+        // Clear the refresh interval when deleting active GitOps instance
+        if (automationRefreshInterval) {
+            clearInterval(automationRefreshInterval);
+            automationRefreshInterval = undefined;
+            outputChannel.appendLine('Stopped automatic refresh of automations');
+        }
+        await context.globalState.update('activeGitOpsInstance', undefined);
     }
     treeDataProvider.refresh();
 }
 
 async function _activateGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: GitOpsItem) {
+    // Clear any existing refresh interval
+    if (automationRefreshInterval) {
+        clearInterval(automationRefreshInterval);
+        automationRefreshInterval = undefined;
+    }
+
     await context.globalState.update('activeGitOpsInstance', item);
     try {
         const pres = await getAutomations(path.join(item.url, "automations").toString(), item.secret);
         await context.globalState.update('automations', pres);
+        
+        // Set up automatic refresh every 10 seconds
+        automationRefreshInterval = setInterval(() => {
+            _refreshAutomationsCommand(context, treeDataProvider);
+        }, 10000);
+        
+        outputChannel.appendLine('Started automatic refresh of automations (every 10 seconds)');
     } catch (error: any) {
         vscode.window.showErrorMessage(`Failed to get automations from GitOps: ${error.message}`);
         await context.globalState.update('automations', []);
@@ -502,6 +523,9 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(startAutomationCommand);
     context.subscriptions.push(stopAutomationCommand);
     context.subscriptions.push(showAutomationLogsCommand);
+    context.subscriptions.push(activateAutomationCommand);
+    context.subscriptions.push(deactivateAutomationCommand);
+
     // Refresh the tree view when files change in the workspace
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
     watcher.onDidCreate(() => directoryTreeDataProvider.refresh());
@@ -517,6 +541,13 @@ export function activate(context: vscode.ExtensionContext) {
  * This method is called when the extension is deactivated
  */
 export function deactivate() {
+    // Clean up the refresh interval
+    if (automationRefreshInterval) {
+        clearInterval(automationRefreshInterval);
+        automationRefreshInterval = undefined;
+        outputChannel.appendLine('Stopped automatic refresh of automations');
+    }
+
     // Clean up output channels
     outputChannel.appendLine('Cleaning up output channels...');
     
