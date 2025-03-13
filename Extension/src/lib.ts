@@ -69,7 +69,11 @@ export const getAutomations = async (automationsUrl: string, secret: string) => 
     },
   });
 
-  return response.data;
+  if (response.status == 200) {
+    return response.data;
+  } else {
+    throw new Error(`Failed to get automations from GitOps`);
+  }
 }
 
 export const restartAutomation = async (automationUrl: string, secret: string) => {

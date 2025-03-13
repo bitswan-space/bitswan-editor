@@ -103,7 +103,7 @@ async function _deployCommand(context: vscode.ExtensionContext, folderItemOrPath
             }
             progress.report({ increment: 50, message: "Activating deployment..." });
 
-            const activationSuccess = await activateDeployment(path.join(details.deployUrl,"automations", "deploy").toString(), details.deploySecret);
+            const activationSuccess = await activateDeployment(path.join(details.deployUrl,"automations", normalizedFolderName, "deploy").toString(), details.deploySecret);
             if (activationSuccess) {
                 progress.report({ increment: 100, message: `Succesfully activated automation on GitOps` });
                 vscode.window.showInformationMessage(`Succesfully activated automation on GitOps`);
@@ -200,9 +200,12 @@ async function _deleteGitOpsCommand(context: vscode.ExtensionContext, treeDataPr
 
 async function _activateGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: GitOpsItem) {
     await context.globalState.update('activeGitOpsInstance', item);
-    const pres = await getAutomations(path.join(item.url, "automations").toString(), item.secret);
-    if (pres) {
+    try {
+        const pres = await getAutomations(path.join(item.url, "automations").toString(), item.secret);
         await context.globalState.update('automations', pres);
+    } catch (error: any) {
+        vscode.window.showErrorMessage(`Failed to get automations from GitOps: ${error.message}`);
+        await context.globalState.update('automations', []);
     }
 
     treeDataProvider.refresh();
@@ -215,9 +218,12 @@ async function _refreshAutomationsCommand(context: vscode.ExtensionContext, tree
         return;
     }
 
-    const automations = await getAutomations(path.join(activeInstance.url, "automations").toString(), activeInstance.secret);
-    if (automations) {
+    try {
+        const automations = await getAutomations(path.join(activeInstance.url, "automations").toString(), activeInstance.secret);
         await context.globalState.update('automations', automations);
+    } catch (error: any) {
+        vscode.window.showErrorMessage(`Failed to get automations from GitOps: ${error.message}`);
+        await context.globalState.update('automations', []);
     }
 
     treeDataProvider.refresh();
