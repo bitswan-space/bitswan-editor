@@ -532,6 +532,11 @@ export function activate(context: vscode.ExtensionContext) {
     watcher.onDidDelete(() => directoryTreeDataProvider.refresh());
     watcher.onDidChange(() => directoryTreeDataProvider.refresh());
 
+    const activeGitOpsInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
+    if (activeGitOpsInstance) {
+        _activateGitOpsCommand(context, directoryTreeDataProvider, activeGitOpsInstance);
+    }
+
     context.subscriptions.push(watcher);
 
     outputChannel.appendLine('Tree view provider registered');
