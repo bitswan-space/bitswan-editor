@@ -46,6 +46,10 @@ export function activate(context: vscode.ExtensionContext) {
     // Add console.log for debugging in Debug Console
     console.log('BitSwan Extension Activating - Debug Console Test');
 
+    if (process.env.BITSWAN_DEPLOY_URL || process.env.BITSWAN_DEPLOY_SECRET) {
+        vscode.commands.executeCommand('bitswan-workspaces.removeView');
+    }
+
     // Create view providers
     const deploymentsProvider = new DeploymentsViewProvider(context);
     const workspacesProvider = new WorkspacesViewProvider(context);
@@ -129,6 +133,15 @@ export function activate(context: vscode.ExtensionContext) {
 
     const activeGitOpsInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (activeGitOpsInstance) {
+        workspaceCommands.activateGitOpsCommand(context, workspacesProvider, activeGitOpsInstance, automationsProvider);
+        automationsProvider.refresh();
+    } else if (process.env.BITSWAN_DEPLOY_URL && process.env.BITSWAN_DEPLOY_SECRET) {
+        const activeGitOpsInstance = new GitOpsItem(
+            'Active GitOps Instance',
+            process.env.BITSWAN_DEPLOY_URL,
+            process.env.BITSWAN_DEPLOY_SECRET,
+            true
+        );
         workspaceCommands.activateGitOpsCommand(context, workspacesProvider, activeGitOpsInstance, automationsProvider);
         automationsProvider.refresh();
     }
