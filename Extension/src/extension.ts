@@ -6,11 +6,14 @@ import fs from 'fs';
 
 
 import { getDeployDetails } from './deploy_details';
-import {DirectoryTreeDataProvider, FolderItem, GitOpsItem} from './views/bitswan_pre';
-import { activateDeployment, deploy, zip2stream, zipDirectory } from './lib';
+import {AutomationItem, DirectoryTreeDataProvider, FolderItem, GitOpsItem} from './views/bitswan_pre';
+import { activateDeployment, deploy, getAutomationLogs, getAutomations, restartAutomation, startAutomation, stopAutomation, zip2stream, zipDirectory } from './lib';
 
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
+
+// Map to track output channels
+const outputChannelsMap = new Map<string, vscode.OutputChannel>();
 
 /**
  * This is Deploy Command which is registered as a Visual Studio code command
@@ -66,7 +69,7 @@ async function _deployCommand(context: vscode.ExtensionContext, folderItemOrPath
         try {
             const form = new FormData();
             const normalizedFolderName = folderName.replace(/\//g, '-');
-            const deployUrl = new URL(path.join(details.deployUrl, "create", normalizedFolderName));
+            const deployUrl = new URL(path.join(details.deployUrl, "automations", normalizedFolderName));
 
             outputChannel.appendLine(`Deploy URL: ${deployUrl.toString()}`);
 
@@ -93,19 +96,19 @@ async function _deployCommand(context: vscode.ExtensionContext, folderItemOrPath
             const success = await deploy(deployUrl.toString(), form, details.deploySecret);
 
             if (success) {
-                progress.report({ increment: 100, message: "Deployment successful" });
-                vscode.window.showInformationMessage(`Deployment successful`);
+                progress.report({ increment: 100, message: "Succesfully uploaded automation on GitOps" });
+                vscode.window.showInformationMessage(`Succesfully uploaded automation on GitOps`);
             } else {
-                throw new Error(`Deployment failed`);
+                throw new Error(`Failed to upload automation on GitOps`);
             }
             progress.report({ increment: 50, message: "Activating deployment..." });
 
-            const activationSuccess = await activateDeployment(path.join(details.deployUrl, "deploy").toString(), details.deploySecret);
+            const activationSuccess = await activateDeployment(path.join(details.deployUrl,"automations", "deploy").toString(), details.deploySecret);
             if (activationSuccess) {
-                progress.report({ increment: 100, message: `Container deployment successful` });
-                vscode.window.showInformationMessage(`Container deployment successful`);
+                progress.report({ increment: 100, message: `Succesfully activated automation on GitOps` });
+                vscode.window.showInformationMessage(`Succesfully activated automation on GitOps`);
             } else {
-                throw new Error(`Container deployment failed`);
+                throw new Error(`Failed to activate automation on GitOps`);
             }
 
         } catch (error: any) {
@@ -197,7 +200,195 @@ async function _deleteGitOpsCommand(context: vscode.ExtensionContext, treeDataPr
 
 async function _activateGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: GitOpsItem) {
     await context.globalState.update('activeGitOpsInstance', item);
+    const pres = await getAutomations(path.join(item.url, "automations").toString(), item.secret);
+    if (pres) {
+        await context.globalState.update('automations', pres);
+    }
+
     treeDataProvider.refresh();
+}
+
+async function _refreshAutomationsCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider) {
+    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
+    if (!activeInstance) {
+        vscode.window.showErrorMessage('No active GitOps instance');
+        return;
+    }
+
+    const automations = await getAutomations(path.join(activeInstance.url, "automations").toString(), activeInstance.secret);
+    if (automations) {
+        await context.globalState.update('automations', automations);
+    }
+
+    treeDataProvider.refresh();
+}
+
+async function _restartAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: AutomationItem) {
+    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
+    if (!activeInstance) {
+        vscode.window.showErrorMessage('No active GitOps instance');
+        return;
+    }
+
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: `Restarting automation: ${item.name}`,
+        cancellable: false
+    }, async (progress, _token) => {
+        try {
+            progress.report({ increment: 0, message: "Sending restart request..." });
+            
+            const restartUrl = path.join(activeInstance.url, "automations", item.name, "restart").toString();
+            outputChannel.appendLine(`Restarting automation: ${item.name} at URL: ${restartUrl}`);
+            
+            progress.report({ increment: 50, message: "Processing restart request..." });
+            
+            const restartResponse = await restartAutomation(restartUrl, activeInstance.secret);
+            
+            if (restartResponse) {
+                progress.report({ increment: 100, message: "Restart successful" });
+                vscode.window.showInformationMessage(`Automation ${item.name} restarted successfully`);
+            } else {
+                throw new Error("Failed to restart automation");
+            }
+        } catch (error: any) {
+            let errorMessage = error.message || 'Unknown error occurred';
+            outputChannel.appendLine(`Error restarting automation: ${errorMessage}`);
+            vscode.window.showErrorMessage(`Failed to restart automation: ${errorMessage}`);
+        }
+    });
+}
+
+async function _startAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: AutomationItem) {
+    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
+    if (!activeInstance) {
+        vscode.window.showErrorMessage('No active GitOps instance');
+        return;
+    }
+
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: `Starting automation: ${item.name}`,
+        cancellable: false
+    }, async (progress, _token) => {
+        try {
+            progress.report({ increment: 0, message: "Sending start request..." });
+
+            const startUrl = path.join(activeInstance.url, "automations", item.name, "start").toString();
+            outputChannel.appendLine(`Starting automation: ${item.name} at URL: ${startUrl}`);
+
+            const startResponse = await startAutomation(startUrl, activeInstance.secret);
+
+            if (startResponse) {
+                progress.report({ increment: 100, message: "Start successful" });
+                vscode.window.showInformationMessage(`Automation ${item.name} started successfully`);
+            } else {
+                throw new Error("Failed to start automation");
+            }
+        } catch (error: any) {
+            let errorMessage = error.message || 'Unknown error occurred';
+            outputChannel.appendLine(`Error starting automation: ${errorMessage}`);
+            vscode.window.showErrorMessage(`Failed to start automation: ${errorMessage}`);
+        }
+    })
+}
+
+async function _stopAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: AutomationItem) {
+    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
+    if (!activeInstance) {
+        vscode.window.showErrorMessage('No active GitOps instance');
+        return;
+    }
+
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: `Stopping automation: ${item.name}`,
+        cancellable: false
+    }, async (progress, _token) => {
+        try {
+            progress.report({ increment: 0, message: "Sending stop request..." });
+
+            const stopUrl = path.join(activeInstance.url, "automations", item.name, "stop").toString();
+            outputChannel.appendLine(`Stopping automation: ${item.name} at URL: ${stopUrl}`);
+            
+            const stopResponse = await stopAutomation(stopUrl, activeInstance.secret);
+
+            if (stopResponse) {
+                progress.report({ increment: 100, message: "Stop successful" });
+                vscode.window.showInformationMessage(`Automation ${item.name} stopped successfully`);
+            } else {
+                throw new Error("Failed to stop automation");
+            }
+        } catch (error: any) {
+            let errorMessage = error.message || 'Unknown error occurred';
+            outputChannel.appendLine(`Error stopping automation: ${errorMessage}`);
+            vscode.window.showErrorMessage(`Failed to stop automation: ${errorMessage}`);
+        }
+    })
+}
+
+async function _showAutomationLogsCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: AutomationItem) {
+    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
+    if (!activeInstance) {
+        vscode.window.showErrorMessage('No active GitOps instance');
+        return;
+    }
+
+    try {
+        outputChannel.appendLine(`Fetching logs for automation: ${item.name}`);
+        
+        const logsUri = path.join(activeInstance.url, "automations", item.name, "logs").toString();
+        const logsResponse = await getAutomationLogs(logsUri, activeInstance.secret);
+        
+        if (!logsResponse) {
+            throw new Error('Failed to fetch logs from server');
+        }
+        
+        // Create a dedicated output channel for this automation's logs
+        const logChannelName = `BitSwan: ${item.name} Logs`;
+        
+        // Check if the channel already exists in our map
+        let logChannel: vscode.OutputChannel;
+        if (outputChannelsMap.has(logChannelName)) {
+            outputChannel.appendLine(`Using existing output channel: ${logChannelName}`);
+            logChannel = outputChannelsMap.get(logChannelName)!;
+            logChannel.clear(); // Clear existing content
+        } else {
+            outputChannel.appendLine(`Creating new output channel: ${logChannelName}`);
+            logChannel = vscode.window.createOutputChannel(logChannelName);
+            outputChannelsMap.set(logChannelName, logChannel);
+        }
+        
+        // Display logs in the output channel
+        logChannel.appendLine('='.repeat(80));
+        logChannel.appendLine(`Logs for automation: ${item.name}`);
+        logChannel.appendLine(`Fetched at: ${new Date().toISOString()}`);
+        logChannel.appendLine('='.repeat(80));
+        logChannel.appendLine('');
+        
+        // Handle the specific JSON response format
+        if (typeof logsResponse === 'object' && logsResponse.status === 'success' && Array.isArray(logsResponse.logs)) {
+            // Join the logs array with newlines
+            logsResponse.logs.forEach((logLine: string) => {
+                logChannel.appendLine(logLine);
+            });
+        } else if (typeof logsResponse === 'string') {
+            // If the response is a string, display it directly
+            logChannel.appendLine(logsResponse);
+        } else {
+            // If the response is in an unexpected format, stringify it
+            logChannel.appendLine(JSON.stringify(logsResponse, null, 2));
+        }
+        
+        // Show the output channel
+        logChannel.show(true);
+        
+        outputChannel.appendLine(`Logs for ${item.name} displayed successfully`);
+    } catch (error: any) {
+        let errorMessage = error.message || 'Unknown error occurred';
+        outputChannel.appendLine(`Error fetching logs: ${errorMessage}`);
+        vscode.window.showErrorMessage(`Failed to fetch logs: ${errorMessage}`);
+    }
 }
 
 /**
@@ -233,16 +424,22 @@ export function activate(context: vscode.ExtensionContext) {
     let editGitOpsCommand = vscode.commands.registerCommand('bitswan.editGitOps', async (item: GitOpsItem) => _editGitOpsCommand(context, directoryTreeDataProvider, item));
     let deleteGitOpsCommand = vscode.commands.registerCommand('bitswan.deleteGitOps', async (item: GitOpsItem) => _deleteGitOpsCommand(context, directoryTreeDataProvider, item));
     let activateGitOpsCommand = vscode.commands.registerCommand('bitswan.activateGitOps', async (item: GitOpsItem) => _activateGitOpsCommand(context, directoryTreeDataProvider, item));
-    let deployFromIpynb = vscode.commands.registerCommand('bitswan.deployButton', async () => { vscode.window.showInformationMessage('Deploying from ipynb') });
+    let refreshAutomationsCommand = vscode.commands.registerCommand('bitswan.refreshAutomations', async () => { _refreshAutomationsCommand(context, directoryTreeDataProvider) });
+    let startAutomationCommand = vscode.commands.registerCommand('bitswan.startAutomation', async (item: AutomationItem) => _startAutomationCommand(context, directoryTreeDataProvider, item));
+    let stopAutomationCommand = vscode.commands.registerCommand('bitswan.stopAutomation', async (item: AutomationItem) => _stopAutomationCommand(context, directoryTreeDataProvider, item));
+    let restartAutomationCommand = vscode.commands.registerCommand('bitswan.restartAutomation', async (item: AutomationItem) => _restartAutomationCommand(context, directoryTreeDataProvider, item));
+    let showAutomationLogsCommand = vscode.commands.registerCommand('bitswan.showAutomationLogs', async (item: AutomationItem) => _showAutomationLogsCommand(context, directoryTreeDataProvider, item));
 
     context.subscriptions.push(deployCommand);
     context.subscriptions.push(addGitOpsCommand);
     context.subscriptions.push(editGitOpsCommand);
     context.subscriptions.push(deleteGitOpsCommand);
     context.subscriptions.push(activateGitOpsCommand);
-    context.subscriptions.push(deployFromIpynb);
-
-
+    context.subscriptions.push(refreshAutomationsCommand);
+    context.subscriptions.push(restartAutomationCommand);
+    context.subscriptions.push(startAutomationCommand);
+    context.subscriptions.push(stopAutomationCommand);
+    context.subscriptions.push(showAutomationLogsCommand);
     // Refresh the tree view when files change in the workspace
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
     watcher.onDidCreate(() => directoryTreeDataProvider.refresh());
@@ -252,4 +449,25 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(watcher);
 
     outputChannel.appendLine('Tree view provider registered');
+}
+
+/**
+ * This method is called when the extension is deactivated
+ */
+export function deactivate() {
+    // Clean up output channels
+    outputChannel.appendLine('Cleaning up output channels...');
+    
+    // Dispose all output channels in the map
+    outputChannelsMap.forEach((channel, name) => {
+        outputChannel.appendLine(`Disposing output channel: ${name}`);
+        channel.dispose();
+    });
+    
+    // Clear the map
+    outputChannelsMap.clear();
+    
+    // Dispose the main output channel
+    outputChannel.appendLine('BitSwan Extension Deactivated');
+    outputChannel.dispose();
 }
