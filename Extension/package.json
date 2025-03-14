@@ -2,7 +2,7 @@
   "name": "bitswan",
   "publisher": "LibertyAcesLtd",
   "displayName": "BitSwan",
-  "description": "BitSwan extension for Visual Studio Code",
+  "description": "BitSwan Visual Studio Code extension for managing BitSwan workspaces and automations.",
   "version": "0.0.5",
   "repository": {
     "type": "git",
@@ -11,9 +11,20 @@
   "engines": {
     "vscode": "^1.92.0"
   },
-  "categories": [
-    "Other"
+  "keywords": [
+    "jupyter",
+    "notebook",
+    "automations",
+    "python",
+    "data"
   ],
+  "categories": [
+    "Data Science",
+    "Machine Learning",
+    "Notebooks",
+    "Extension Packs"
+  ],
+  "icon": "icon.png",
   "main": "./out/extension.js",
   "activationEvents": [
     "onStartupFinished"
