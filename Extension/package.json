@@ -3,7 +3,7 @@
   "publisher": "LibertyAcesLtd",
   "displayName": "BitSwan",
   "description": "BitSwan extension for Visual Studio Code",
-  "version": "0.0.5",
+  "version": "0.0.4",
   "repository": {
     "type": "git",
     "url": "https://github.com/bitswan-space/bitswan-editor/tree/main/Extension"
