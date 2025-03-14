@@ -2,119 +2,9 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { AutomationItem } from  '../views/automations_view';
 import { GitOpsItem } from '../views/workspaces_view';
-import { activateAutomation, deactivateAutomation, deleteAutomation, getAutomationLogs, getAutomations, restartAutomation, startAutomation, stopAutomation } from '../lib';
+import { getAutomationLogs, getAutomations } from '../lib';
 import { outputChannel, outputChannelsMap } from '../extension';
 import { AutomationsViewProvider } from '../views/automations_view';
-
-export async function startAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
-    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
-    if (!activeInstance) {
-        vscode.window.showErrorMessage('No active GitOps instance');
-        return;
-    }
-
-    await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Notification,
-        title: `Starting automation: ${item.name}`,
-        cancellable: false
-    }, async (progress, _token) => {
-        try {
-            progress.report({ increment: 0, message: "Sending start request..." });
-
-            const startUrl = path.join(activeInstance.url, "automations", item.name, "start").toString();
-            outputChannel.appendLine(`Starting automation: ${item.name} at URL: ${startUrl}`);
-
-            const startResponse = await startAutomation(startUrl, activeInstance.secret);
-
-            if (startResponse) {
-                progress.report({ increment: 100, message: "Start successful" });
-                vscode.window.showInformationMessage(`Automation ${item.name} started successfully`);
-                refreshAutomationsCommand(context, treeDataProvider);
-                treeDataProvider.refresh();
-            } else {
-                vscode.window.showErrorMessage(`Failed to start automation ${item.name}`);
-            }
-        } catch (error: any) {
-            let errorMessage = error.message || 'Unknown error occurred';
-            outputChannel.appendLine(`Error starting automation: ${errorMessage}`);
-            vscode.window.showErrorMessage(`Failed to start automation: ${errorMessage}`);
-        }
-    });
-}
-
-export async function stopAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
-    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
-    if (!activeInstance) {
-        vscode.window.showErrorMessage('No active GitOps instance');
-        return;
-    }
-
-    await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Notification,
-        title: `Stopping automation: ${item.name}`,
-        cancellable: false
-    }, async (progress, _token) => {
-        try {
-            progress.report({ increment: 0, message: "Sending stop request..." });
-
-            const stopUrl = path.join(activeInstance.url, "automations", item.name, "stop").toString();
-            outputChannel.appendLine(`Stopping automation: ${item.name} at URL: ${stopUrl}`);
-            
-            const stopResponse = await stopAutomation(stopUrl, activeInstance.secret);
-
-            if (stopResponse) {
-                progress.report({ increment: 100, message: "Stop successful" });
-                vscode.window.showInformationMessage(`Automation ${item.name} stopped successfully`);
-                refreshAutomationsCommand(context, treeDataProvider);
-                treeDataProvider.refresh();
-            } else {
-                vscode.window.showErrorMessage(`Failed to stop automation ${item.name}`);
-            }
-        } catch (error: any) {
-            let errorMessage = error.message || 'Unknown error occurred';
-            outputChannel.appendLine(`Error stopping automation: ${errorMessage}`);
-            vscode.window.showErrorMessage(`Failed to stop automation: ${errorMessage}`);
-        }
-    });
-}
-
-export async function restartAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
-    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
-    if (!activeInstance) {
-        vscode.window.showErrorMessage('No active GitOps instance');
-        return;
-    }
-
-    await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Notification,
-        title: `Restarting automation: ${item.name}`,
-        cancellable: false
-    }, async (progress, _token) => {
-        try {
-            progress.report({ increment: 0, message: "Sending restart request..." });
-            
-            const restartUrl = path.join(activeInstance.url, "automations", item.name, "restart").toString();
-            outputChannel.appendLine(`Restarting automation: ${item.name} at URL: ${restartUrl}`);
-            
-            progress.report({ increment: 50, message: "Processing restart request..." });
-            
-            const restartResponse = await restartAutomation(restartUrl, activeInstance.secret);
-            
-            if (restartResponse) {
-                progress.report({ increment: 100, message: "Restart successful" });
-                vscode.window.showInformationMessage(`Automation ${item.name} restarted successfully`);
-                refreshAutomationsCommand(context, treeDataProvider);
-                treeDataProvider.refresh();
-            } else {
-                vscode.window.showErrorMessage(`Failed to restart automation ${item.name}`);
-            }
-        } catch (error: any) {
-            let errorMessage = error.message || 'Unknown error occurred';
-            outputChannel.appendLine(`Error restarting automation: ${errorMessage}`);
-            vscode.window.showErrorMessage(`Failed to restart automation: ${errorMessage}`);
-        }
-    });
-}
 
 export async function showAutomationLogsCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
     const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
@@ -180,107 +70,6 @@ export async function showAutomationLogsCommand(context: vscode.ExtensionContext
     }
 }
 
-export async function activateAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
-    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
-    if (!activeInstance) {
-        vscode.window.showErrorMessage('No active GitOps instance');
-        return;
-    }
-
-    await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Notification,
-        title: `Activating automation ${item.name}...`,
-        cancellable: false
-    }, async (progress) => {
-        progress.report({ increment: 50 });
-        
-        const activateUrl = path.join(activeInstance.url, "automations", item.name, "activate").toString();
-        const activateResponse = await activateAutomation(activateUrl, activeInstance.secret);
-
-        progress.report({ increment: 100 });
-
-        if (activateResponse) {
-            vscode.window.showInformationMessage(`Automation ${item.name} activated successfully`);
-            refreshAutomationsCommand(context, treeDataProvider);
-            treeDataProvider.refresh();
-        } else {
-            vscode.window.showErrorMessage(`Failed to activate automation ${item.name}`);
-        }
-    });
-}
-
-export async function deactivateAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
-    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
-    if (!activeInstance) {
-        vscode.window.showErrorMessage('No active GitOps instance');
-        return;
-    }
-
-    await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Notification,
-        title: `Deactivating automation ${item.name}...`,
-        cancellable: false
-    }, async (progress) => {
-        progress.report({ increment: 50 });
-        
-        const deactivateUrl = path.join(activeInstance.url, "automations", item.name, "deactivate").toString();
-        const deactivateResponse = await deactivateAutomation(deactivateUrl, activeInstance.secret);
-
-        progress.report({ increment: 100 });
-
-        if (deactivateResponse) {
-            vscode.window.showInformationMessage(`Automation ${item.name} deactivated successfully`);
-            refreshAutomationsCommand(context, treeDataProvider);
-            treeDataProvider.refresh();
-        } else {
-            vscode.window.showErrorMessage(`Failed to deactivate automation ${item.name}`);
-        }
-    });
-}
-
-export async function deleteAutomationCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
-    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
-    if (!activeInstance) {
-        vscode.window.showErrorMessage('No active GitOps instance');
-        return;
-    }
-
-    // Prompt user to type the automation name to confirm deletion
-    const confirmName = await vscode.window.showInputBox({
-        prompt: `Type "${item.name}" to confirm deletion`,
-        placeHolder: item.name,
-        validateInput: (value) => {
-            return value === item.name ? null : 'Name does not match';
-        }
-    });
-
-    // If user cancelled or typed wrong name, abort
-    if (!confirmName || confirmName !== item.name) {
-        return;
-    }
-
-    await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Notification,
-        title: `Deleting automation ${item.name}...`,
-        cancellable: false
-    }, async (progress) => {
-        progress.report({ increment: 50 });
-
-        const deleteUrl = path.join(activeInstance.url, "automations", item.name).toString();
-        const deleteResponse = await deleteAutomation(deleteUrl, activeInstance.secret);
-
-        progress.report({ increment: 100 });
-
-        if (deleteResponse) {
-            vscode.window.showInformationMessage(`Automation ${item.name} deleted successfully`);
-            refreshAutomationsCommand(context, treeDataProvider);
-            treeDataProvider.refresh();
-        } else {
-            vscode.window.showErrorMessage(`Failed to delete automation ${item.name}`);
-        }
-    });
-}
-
 export async function refreshAutomationsCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider) {
     const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (!activeInstance) {
@@ -298,3 +87,68 @@ export async function refreshAutomationsCommand(context: vscode.ExtensionContext
 
     treeDataProvider.refresh();
 } 
+
+export function makeAutomationCommand(
+    commandConfig: {
+        title: string;
+        initialProgress: string;
+        urlPath: string;
+        apiFunction: (url: string, secret: string) => Promise<boolean>;
+        successProgress: string;
+        successMessage: string;
+        errorMessage: string;
+        errorLogPrefix: string;
+        prompt?: boolean;
+    }
+) {
+    return async function (context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
+        const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
+        if (!activeInstance) {
+            vscode.window.showErrorMessage('No active GitOps instance');
+            return;
+        }
+
+        if (commandConfig.prompt) {
+            const confirmName = await vscode.window.showInputBox({
+                prompt: `Type "${item.name}" to confirm the action`,
+                placeHolder: item.name,
+                validateInput: (value) => {
+                    return value === item.name ? null : 'Name does not match';
+                }
+            });
+
+            if (!confirmName || confirmName !== item.name) {
+                return;
+            }
+        }
+        
+
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: commandConfig.title,
+            cancellable: false
+        }, async (progress) => {
+            try {
+                progress.report({ increment: 25, message: commandConfig.initialProgress });
+
+                const url = path.join(activeInstance.url, "automations", item.name, commandConfig.urlPath).toString();
+                outputChannel.appendLine(`${commandConfig.title}: ${item.name} at URL: ${url}`);
+                const response = await commandConfig.apiFunction(url, activeInstance.secret);
+                
+                if (response) {
+                    progress.report({ increment: 100, message: commandConfig.successProgress });
+                    vscode.window.showInformationMessage(commandConfig.successMessage);
+                    refreshAutomationsCommand(context, treeDataProvider);
+                    treeDataProvider.refresh();
+                } else {
+                    vscode.window.showErrorMessage(`${commandConfig.errorMessage} ${item.name}`);
+                }
+
+            } catch (error: any) {
+                let errorMessage = error.message || 'Unknown error occurred';
+                outputChannel.appendLine(`${commandConfig.errorLogPrefix}: ${errorMessage}`);
+                vscode.window.showErrorMessage(`${commandConfig.errorMessage}: ${errorMessage}`);
+            }
+        });
+    }
+}

@@ -13,6 +13,7 @@ import * as deploymentCommands from './commands/deployments';
 import { DeploymentsViewProvider } from './views/deployments_view';
 import { WorkspacesViewProvider } from './views/workspaces_view';
 import { AutomationsViewProvider } from './views/automations_view';
+import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation } from './lib';
 
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
@@ -90,26 +91,81 @@ export function activate(context: vscode.ExtensionContext) {
         async () => automationCommands.refreshAutomationsCommand(context, automationsProvider));
     
     let startAutomationCommand = vscode.commands.registerCommand('bitswan.startAutomation', 
-        async (item: AutomationItem) => automationCommands.startAutomationCommand(context, automationsProvider, item));
+        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+            title: `Starting Automation ${item.name}`,
+            initialProgress: 'Sending request to GitOps...',
+            urlPath: 'start',
+            apiFunction: startAutomation,
+            successProgress: `Automation ${item.name} started successfully`,
+            successMessage: `Automation ${item.name} started successfully`,
+            errorMessage: `Failed to start automation ${item.name}:`,
+            errorLogPrefix: 'Automation Start Error:'
+        })(context, automationsProvider, item));
     
     let stopAutomationCommand = vscode.commands.registerCommand('bitswan.stopAutomation', 
-        async (item: AutomationItem) => automationCommands.stopAutomationCommand(context, automationsProvider, item));
+        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+            title: `Stopping Automation ${item.name}`,
+            initialProgress: 'Sending request to GitOps...',
+            urlPath: 'stop',
+            apiFunction: stopAutomation,
+            successProgress: `Automation ${item.name} stopped successfully`,
+            successMessage: `Automation ${item.name} stopped successfully`,
+            errorMessage: `Failed to stop automation ${item.name}:`,
+            errorLogPrefix: 'Automation Stop Error:'
+        })(context, automationsProvider, item));
     
-    let restartAutomationCommand = vscode.commands.registerCommand('bitswan.restartAutomation', 
-        async (item: AutomationItem) => automationCommands.restartAutomationCommand(context, automationsProvider, item));
+    let restartAutomationCommand = vscode.commands.registerCommand('bitswan.restartAutomation',     
+        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+            title: `Restarting Automation ${item.name}`,
+            initialProgress: 'Sending request to GitOps...',
+            urlPath: 'restart',
+            apiFunction: restartAutomation,
+            successProgress: `Automation ${item.name} restarted successfully`,
+            successMessage: `Automation ${item.name} restarted successfully`,
+            errorMessage: `Failed to restart automation ${item.name}:`,
+            errorLogPrefix: 'Automation Restart Error:'
+        })(context, automationsProvider, item));
     
     let showAutomationLogsCommand = vscode.commands.registerCommand('bitswan.showAutomationLogs', 
         async (item: AutomationItem) => automationCommands.showAutomationLogsCommand(context, automationsProvider, item));
-    
+
     let activateAutomationCommand = vscode.commands.registerCommand('bitswan.activateAutomation', 
-        async (item: AutomationItem) => automationCommands.activateAutomationCommand(context, automationsProvider, item));
+        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+            title: `Activating Automation ${item.name}`,
+            initialProgress: 'Sending request to GitOps...',
+            urlPath: 'activate',
+            apiFunction: activateAutomation,
+            successProgress: `Automation ${item.name} activated successfully`,
+            successMessage: `Automation ${item.name} activated successfully`,
+            errorMessage: `Failed to activate automation ${item.name}:`,
+            errorLogPrefix: 'Automation Activate Error:'
+        })(context, automationsProvider, item));
     
     let deactivateAutomationCommand = vscode.commands.registerCommand('bitswan.deactivateAutomation', 
-        async (item: AutomationItem) => automationCommands.deactivateAutomationCommand(context, automationsProvider, item));
+        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+            title: `Deactivating Automation ${item.name}`,
+            initialProgress: 'Sending request to GitOps...',
+            urlPath: 'deactivate',
+            apiFunction: deactivateAutomation,
+            successProgress: `Automation ${item.name} deactivated successfully`,
+            successMessage: `Automation ${item.name} deactivated successfully`,
+            errorMessage: `Failed to deactivate automation ${item.name}:`,
+            errorLogPrefix: 'Automation Deactivate Error:'
+        })(context, automationsProvider, item));
     
     let deleteAutomationCommand = vscode.commands.registerCommand('bitswan.deleteAutomation', 
-        async (item: AutomationItem) => automationCommands.deleteAutomationCommand(context, automationsProvider, item));
-
+        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+            title: `Deleting Automation ${item.name}`,
+            initialProgress: 'Sending request to GitOps...',
+            urlPath: '',
+            apiFunction: deleteAutomation,
+            successProgress: `Automation ${item.name} deleted successfully`,
+            successMessage: `Automation ${item.name} deleted successfully`,
+            errorMessage: `Failed to delete automation ${item.name}:`,
+            errorLogPrefix: 'Automation Delete Error:',
+            prompt: true
+        })(context, automationsProvider, item));
+    
     // Register all commands
     context.subscriptions.push(deployCommand);
     context.subscriptions.push(addGitOpsCommand);
