@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { GitOpsItem } from './views/bitswan_pre';
+import { GitOpsItem } from './views/workspaces_view';
 
 /**
  * This is a return interface which is given as a result of getDeployDetails function below.

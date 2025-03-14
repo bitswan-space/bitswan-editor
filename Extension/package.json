@@ -14,25 +14,71 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [
-    "onView:bitswan"
-  ],
   "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
+    "colors": [
+      {
+        "id": "bitswan.statusIcon.green",
+        "description": "Color for the green status icon.",
+        "defaults": {
+          "light": "#00FF00",
+          "dark": "#00FF00",
+          "highContrast": "#00FF00"
+        }
+      },
+      {
+        "id": "bitswan.statusIcon.orange",
+        "description": "Color for the orange status icon.",
+        "defaults": {
+          "light": "#FFA500",
+          "dark": "#FFA500",
+          "highContrast": "#FFA500"
+        }
+      },
+      {
+        "id": "bitswan.statusIcon.red",
+        "description": "Color for the red status icon.",
+        "defaults": {
+          "light": "#FF0000",
+          "dark": "#FF0000",
+          "highContrast": "#FF0000"
+        }
+      },
+      {
+        "id": "bitswan.statusIcon.gray",
+        "description": "Color for the gray status icon.",
+        "defaults": {
+          "light": "#808080",
+          "dark": "#808080",
+          "highContrast": "#808080"
+        }
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "bitswan-pre-explorer",
+          "id": "bitswan-explorer",
           "title": "BitSwan",
           "icon": "resources/bitswan-logo.png"
         }
       ]
     },
     "views": {
-      "bitswan-pre-explorer": [
+      "bitswan-explorer": [
         {
-          "id": "bitswan",
-          "name": "Pipelines"
+          "id": "bitswan-deployments",
+          "name": "Deployments"
+        },
+        {
+          "id": "bitswan-workspaces",
+          "name": "Workspaces"
+        },
+        {
+          "id": "bitswan-automations",
+          "name": "Automations"
         }
       ]
     },
@@ -61,34 +107,116 @@
         "command": "bitswan.activateGitOps",
         "title": "Activate GitOps",
         "icon": "$(check)"
+      },
+      {
+        "command": "bitswan.refreshAutomations",
+        "title": "Refresh Automations",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "bitswan.activateAutomation",
+        "title": "Activate Automation",
+        "icon": "$(notebook-state-success)"
+      },
+      {
+        "command": "bitswan.deactivateAutomation",
+        "title": "Deactivate Automation",
+        "icon": "$(circle-slash)"
+      },
+      {
+        "command": "bitswan.deleteAutomation",
+        "title": "Delete Automation",
+        "icon": "$(terminal-kill)"
+      },
+      {
+        "command": "bitswan.stopAutomation",
+        "title": "Stop Automation",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "bitswan.startAutomation",
+        "title": "Start Automation",
+        "icon": "$(debug-continue)"
+      },
+      {
+        "command": "bitswan.restartAutomation",
+        "title": "Restart Automation",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "bitswan.showAutomationLogs",
+        "title": "Show Logs",
+        "icon": "$(output)"
       }
     ],
     "menus": {
       "view/item/context": [
         {
           "command": "bitswan.deployPipeline",
-          "when": "view == bitswan && viewItem == folder",
+          "when": "view == bitswan-deployments && viewItem == folder",
           "group": "inline"
         },
         {
           "command": "bitswan.editGitOps",
-          "when": "view == bitswan && viewItem == gitops",
+          "when": "view == bitswan-workspaces && viewItem == gitops",
           "group": "inline"
         },
         {
           "command": "bitswan.deleteGitOps",
-          "when": "view == bitswan && viewItem == gitops",
+          "when": "view == bitswan-workspaces && viewItem == gitops",
           "group": "inline"
         },
         {
           "command": "bitswan.activateGitOps",
-          "when": "view == bitswan && viewItem == gitops",
+          "when": "view == bitswan-workspaces && viewItem == gitops",
           "group": "inline"
         },
         {
+          "command": "bitswan.activateAutomation",
+          "when": "view == bitswan-automations && viewItem =~ /^automation,inactive,/",
+          "group": "inline@3"
+        },
+        {
+          "command": "bitswan.deactivateAutomation",
+          "when": "view == bitswan-automations && viewItem =~ /^automation,active,/",
+          "group": "inline@3"
+        },
+        {
+          "command": "bitswan.stopAutomation",
+          "when": "view == bitswan-automations && viewItem =~ /^automation,active,running$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "bitswan.startAutomation",
+          "when": "view == bitswan-automations && viewItem =~ /^automation,active,(paused|exited)$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "bitswan.deleteAutomation",
+          "when": "view == bitswan-automations && viewItem =~ /^automation,/",
+          "group": "inline@4"
+        },
+        {
+          "command": "bitswan.restartAutomation",
+          "when": "view == bitswan-automations && viewItem =~ /^automation,active/",
+          "group": "inline@2"
+        },
+        {
+          "command": "bitswan.showAutomationLogs",
+          "when": "view == bitswan-automations && viewItem =~ /^automation,active/",
+          "group": "inline@5"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "bitswan.refreshAutomations",
+          "when": "view == bitswan-automations",
+          "group": "navigation@1"
+        },
+        {
           "command": "bitswan.addGitOps",
-          "when": "view == bitswan && viewItem == gitopsSection",
-          "group": "inline"
+          "when": "view == bitswan-workspaces",
+          "group": "navigation@1"
         }
       ],
       "notebook/toolbar": [

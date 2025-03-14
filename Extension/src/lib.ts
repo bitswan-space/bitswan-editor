@@ -60,3 +60,100 @@ export const activateDeployment = async (deployUrl: string, secret: string) => {
 
   return response.status == 200;
 }
+
+export const getAutomations = async (automationsUrl: string, secret: string) => {
+  const response = await axios.get(
+    automationsUrl, {
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  if (response.status == 200) {
+    return response.data;
+  } else {
+    throw new Error(`Failed to get automations from GitOps`);
+  }
+}
+
+export const restartAutomation = async (automationUrl: string, secret: string) => {
+  const response = await axios.post(
+    automationUrl,
+    {},
+    {
+      headers: {
+        'Authorization': `Bearer ${secret}`,
+      },
+    }
+  );
+
+  return response.status == 200;
+}
+
+export const startAutomation = async (automationUrl: string, secret: string) => {
+  const response = await axios.post(
+    automationUrl,
+    {},
+    {
+      headers: {
+        'Authorization': `Bearer ${secret}`,
+      },
+    }
+  );
+
+  return response.status == 200;
+}
+
+export const stopAutomation = async (automationUrl: string, secret: string) => {
+  const response = await axios.post(
+    automationUrl,
+    {},
+    {
+      headers: {
+        'Authorization': `Bearer ${secret}`,
+      },
+    }
+  );
+
+  return response.status == 200;
+}
+
+export const getAutomationLogs = async (automationUrl: string, secret: string) => {
+  const response = await axios.get(automationUrl, {
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  return response.data;
+}
+
+export const activateAutomation = async (automationUrl: string, secret: string) => {
+  const response = await axios.post(automationUrl, {}, {
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  return response.status == 200;
+}
+
+export const deactivateAutomation = async (automationUrl: string, secret: string) => {
+  const response = await axios.post(automationUrl, {}, {
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  return response.status == 200;
+}
+
+export const deleteAutomation = async (automationUrl: string, secret: string) => {
+  const response = await axios.delete(automationUrl, {
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  return response.status == 200;
+}

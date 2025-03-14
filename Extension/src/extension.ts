@@ -1,210 +1,40 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
-import FormData from "form-data"
-import JSZip from 'jszip';
-import fs from 'fs';
 
+import { AutomationItem } from './views/automations_view';
+import { FolderItem } from './views/deployments_view';
+import { GitOpsItem } from './views/workspaces_view';
 
-import { getDeployDetails } from './deploy_details';
-import {DirectoryTreeDataProvider, FolderItem, GitOpsItem} from './views/bitswan_pre';
-import { activateDeployment, deploy, zip2stream, zipDirectory } from './lib';
+// Import commands from the new command modules
+import * as automationCommands from './commands/automations';
+import * as workspaceCommands from './commands/workspaces';
+import * as deploymentCommands from './commands/deployments';
+
+// Import view providers
+import { DeploymentsViewProvider } from './views/deployments_view';
+import { WorkspacesViewProvider } from './views/workspaces_view';
+import { AutomationsViewProvider } from './views/automations_view';
+import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation } from './lib';
 
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
 
-/**
- * This is Deploy Command which is registered as a Visual Studio code command
- */
-async function _deployCommand(context: vscode.ExtensionContext, folderItemOrPath: FolderItem | string | undefined) {
-    outputChannel.appendLine(`Deploying pipeline: ${folderItemOrPath}`);
-    let pipelineDeploymentPath: string | undefined;
+// Map to track output channels
+export const outputChannelsMap = new Map<string, vscode.OutputChannel>();
 
-    // create folder path out of provided argument. Its either folder, folder's path or it is not defined
-    if (folderItemOrPath instanceof FolderItem) {
-        const pipelinePathExists = path.join(folderItemOrPath.resourceUri.fsPath, 'pipelines.conf');
-        if (fs.existsSync(pipelinePathExists)) {
-            pipelineDeploymentPath = path.join(folderItemOrPath.resourceUri.fsPath, 'pipelines.conf');
-        }
-    } else if (typeof folderItemOrPath === 'string') {
-        pipelineDeploymentPath = folderItemOrPath;
-    } else {
-        let editor = vscode.window.activeTextEditor;
-        if (editor && (path.extname(editor.document.fileName) === '.conf' || path.extname(editor.document.fileName) === '.ipynb')) {
-            pipelineDeploymentPath = editor.document.uri.fsPath;
-        }
+// Store the refresh interval ID
+export let automationRefreshInterval: NodeJS.Timer | undefined;
+
+export function setAutomationRefreshInterval(interval: NodeJS.Timer | undefined) {
+    if (automationRefreshInterval) {
+        clearInterval(automationRefreshInterval);
     }
-
-    outputChannel.appendLine(`Pipeline deployment path: ${pipelineDeploymentPath}`);
-
-    if (!pipelineDeploymentPath) {
-        vscode.window.showErrorMessage('Unable to determine pipeline config path. Please select a pipeline config from the tree view or open one in the editor.');
-        return;
-    }
-
-    // get deployURL and deploySecret
-    const details = await getDeployDetails(context);
-    if (!details) {
-        return;
-    }
-
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders) {
-        vscode.window.showErrorMessage('No workspace folder found');
-        return;
-    }
-
-    const folderName = path.basename(path.dirname(pipelineDeploymentPath));
-
-    outputChannel.appendLine(`Folder name: ${folderName}`);
-
-    // deployment of pipeline
-    await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Notification,
-        title: "Deploying pipeline",
-        cancellable: false
-    }, async (progress, _token) => {
-        try {
-            const form = new FormData();
-            const normalizedFolderName = folderName.replace(/\//g, '-');
-            const deployUrl = new URL(path.join(details.deployUrl, "create", normalizedFolderName));
-
-            outputChannel.appendLine(`Deploy URL: ${deployUrl.toString()}`);
-
-            progress.report({ increment: 0, message: "Packing for deployment..." });
-
-            // Zip the pipeline config folder and add it to the form
-            let zip = await zipDirectory(path.dirname(pipelineDeploymentPath as string), '', JSZip(), outputChannel);
-            const workspacePath = path.join(workspaceFolders[0].uri.fsPath, 'workspace')
-            const bitswanLibPath = path.join(workspacePath, 'bitswan_lib')
-            if (fs.existsSync(bitswanLibPath)) {
-                zip = await zipDirectory(bitswanLibPath, '', zip, outputChannel);
-                outputChannel.appendLine(`bitswan_lib found at ${bitswanLibPath}`);
-            } else {
-                outputChannel.appendLine(`Error. bitswan_lib not found at ${bitswanLibPath}`);
-            }
-            const stream = await zip2stream(zip);
-            form.append('file', stream, {
-                filename: 'deployment.zip',
-                contentType: 'application/zip',
-            });
-
-            progress.report({ increment: 50, message: "Uploading to server " + deployUrl.toString() });
-
-            const success = await deploy(deployUrl.toString(), form, details.deploySecret);
-
-            if (success) {
-                progress.report({ increment: 100, message: "Deployment successful" });
-                vscode.window.showInformationMessage(`Deployment successful`);
-            } else {
-                throw new Error(`Deployment failed`);
-            }
-            progress.report({ increment: 50, message: "Activating deployment..." });
-
-            const activationSuccess = await activateDeployment(path.join(details.deployUrl, "deploy").toString(), details.deploySecret);
-            if (activationSuccess) {
-                progress.report({ increment: 100, message: `Container deployment successful` });
-                vscode.window.showInformationMessage(`Container deployment successful`);
-            } else {
-                throw new Error(`Container deployment failed`);
-            }
-
-        } catch (error: any) {
-            let errorMessage: string;
-            if (error.response) {
-                outputChannel.appendLine(`Error response data: ${JSON.stringify(error.response.data)}`);
-                errorMessage = `Server responded with status ${error.response.status}`;
-            } else if (error.request) {
-                errorMessage = 'No response received from server';
-            } else {
-                errorMessage = error.message;
-            }
-            vscode.window.showErrorMessage(`Deployment error: ${errorMessage}`);
-            return;
-        }
-    });
-}
-
-async function _addGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider) {
-    const name = await vscode.window.showInputBox({
-        prompt: 'Enter GitOps instance name',
-        placeHolder: 'e.g., Production GitOps',
-        ignoreFocusOut: true
-    });
-    if (!name) return;
-
-    const url = await vscode.window.showInputBox({
-        prompt: 'Enter GitOps URL',
-        placeHolder: 'https://gitops.example.com',
-        ignoreFocusOut: true
-    });
-    if (!url) return;
-
-    const secret = await vscode.window.showInputBox({
-        prompt: 'Enter GitOps secret token',
-        password: true,
-        ignoreFocusOut: true
-    });
-    if (!secret) return;
-
-    const instances = context.globalState.get<any[]>('gitopsInstances', []);
-    instances.push({ name, url, secret });
-    await context.globalState.update('gitopsInstances', instances);
-    treeDataProvider.refresh();
-}
-
-async function _editGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: GitOpsItem) {
-    const instances = context.globalState.get<any[]>('gitopsInstances', []);
-    const index = instances.findIndex(i => i.name === item.label);
-    if (index === -1) return;
-
-    const url = await vscode.window.showInputBox({
-        prompt: 'Enter new GitOps URL',
-        value: item.url,
-        ignoreFocusOut: true
-    });
-    if (!url) return;
-
-    const secret = await vscode.window.showInputBox({
-        prompt: 'Enter new GitOps secret token',
-        password: true,
-        ignoreFocusOut: true
-    });
-    if (!secret) return;
-
-    instances[index] = { ...instances[index], url, secret };
-    await context.globalState.update('gitopsInstances', instances);
-    // Clear active instance if it was edited
-    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
-    if (activeInstance && activeInstance.url === item.url) {
-        await context.globalState.update('activeGitOpsInstance', instances[index]);
-    }
-    treeDataProvider.refresh();
-}
-
-async function _deleteGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: GitOpsItem) {
-    const instances = context.globalState.get<any[]>('gitopsInstances', []);
-    await context.globalState.update('gitopsInstances', 
-        instances.filter(i => i.name !== item.label)
-    );
-    // Clear active instance if it was deleted
-    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
-    if (activeInstance && activeInstance.url === item.url) {
-        await context.globalState.update('activeGitOpsInstance', undefined
-        );
-    }
-    treeDataProvider.refresh();
-}
-
-async function _activateGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: DirectoryTreeDataProvider, item: GitOpsItem) {
-    await context.globalState.update('activeGitOpsInstance', item);
-    treeDataProvider.refresh();
+    automationRefreshInterval = interval;
 }
 
 /**
  * This method is called by VSC when extension is activated.
  */
 export function activate(context: vscode.ExtensionContext) {
-
     // Create and show output channel immediately
     outputChannel = vscode.window.createOutputChannel('BitSwan');
     outputChannel.show(true); // true forces the output channel to take focus
@@ -217,39 +47,190 @@ export function activate(context: vscode.ExtensionContext) {
     // Add console.log for debugging in Debug Console
     console.log('BitSwan Extension Activating - Debug Console Test');
 
-    // Create sidebar tree for browsing deployments
-    const directoryTreeDataProvider = new DirectoryTreeDataProvider(context);
-    vscode.window.createTreeView('bitswan', {
-        treeDataProvider: directoryTreeDataProvider,
-        showCollapseAll: true
+    if (process.env.BITSWAN_DEPLOY_URL || process.env.BITSWAN_DEPLOY_SECRET) {
+        vscode.commands.executeCommand('bitswan-workspaces.removeView');
+    }
+
+    // Create view providers
+    const deploymentsProvider = new DeploymentsViewProvider(context);
+    const workspacesProvider = new WorkspacesViewProvider(context);
+    const automationsProvider = new AutomationsViewProvider(context);
+
+    // Register views
+    vscode.window.createTreeView('bitswan-deployments', {
+        treeDataProvider: deploymentsProvider,
     });
 
+    vscode.window.createTreeView('bitswan-workspaces', {
+        treeDataProvider: workspacesProvider,
+    });
 
+    vscode.window.createTreeView('bitswan-automations', {
+        treeDataProvider: automationsProvider,
+    });
 
-    vscode.window.registerTreeDataProvider('bitswan', directoryTreeDataProvider);
-    // bind deployment to a command
-    let deployCommand = vscode.commands.registerCommand('bitswan.deployPipeline', async (item: FolderItem) => _deployCommand(context, item));
-    let addGitOpsCommand = vscode.commands.registerCommand('bitswan.addGitOps', async () => _addGitOpsCommand(context, directoryTreeDataProvider));
-    let editGitOpsCommand = vscode.commands.registerCommand('bitswan.editGitOps', async (item: GitOpsItem) => _editGitOpsCommand(context, directoryTreeDataProvider, item));
-    let deleteGitOpsCommand = vscode.commands.registerCommand('bitswan.deleteGitOps', async (item: GitOpsItem) => _deleteGitOpsCommand(context, directoryTreeDataProvider, item));
-    let activateGitOpsCommand = vscode.commands.registerCommand('bitswan.activateGitOps', async (item: GitOpsItem) => _activateGitOpsCommand(context, directoryTreeDataProvider, item));
-    let deployFromIpynb = vscode.commands.registerCommand('bitswan.deployButton', async () => { vscode.window.showInformationMessage('Deploying from ipynb') });
+    // Register commands using the new command modules
+    let deployCommand = vscode.commands.registerCommand('bitswan.deployPipeline', 
+        async (item: FolderItem) => deploymentCommands.deployCommand(context, deploymentsProvider, item));
+    
+    let addGitOpsCommand = vscode.commands.registerCommand('bitswan.addGitOps', 
+        async () => workspaceCommands.addGitOpsCommand(context, workspacesProvider));
+    
+    let editGitOpsCommand = vscode.commands.registerCommand('bitswan.editGitOps', 
+        async (item: GitOpsItem) => workspaceCommands.editGitOpsCommand(context, workspacesProvider, item));
+    
+    let deleteGitOpsCommand = vscode.commands.registerCommand('bitswan.deleteGitOps', 
+        async (item: GitOpsItem) => workspaceCommands.deleteGitOpsCommand(context, workspacesProvider, item));
+    
+    let activateGitOpsCommand = vscode.commands.registerCommand('bitswan.activateGitOps', 
+        async (item: GitOpsItem) => {
+            await workspaceCommands.activateGitOpsCommand(context, workspacesProvider, item, automationsProvider); // Refresh automations when GitOps instance is activated
+        });
+    
+    let refreshAutomationsCommand = vscode.commands.registerCommand('bitswan.refreshAutomations', 
+        async () => automationCommands.refreshAutomationsCommand(context, automationsProvider));
+    
+    let startAutomationCommand = vscode.commands.registerCommand('bitswan.startAutomation', 
+        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+            title: `Starting Automation ${item.name}`,
+            initialProgress: 'Sending request to GitOps...',
+            urlPath: 'start',
+            apiFunction: startAutomation,
+            successProgress: `Automation ${item.name} started successfully`,
+            successMessage: `Automation ${item.name} started successfully`,
+            errorMessage: `Failed to start automation ${item.name}:`,
+            errorLogPrefix: 'Automation Start Error:'
+        })(context, automationsProvider, item));
+    
+    let stopAutomationCommand = vscode.commands.registerCommand('bitswan.stopAutomation', 
+        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+            title: `Stopping Automation ${item.name}`,
+            initialProgress: 'Sending request to GitOps...',
+            urlPath: 'stop',
+            apiFunction: stopAutomation,
+            successProgress: `Automation ${item.name} stopped successfully`,
+            successMessage: `Automation ${item.name} stopped successfully`,
+            errorMessage: `Failed to stop automation ${item.name}:`,
+            errorLogPrefix: 'Automation Stop Error:'
+        })(context, automationsProvider, item));
+    
+    let restartAutomationCommand = vscode.commands.registerCommand('bitswan.restartAutomation',     
+        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+            title: `Restarting Automation ${item.name}`,
+            initialProgress: 'Sending request to GitOps...',
+            urlPath: 'restart',
+            apiFunction: restartAutomation,
+            successProgress: `Automation ${item.name} restarted successfully`,
+            successMessage: `Automation ${item.name} restarted successfully`,
+            errorMessage: `Failed to restart automation ${item.name}:`,
+            errorLogPrefix: 'Automation Restart Error:'
+        })(context, automationsProvider, item));
+    
+    let showAutomationLogsCommand = vscode.commands.registerCommand('bitswan.showAutomationLogs', 
+        async (item: AutomationItem) => automationCommands.showAutomationLogsCommand(context, automationsProvider, item));
 
+    let activateAutomationCommand = vscode.commands.registerCommand('bitswan.activateAutomation', 
+        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+            title: `Activating Automation ${item.name}`,
+            initialProgress: 'Sending request to GitOps...',
+            urlPath: 'activate',
+            apiFunction: activateAutomation,
+            successProgress: `Automation ${item.name} activated successfully`,
+            successMessage: `Automation ${item.name} activated successfully`,
+            errorMessage: `Failed to activate automation ${item.name}:`,
+            errorLogPrefix: 'Automation Activate Error:'
+        })(context, automationsProvider, item));
+    
+    let deactivateAutomationCommand = vscode.commands.registerCommand('bitswan.deactivateAutomation', 
+        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+            title: `Deactivating Automation ${item.name}`,
+            initialProgress: 'Sending request to GitOps...',
+            urlPath: 'deactivate',
+            apiFunction: deactivateAutomation,
+            successProgress: `Automation ${item.name} deactivated successfully`,
+            successMessage: `Automation ${item.name} deactivated successfully`,
+            errorMessage: `Failed to deactivate automation ${item.name}:`,
+            errorLogPrefix: 'Automation Deactivate Error:'
+        })(context, automationsProvider, item));
+    
+    let deleteAutomationCommand = vscode.commands.registerCommand('bitswan.deleteAutomation', 
+        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+            title: `Deleting Automation ${item.name}`,
+            initialProgress: 'Sending request to GitOps...',
+            urlPath: '',
+            apiFunction: deleteAutomation,
+            successProgress: `Automation ${item.name} deleted successfully`,
+            successMessage: `Automation ${item.name} deleted successfully`,
+            errorMessage: `Failed to delete automation ${item.name}:`,
+            errorLogPrefix: 'Automation Delete Error:',
+            prompt: true
+        })(context, automationsProvider, item));
+    
+    // Register all commands
     context.subscriptions.push(deployCommand);
     context.subscriptions.push(addGitOpsCommand);
     context.subscriptions.push(editGitOpsCommand);
     context.subscriptions.push(deleteGitOpsCommand);
     context.subscriptions.push(activateGitOpsCommand);
-    context.subscriptions.push(deployFromIpynb);
+    context.subscriptions.push(refreshAutomationsCommand);
+    context.subscriptions.push(restartAutomationCommand);
+    context.subscriptions.push(startAutomationCommand);
+    context.subscriptions.push(stopAutomationCommand);
+    context.subscriptions.push(showAutomationLogsCommand);
+    context.subscriptions.push(activateAutomationCommand);
+    context.subscriptions.push(deactivateAutomationCommand);
+    context.subscriptions.push(deleteAutomationCommand);
 
-
-    // Refresh the tree view when files change in the workspace
+    // Refresh the tree views when files change in the workspace
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
-    watcher.onDidCreate(() => directoryTreeDataProvider.refresh());
-    watcher.onDidDelete(() => directoryTreeDataProvider.refresh());
-    watcher.onDidChange(() => directoryTreeDataProvider.refresh());
+    watcher.onDidCreate(() => deploymentsProvider.refresh());
+    watcher.onDidDelete(() => deploymentsProvider.refresh());
+    watcher.onDidChange(() => deploymentsProvider.refresh());
+
+    const activeGitOpsInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
+    if (activeGitOpsInstance) {
+        workspaceCommands.activateGitOpsCommand(context, workspacesProvider, activeGitOpsInstance, automationsProvider);
+        automationsProvider.refresh();
+    } else if (process.env.BITSWAN_DEPLOY_URL && process.env.BITSWAN_DEPLOY_SECRET) {
+        const activeGitOpsInstance = new GitOpsItem(
+            'Active GitOps Instance',
+            process.env.BITSWAN_DEPLOY_URL,
+            process.env.BITSWAN_DEPLOY_SECRET,
+            true
+        );
+        workspaceCommands.activateGitOpsCommand(context, workspacesProvider, activeGitOpsInstance, automationsProvider);
+        automationsProvider.refresh();
+    }
 
     context.subscriptions.push(watcher);
 
-    outputChannel.appendLine('Tree view provider registered');
+    outputChannel.appendLine('Tree views registered');
+}
+
+/**
+ * This method is called when the extension is deactivated
+ */
+export function deactivate() {
+    // Clean up the refresh interval
+    if (automationRefreshInterval) {
+        clearInterval(automationRefreshInterval);
+        automationRefreshInterval = undefined;
+        outputChannel.appendLine('Stopped automatic refresh of automations');
+    }
+
+    // Clean up output channels
+    outputChannel.appendLine('Cleaning up output channels...');
+    
+    // Dispose all output channels in the map
+    outputChannelsMap.forEach((channel, name) => {
+        outputChannel.appendLine(`Disposing output channel: ${name}`);
+        channel.dispose();
+    });
+    
+    // Clear the map
+    outputChannelsMap.clear();
+    
+    // Dispose the main output channel
+    outputChannel.appendLine('BitSwan Extension Deactivated');
+    outputChannel.dispose();
 }
