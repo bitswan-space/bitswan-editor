@@ -55,6 +55,11 @@ export abstract class BaseSourcesViewProvider implements vscode.TreeDataProvider
         // Read all entries in current directory
         const entries = fs.readdirSync(folderPath, { withFileTypes: true });
 
+        // If the current directory contains a file named .bitswan-ignore, skip it
+        if (entries.some(entry => entry.isFile() && entry.name === '.bitswan-ignore')) {
+            return results;
+        }
+
         // Check if current directory has the marker file
         if (fs.existsSync(path.join(folderPath, this.getMarkerFileName()))) {
             // Only add if it's not the workspace root
