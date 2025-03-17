@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 import { AutomationItem } from './views/automations_view';
-import { FolderItem } from './views/deployments_view';
+import { FolderItem } from './views/sources_view';
 import { GitOpsItem } from './views/workspaces_view';
 
 // Import commands from the new command modules
@@ -10,9 +10,11 @@ import * as workspaceCommands from './commands/workspaces';
 import * as deploymentCommands from './commands/deployments';
 
 // Import view providers
-import { DeploymentsViewProvider } from './views/deployments_view';
+import { AutomationSourcesViewProvider } from './views/automation_sources_view';
 import { WorkspacesViewProvider } from './views/workspaces_view';
 import { AutomationsViewProvider } from './views/automations_view';
+import { ImageSourcesViewProvider } from './views/image_sources_view';
+import { ImagesViewProvider } from './views/images_view';
 import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation } from './lib';
 
 // Defining logging channel
@@ -52,9 +54,11 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     // Create view providers
-    const deploymentsProvider = new DeploymentsViewProvider(context);
+    const deploymentsProvider = new AutomationSourcesViewProvider(context);
     const workspacesProvider = new WorkspacesViewProvider(context);
     const automationsProvider = new AutomationsViewProvider(context);
+    const imageSourcesProvider = new ImageSourcesViewProvider(context);
+    const imagesProvider = new ImagesViewProvider(context);
 
     // Register views
     vscode.window.createTreeView('bitswan-deployments', {
@@ -69,9 +73,20 @@ export function activate(context: vscode.ExtensionContext) {
         treeDataProvider: automationsProvider,
     });
 
+    vscode.window.createTreeView('bitswan-image-sources', {
+        treeDataProvider: imageSourcesProvider,
+    });
+
+    vscode.window.createTreeView('bitswan-images', {
+        treeDataProvider: imagesProvider,
+    });
+
     // Register commands using the new command modules
     let deployCommand = vscode.commands.registerCommand('bitswan.deployPipeline', 
-        async (item: FolderItem) => deploymentCommands.deployCommand(context, deploymentsProvider, item));
+        async (item: FolderItem) => deploymentCommands.deployCommand(context, deploymentsProvider, item, "automations"));
+
+    let buildImageCommand = vscode.commands.registerCommand('bitswan.buildImage', 
+        async (item: FolderItem) => deploymentCommands.deployCommand(context, deploymentsProvider, item, "images"));
     
     let addGitOpsCommand = vscode.commands.registerCommand('bitswan.addGitOps', 
         async () => workspaceCommands.addGitOpsCommand(context, workspacesProvider));
@@ -168,6 +183,7 @@ export function activate(context: vscode.ExtensionContext) {
     
     // Register all commands
     context.subscriptions.push(deployCommand);
+    context.subscriptions.push(buildImageCommand);
     context.subscriptions.push(addGitOpsCommand);
     context.subscriptions.push(editGitOpsCommand);
     context.subscriptions.push(deleteGitOpsCommand);

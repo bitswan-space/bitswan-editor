@@ -81,15 +81,23 @@
       "bitswan-explorer": [
         {
           "id": "bitswan-deployments",
-          "name": "Deployments"
-        },
-        {
-          "id": "bitswan-workspaces",
-          "name": "Workspaces"
+          "name": "Automation Sources"
         },
         {
           "id": "bitswan-automations",
           "name": "Automations"
+        },
+        {
+          "id": "bitswan-image-sources",
+          "name": "Image Sources"
+        },
+        {
+          "id": "bitswan-images",
+          "name": "Images"
+        },
+        {
+          "id": "bitswan-workspaces",
+          "name": "Workspaces"
         }
       ]
     },
@@ -158,6 +166,11 @@
         "command": "bitswan.showAutomationLogs",
         "title": "Show Logs",
         "icon": "$(output)"
+      },
+      {
+        "command": "bitswan.buildImage",
+        "title": "Build Image",
+        "icon": "$(cloud-upload)"
       }
     ],
     "menus": {
@@ -216,6 +229,11 @@
           "command": "bitswan.showAutomationLogs",
           "when": "view == bitswan-automations && viewItem =~ /^automation,active/",
           "group": "inline@5"
+        },
+        {
+          "command": "bitswan.buildImage",
+          "when": "view == bitswan-image-sources && viewItem == folder",
+          "group": "inline"
         }
       ],
       "view/title": [
