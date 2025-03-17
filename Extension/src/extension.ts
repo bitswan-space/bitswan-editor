@@ -54,7 +54,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     // Create view providers
-    const deploymentsProvider = new AutomationSourcesViewProvider(context);
+    const automationSourcesProvider = new AutomationSourcesViewProvider(context);
     const workspacesProvider = new WorkspacesViewProvider(context);
     const automationsProvider = new AutomationsViewProvider(context);
     const imageSourcesProvider = new ImageSourcesViewProvider(context);
@@ -62,7 +62,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Register views
     vscode.window.createTreeView('bitswan-deployments', {
-        treeDataProvider: deploymentsProvider,
+        treeDataProvider: automationSourcesProvider,
     });
 
     vscode.window.createTreeView('bitswan-workspaces', {
@@ -83,10 +83,10 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Register commands using the new command modules
     let deployCommand = vscode.commands.registerCommand('bitswan.deployPipeline', 
-        async (item: FolderItem) => deploymentCommands.deployCommand(context, deploymentsProvider, item, "automations"));
+        async (item: FolderItem) => deploymentCommands.deployCommand(context, automationSourcesProvider, item, "automations"));
 
     let buildImageCommand = vscode.commands.registerCommand('bitswan.buildImage', 
-        async (item: FolderItem) => deploymentCommands.deployCommand(context, deploymentsProvider, item, "images"));
+        async (item: FolderItem) => deploymentCommands.deployCommand(context, automationSourcesProvider, item, "images"));
     
     let addGitOpsCommand = vscode.commands.registerCommand('bitswan.addGitOps', 
         async () => workspaceCommands.addGitOpsCommand(context, workspacesProvider));
@@ -199,9 +199,13 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Refresh the tree views when files change in the workspace
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
-    watcher.onDidCreate(() => deploymentsProvider.refresh());
-    watcher.onDidDelete(() => deploymentsProvider.refresh());
-    watcher.onDidChange(() => deploymentsProvider.refresh());
+    watcher.onDidCreate(() => automationSourcesProvider.refresh());
+    watcher.onDidCreate(() => imageSourcesProvider.refresh());
+    watcher.onDidDelete(() => automationSourcesProvider.refresh());
+    watcher.onDidDelete(() => imageSourcesProvider.refresh());
+    watcher.onDidChange(() => automationSourcesProvider.refresh());
+    watcher.onDidChange(() => imageSourcesProvider.refresh());;
+    
 
     const activeGitOpsInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (activeGitOpsInstance) {
