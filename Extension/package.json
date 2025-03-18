@@ -80,7 +80,7 @@
     "views": {
       "bitswan-explorer": [
         {
-          "id": "bitswan-deployments",
+          "id": "bitswan-automation-sources",
           "name": "Automation Sources"
         },
         {
@@ -202,7 +202,7 @@
       "view/item/context": [
         {
           "command": "bitswan.deployAutomation",
-          "when": "view == bitswan-deployments && viewItem == folder",
+          "when": "view == bitswan-automation-sources && viewItem == folder",
           "group": "inline"
         },
         {

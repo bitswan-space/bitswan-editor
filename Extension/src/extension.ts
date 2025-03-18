@@ -64,7 +64,7 @@ export function activate(context: vscode.ExtensionContext) {
     const imagesProvider = new ImagesViewProvider(context);
 
     // Register views
-    vscode.window.createTreeView('bitswan-deployments', {
+    vscode.window.createTreeView('bitswan-automation-sources', {
         treeDataProvider: automationSourcesProvider,
     });
 
