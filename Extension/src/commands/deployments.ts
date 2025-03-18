@@ -9,9 +9,9 @@ import { activateDeployment, deploy, zip2stream, zipDirectory } from '../lib';
 import { getDeployDetails } from '../deploy_details';
 import { outputChannel } from '../extension';
 import { AutomationSourcesViewProvider } from '../views/automation_sources_view';
+import { ImageSourcesViewProvider } from '../views/image_sources_view';
 
-export async function deployCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationSourcesViewProvider, folderItem: FolderItem, itemSet: string) {
-
+export async function deployCommandAbstract(context: vscode.ExtensionContext, folderPath: string, itemSet: string, treeDataProvider: AutomationSourcesViewProvider | ImageSourcesViewProvider | null) {
     var messages: { [key: string]: { [key: string]: string } } = {
         "automations": {
             "deploy": "Deploying automation",
@@ -25,12 +25,6 @@ export async function deployCommand(context: vscode.ExtensionContext, treeDataPr
         }
     }
 
-    var itemPath : string = folderItem.resourceUri.fsPath;
-    var folderPath = itemPath;
-    // if itemPath is file get the containing folder
-    if (fs.statSync(itemPath).isFile()){
-        folderPath = path.dirname(itemPath);
-    }
 
     outputChannel.appendLine(messages[itemSet]["deploy"] + `: ${folderPath}`);
 
@@ -46,8 +40,6 @@ export async function deployCommand(context: vscode.ExtensionContext, treeDataPr
         return;
     }
 
-
-    outputChannel.appendLine(`Folder name: ${folderPath}`);
 
 
     // folderName is the name of the folder immediately containing the item being deployed so /bar/foo → foo
@@ -105,7 +97,9 @@ export async function deployCommand(context: vscode.ExtensionContext, treeDataPr
                 if (activationSuccess) {
                     progress.report({ increment: 100, message: `Succesfully activated automation on GitOps` });
                     vscode.window.showInformationMessage(`Succesfully activated automation on GitOps`);
-                    treeDataProvider.refresh();
+                    if (treeDataProvider) {
+                        treeDataProvider.refresh();
+                    }
                 } else {
                     throw new Error(`Failed to activate automation on GitOps`);
                 }
@@ -125,4 +119,19 @@ export async function deployCommand(context: vscode.ExtensionContext, treeDataPr
             return;
         }
     });
+
+}
+
+
+export async function deployFromToolbarCommand(context: vscode.ExtensionContext, item: vscode.Uri, itemSet: string) {
+    deployCommandAbstract(context, path.dirname(item.path), itemSet, null);
+}
+
+export async function deployFromNotebookToolbarCommand(context: vscode.ExtensionContext, item: any, itemSet: string) {
+    deployCommandAbstract(context, path.dirname(item.notebookEditor.notebookUri.path), itemSet, null);
+}
+
+export async function deployCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationSourcesViewProvider, folderItem: FolderItem, itemSet: string) {
+    var item : string = folderItem.resourceUri.fsPath;
+    deployCommandAbstract(context, item, itemSet, treeDataProvider);
 } 

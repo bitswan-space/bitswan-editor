@@ -103,8 +103,13 @@
     },
     "commands": [
       {
-        "command": "bitswan.deployPipeline",
-        "title": "Deploy Pipeline",
+        "command": "bitswan.deployAutomation",
+        "title": "Deploy Automation",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "bitswan.deployAutomationFromToolbar",
+        "title": "Deploy Automation",
         "icon": "$(cloud-upload)"
       },
       {
@@ -186,12 +191,17 @@
         "command": "bitswan.buildImage",
         "title": "Build Image",
         "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "bitswan.buildImageFromToolbar",
+        "title": "Build Image",
+        "icon": "$(cloud-upload)"
       }
     ],
     "menus": {
       "view/item/context": [
         {
-          "command": "bitswan.deployPipeline",
+          "command": "bitswan.deployAutomation",
           "when": "view == bitswan-deployments && viewItem == folder",
           "group": "inline"
         },
@@ -280,9 +290,16 @@
       ],
       "notebook/toolbar": [
         {
-          "command": "bitswan.deployPipeline",
+          "command": "bitswan.deployAutomationFromToolbar",
           "when": "notebookType == 'jupyter-notebook'",
           "group": "navigation@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "bitswan.buildImageFromToolbar",
+          "when": "resourceLangId == dockerfile",
+          "group": "navigation"
         }
       ]
     }

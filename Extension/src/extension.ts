@@ -84,10 +84,16 @@ export function activate(context: vscode.ExtensionContext) {
         treeDataProvider: imagesProvider,
     });
 
+    let deployFromToolbarCommand = vscode.commands.registerCommand('bitswan.deployAutomationFromToolbar', 
+        async (item: string) => deploymentCommands.deployFromNotebookToolbarCommand(context, item, "automations"));
+
     // Register commands using the new command modules
-    let deployCommand = vscode.commands.registerCommand('bitswan.deployPipeline', 
+    let deployCommand = vscode.commands.registerCommand('bitswan.deployAutomation', 
         async (item: FolderItem) => deploymentCommands.deployCommand(context, automationSourcesProvider, item, "automations"));
 
+    let buildImageFromToolbarCommand = vscode.commands.registerCommand('bitswan.buildImageFromToolbar', 
+        async (item: vscode.Uri) => deploymentCommands.deployFromToolbarCommand(context, item, "images"));
+ 
     let buildImageCommand = vscode.commands.registerCommand('bitswan.buildImage', 
         async (item: FolderItem) => deploymentCommands.deployCommand(context, automationSourcesProvider, item, "images"));
     
@@ -208,7 +214,9 @@ export function activate(context: vscode.ExtensionContext) {
     
     // Register all commands
     context.subscriptions.push(deployCommand);
+    context.subscriptions.push(deployFromToolbarCommand);
     context.subscriptions.push(buildImageCommand);
+    context.subscriptions.push(buildImageFromToolbarCommand);
     context.subscriptions.push(addGitOpsCommand);
     context.subscriptions.push(editGitOpsCommand);
     context.subscriptions.push(deleteGitOpsCommand);
