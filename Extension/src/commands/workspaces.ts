@@ -37,7 +37,7 @@ export async function addGitOpsCommand(context: vscode.ExtensionContext, treeDat
 
 export async function editGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: WorkspacesViewProvider, item: GitOpsItem) {
     const instances = context.globalState.get<any[]>('gitopsInstances', []);
-    const index = instances.findIndex(i => i.name === item.label);
+    const index = instances.findIndex(i => i.name === item.name);
     if (index === -1) return;
 
     const url = await vscode.window.showInputBox({
@@ -67,7 +67,7 @@ export async function editGitOpsCommand(context: vscode.ExtensionContext, treeDa
 export async function deleteGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: WorkspacesViewProvider, item: GitOpsItem) {
     const instances = context.globalState.get<any[]>('gitopsInstances', []);
     await context.globalState.update('gitopsInstances', 
-        instances.filter(i => i.name !== item.label)
+        instances.filter(i => i.name !== item.name)
     );
     // Clear active instance if it was deleted
     const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');

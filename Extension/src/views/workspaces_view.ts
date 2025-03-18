@@ -36,13 +36,13 @@ export class WorkspacesViewProvider implements vscode.TreeDataProvider<GitOpsIte
 
 export class GitOpsItem extends vscode.TreeItem {
     constructor(
-        public readonly label: string,
+        public readonly name: string,
         public readonly url: string,
         public readonly secret: string,
         public readonly active: boolean = false
     ) {
-        super(label, vscode.TreeItemCollapsibleState.None);
-        this.tooltip = `${this.label}`;
+        super(name, vscode.TreeItemCollapsibleState.None);
+        this.tooltip = `${this.name}`;
         this.description = this.active ? '(active)' : '';
         this.contextValue = 'gitops';
         this.iconPath = new vscode.ThemeIcon('cloud');

@@ -1,19 +1,24 @@
 import * as vscode from 'vscode';
 
 import { AutomationItem } from './views/automations_view';
-import { FolderItem } from './views/deployments_view';
+import { ImageItem } from './views/images_view';
+import { FolderItem } from './views/sources_view';
 import { GitOpsItem } from './views/workspaces_view';
 
 // Import commands from the new command modules
+import * as imageCommands from './commands/images';
 import * as automationCommands from './commands/automations';
+import * as itemCommands from './commands/items';
 import * as workspaceCommands from './commands/workspaces';
 import * as deploymentCommands from './commands/deployments';
 
 // Import view providers
-import { DeploymentsViewProvider } from './views/deployments_view';
+import { AutomationSourcesViewProvider } from './views/automation_sources_view';
 import { WorkspacesViewProvider } from './views/workspaces_view';
 import { AutomationsViewProvider } from './views/automations_view';
-import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation } from './lib';
+import { ImageSourcesViewProvider } from './views/image_sources_view';
+import { ImagesViewProvider } from './views/images_view';
+import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation, deleteImage } from './lib';
 
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
@@ -52,13 +57,15 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     // Create view providers
-    const deploymentsProvider = new DeploymentsViewProvider(context);
+    const automationSourcesProvider = new AutomationSourcesViewProvider(context);
     const workspacesProvider = new WorkspacesViewProvider(context);
     const automationsProvider = new AutomationsViewProvider(context);
+    const imageSourcesProvider = new ImageSourcesViewProvider(context);
+    const imagesProvider = new ImagesViewProvider(context);
 
     // Register views
-    vscode.window.createTreeView('bitswan-deployments', {
-        treeDataProvider: deploymentsProvider,
+    vscode.window.createTreeView('bitswan-automation-sources', {
+        treeDataProvider: automationSourcesProvider,
     });
 
     vscode.window.createTreeView('bitswan-workspaces', {
@@ -69,9 +76,26 @@ export function activate(context: vscode.ExtensionContext) {
         treeDataProvider: automationsProvider,
     });
 
+    vscode.window.createTreeView('bitswan-image-sources', {
+        treeDataProvider: imageSourcesProvider,
+    });
+
+    vscode.window.createTreeView('bitswan-images', {
+        treeDataProvider: imagesProvider,
+    });
+
+    let deployFromToolbarCommand = vscode.commands.registerCommand('bitswan.deployAutomationFromToolbar', 
+        async (item: string) => deploymentCommands.deployFromNotebookToolbarCommand(context, item, "automations"));
+
     // Register commands using the new command modules
-    let deployCommand = vscode.commands.registerCommand('bitswan.deployPipeline', 
-        async (item: FolderItem) => deploymentCommands.deployCommand(context, deploymentsProvider, item));
+    let deployCommand = vscode.commands.registerCommand('bitswan.deployAutomation', 
+        async (item: FolderItem) => deploymentCommands.deployCommand(context, automationSourcesProvider, item, "automations"));
+
+    let buildImageFromToolbarCommand = vscode.commands.registerCommand('bitswan.buildImageFromToolbar', 
+        async (item: vscode.Uri) => deploymentCommands.deployFromToolbarCommand(context, item, "images"));
+ 
+    let buildImageCommand = vscode.commands.registerCommand('bitswan.buildImage', 
+        async (item: FolderItem) => deploymentCommands.deployCommand(context, automationSourcesProvider, item, "images"));
     
     let addGitOpsCommand = vscode.commands.registerCommand('bitswan.addGitOps', 
         async () => workspaceCommands.addGitOpsCommand(context, workspacesProvider));
@@ -89,9 +113,13 @@ export function activate(context: vscode.ExtensionContext) {
     
     let refreshAutomationsCommand = vscode.commands.registerCommand('bitswan.refreshAutomations', 
         async () => automationCommands.refreshAutomationsCommand(context, automationsProvider));
+
+    let refreshImagesCommand = vscode.commands.registerCommand('bitswan.refreshImages', 
+        async () => imageCommands.refreshImagesCommand(context, imagesProvider));
+ 
     
     let startAutomationCommand = vscode.commands.registerCommand('bitswan.startAutomation', 
-        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+        async (item: AutomationItem) => itemCommands.makeItemCommand({
             title: `Starting Automation ${item.name}`,
             initialProgress: 'Sending request to GitOps...',
             urlPath: 'start',
@@ -103,7 +131,7 @@ export function activate(context: vscode.ExtensionContext) {
         })(context, automationsProvider, item));
     
     let stopAutomationCommand = vscode.commands.registerCommand('bitswan.stopAutomation', 
-        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+        async (item: AutomationItem) => itemCommands.makeItemCommand({
             title: `Stopping Automation ${item.name}`,
             initialProgress: 'Sending request to GitOps...',
             urlPath: 'stop',
@@ -115,7 +143,7 @@ export function activate(context: vscode.ExtensionContext) {
         })(context, automationsProvider, item));
     
     let restartAutomationCommand = vscode.commands.registerCommand('bitswan.restartAutomation',     
-        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+        async (item: AutomationItem) => itemCommands.makeItemCommand({
             title: `Restarting Automation ${item.name}`,
             initialProgress: 'Sending request to GitOps...',
             urlPath: 'restart',
@@ -129,8 +157,12 @@ export function activate(context: vscode.ExtensionContext) {
     let showAutomationLogsCommand = vscode.commands.registerCommand('bitswan.showAutomationLogs', 
         async (item: AutomationItem) => automationCommands.showAutomationLogsCommand(context, automationsProvider, item));
 
+    let showImageLogsCommand = vscode.commands.registerCommand('bitswan.showImageLogs', 
+        async (item: ImageItem) => imageCommands.showImageLogsCommand(context, imagesProvider, item));
+
+
     let activateAutomationCommand = vscode.commands.registerCommand('bitswan.activateAutomation', 
-        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+        async (item: AutomationItem) => itemCommands.makeItemCommand({
             title: `Activating Automation ${item.name}`,
             initialProgress: 'Sending request to GitOps...',
             urlPath: 'activate',
@@ -142,7 +174,7 @@ export function activate(context: vscode.ExtensionContext) {
         })(context, automationsProvider, item));
     
     let deactivateAutomationCommand = vscode.commands.registerCommand('bitswan.deactivateAutomation', 
-        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+        async (item: AutomationItem) => itemCommands.makeItemCommand({
             title: `Deactivating Automation ${item.name}`,
             initialProgress: 'Sending request to GitOps...',
             urlPath: 'deactivate',
@@ -154,7 +186,7 @@ export function activate(context: vscode.ExtensionContext) {
         })(context, automationsProvider, item));
     
     let deleteAutomationCommand = vscode.commands.registerCommand('bitswan.deleteAutomation', 
-        async (item: AutomationItem) => automationCommands.makeAutomationCommand({
+        async (item: AutomationItem) => itemCommands.makeItemCommand({
             title: `Deleting Automation ${item.name}`,
             initialProgress: 'Sending request to GitOps...',
             urlPath: '',
@@ -165,14 +197,32 @@ export function activate(context: vscode.ExtensionContext) {
             errorLogPrefix: 'Automation Delete Error:',
             prompt: true
         })(context, automationsProvider, item));
+
+    let deleteImageCommand = vscode.commands.registerCommand('bitswan.deleteImage', 
+        async (item: ImageItem) => itemCommands.makeItemCommand({
+            title: `Removing image ${item.name}`,
+            initialProgress: 'Sending request to GitOps...',
+            urlPath: '',
+            apiFunction: deleteImage,
+            successProgress: `Image ${item.name} deleted successfully`,
+            successMessage: `Image ${item.name} deleted successfully`,
+            errorMessage: `Failed to delete image ${item.name}:`,
+            errorLogPrefix: 'Image Delete Error:',
+            prompt: false 
+        })(context, imagesProvider, item));
+ 
     
     // Register all commands
     context.subscriptions.push(deployCommand);
+    context.subscriptions.push(deployFromToolbarCommand);
+    context.subscriptions.push(buildImageCommand);
+    context.subscriptions.push(buildImageFromToolbarCommand);
     context.subscriptions.push(addGitOpsCommand);
     context.subscriptions.push(editGitOpsCommand);
     context.subscriptions.push(deleteGitOpsCommand);
     context.subscriptions.push(activateGitOpsCommand);
     context.subscriptions.push(refreshAutomationsCommand);
+    context.subscriptions.push(refreshImagesCommand);
     context.subscriptions.push(restartAutomationCommand);
     context.subscriptions.push(startAutomationCommand);
     context.subscriptions.push(stopAutomationCommand);
@@ -180,12 +230,17 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(activateAutomationCommand);
     context.subscriptions.push(deactivateAutomationCommand);
     context.subscriptions.push(deleteAutomationCommand);
+    context.subscriptions.push(deleteImageCommand);
 
     // Refresh the tree views when files change in the workspace
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
-    watcher.onDidCreate(() => deploymentsProvider.refresh());
-    watcher.onDidDelete(() => deploymentsProvider.refresh());
-    watcher.onDidChange(() => deploymentsProvider.refresh());
+    watcher.onDidCreate(() => automationSourcesProvider.refresh());
+    watcher.onDidCreate(() => imageSourcesProvider.refresh());
+    watcher.onDidDelete(() => automationSourcesProvider.refresh());
+    watcher.onDidDelete(() => imageSourcesProvider.refresh());
+    watcher.onDidChange(() => automationSourcesProvider.refresh());
+    watcher.onDidChange(() => imageSourcesProvider.refresh());;
+    
 
     const activeGitOpsInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (activeGitOpsInstance) {

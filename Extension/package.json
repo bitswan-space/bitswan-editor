@@ -80,23 +80,36 @@
     "views": {
       "bitswan-explorer": [
         {
-          "id": "bitswan-deployments",
-          "name": "Deployments"
-        },
-        {
-          "id": "bitswan-workspaces",
-          "name": "Workspaces"
+          "id": "bitswan-automation-sources",
+          "name": "Automation Sources"
         },
         {
           "id": "bitswan-automations",
           "name": "Automations"
+        },
+        {
+          "id": "bitswan-image-sources",
+          "name": "Image Sources"
+        },
+        {
+          "id": "bitswan-images",
+          "name": "Images"
+        },
+        {
+          "id": "bitswan-workspaces",
+          "name": "Workspaces"
         }
       ]
     },
     "commands": [
       {
-        "command": "bitswan.deployPipeline",
-        "title": "Deploy Pipeline",
+        "command": "bitswan.deployAutomation",
+        "title": "Deploy Automation",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "bitswan.deployAutomationFromToolbar",
+        "title": "Deploy Automation",
         "icon": "$(cloud-upload)"
       },
       {
@@ -123,6 +136,16 @@
         "command": "bitswan.refreshAutomations",
         "title": "Refresh Automations",
         "icon": "$(sync)"
+      },
+      {
+        "command": "bitswan.refreshImages",
+        "title": "Refresh Images",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "bitswan.deleteImage",
+        "title": "Remove Image",
+        "icon": "$(terminal-kill)"
       },
       {
         "command": "bitswan.activateAutomation",
@@ -158,13 +181,28 @@
         "command": "bitswan.showAutomationLogs",
         "title": "Show Logs",
         "icon": "$(output)"
+      },
+      {
+        "command": "bitswan.showImageLogs",
+        "title": "Show Logs",
+        "icon": "$(output)"
+      },
+      {
+        "command": "bitswan.buildImage",
+        "title": "Build Image",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "bitswan.buildImageFromToolbar",
+        "title": "Build Image",
+        "icon": "$(cloud-upload)"
       }
     ],
     "menus": {
       "view/item/context": [
         {
-          "command": "bitswan.deployPipeline",
-          "when": "view == bitswan-deployments && viewItem == folder",
+          "command": "bitswan.deployAutomation",
+          "when": "view == bitswan-automation-sources && viewItem == folder",
           "group": "inline"
         },
         {
@@ -216,12 +254,32 @@
           "command": "bitswan.showAutomationLogs",
           "when": "view == bitswan-automations && viewItem =~ /^automation,active/",
           "group": "inline@5"
+        },
+        {
+          "command": "bitswan.showImageLogs",
+          "when": "view == bitswan-images && viewItem =~ /^image/",
+          "group": "inline@5"
+        },
+        {
+          "command": "bitswan.buildImage",
+          "when": "view == bitswan-image-sources && viewItem == folder",
+          "group": "inline"
+        },
+        {
+          "command": "bitswan.deleteImage",
+          "when": "view == bitswan-images && viewItem =~ /^image/",
+          "group": "inline@4"
         }
       ],
       "view/title": [
         {
           "command": "bitswan.refreshAutomations",
           "when": "view == bitswan-automations",
+          "group": "navigation@1"
+        },
+        {
+          "command": "bitswan.refreshImages",
+          "when": "view == bitswan-images",
           "group": "navigation@1"
         },
         {
@@ -232,9 +290,16 @@
       ],
       "notebook/toolbar": [
         {
-          "command": "bitswan.deployPipeline",
+          "command": "bitswan.deployAutomationFromToolbar",
           "when": "notebookType == 'jupyter-notebook'",
           "group": "navigation@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "bitswan.buildImageFromToolbar",
+          "when": "resourceLangId == dockerfile",
+          "group": "navigation"
         }
       ]
     }

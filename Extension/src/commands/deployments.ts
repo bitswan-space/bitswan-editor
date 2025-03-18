@@ -4,37 +4,29 @@ import * as fs from 'fs';
 import FormData from 'form-data';
 import JSZip from 'jszip';
 
-import { FolderItem } from '../views/deployments_view';
+import { FolderItem } from '../views/sources_view';
 import { activateDeployment, deploy, zip2stream, zipDirectory } from '../lib';
 import { getDeployDetails } from '../deploy_details';
 import { outputChannel } from '../extension';
-import { DeploymentsViewProvider } from '../views/deployments_view';
+import { AutomationSourcesViewProvider } from '../views/automation_sources_view';
+import { ImageSourcesViewProvider } from '../views/image_sources_view';
 
-export async function deployCommand(context: vscode.ExtensionContext, treeDataProvider: DeploymentsViewProvider, folderItemOrPath: FolderItem | string | undefined) {
-    outputChannel.appendLine(`Deploying pipeline: ${folderItemOrPath}`);
-    let pipelineDeploymentPath: string | undefined;
-
-    // create folder path out of provided argument. Its either folder, folder's path or it is not defined
-    if (folderItemOrPath instanceof FolderItem) {
-        const pipelinePathExists = path.join(folderItemOrPath.resourceUri.fsPath, 'pipelines.conf');
-        if (fs.existsSync(pipelinePathExists)) {
-            pipelineDeploymentPath = path.join(folderItemOrPath.resourceUri.fsPath, 'pipelines.conf');
-        }
-    } else if (typeof folderItemOrPath === 'string') {
-        pipelineDeploymentPath = folderItemOrPath;
-    } else {
-        let editor = vscode.window.activeTextEditor;
-        if (editor && (path.extname(editor.document.fileName) === '.conf' || path.extname(editor.document.fileName) === '.ipynb')) {
-            pipelineDeploymentPath = editor.document.uri.fsPath;
+export async function deployCommandAbstract(context: vscode.ExtensionContext, folderPath: string, itemSet: string, treeDataProvider: AutomationSourcesViewProvider | ImageSourcesViewProvider | null) {
+    var messages: { [key: string]: { [key: string]: string } } = {
+        "automations": {
+            "deploy": "Deploying automation",
+            "url": "Deploy URL:",
+            "item;": "automation"
+        },
+        "images": {
+            "deploy": "Building image",
+            "url": "Build URL:",
+            "item": "image"
         }
     }
 
-    outputChannel.appendLine(`Pipeline deployment path: ${pipelineDeploymentPath}`);
 
-    if (!pipelineDeploymentPath) {
-        vscode.window.showErrorMessage('Unable to determine pipeline config path. Please select a pipeline config from the tree view or open one in the editor.');
-        return;
-    }
+    outputChannel.appendLine(messages[itemSet]["deploy"] + `: ${folderPath}`);
 
     // get deployURL and deploySecret
     const details = await getDeployDetails(context);
@@ -48,34 +40,38 @@ export async function deployCommand(context: vscode.ExtensionContext, treeDataPr
         return;
     }
 
-    const folderName = path.basename(path.dirname(pipelineDeploymentPath));
 
-    outputChannel.appendLine(`Folder name: ${folderName}`);
+
+    // folderName is the name of the folder immediately containing the item being deployed so /bar/foo → foo
+    const folderName = path.basename(folderPath);
 
     // deployment of pipeline
     await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
-        title: "Deploying pipeline",
+        title: messages[itemSet]["deploy"] ,
         cancellable: false
     }, async (progress, _token) => {
         try {
             const form = new FormData();
-            const normalizedFolderName = folderName.replace(/\//g, '-');
-            const deployUrl = new URL(path.join(details.deployUrl, "automations", normalizedFolderName));
+            // The folder name must be all lowercase and have any characters not allowed in image tags removed
+            const normalizedFolderName = folderName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const deployUrl = new URL(path.join(details.deployUrl, itemSet, normalizedFolderName));
 
-            outputChannel.appendLine(`Deploy URL: ${deployUrl.toString()}`);
+            outputChannel.appendLine(messages[itemSet]["url"] + `: ${deployUrl.toString()}`);
 
-            progress.report({ increment: 0, message: "Packing for deployment..." });
+            progress.report({ increment: 0, message: "Packing..." });
 
             // Zip the pipeline config folder and add it to the form
-            let zip = await zipDirectory(path.dirname(pipelineDeploymentPath as string), '', JSZip(), outputChannel);
+            let zip = await zipDirectory(folderPath, '', JSZip(), outputChannel);
             const workspacePath = path.join(workspaceFolders[0].uri.fsPath, 'workspace')
-            const bitswanLibPath = path.join(workspacePath, 'bitswan_lib')
-            if (fs.existsSync(bitswanLibPath)) {
-                zip = await zipDirectory(bitswanLibPath, '', zip, outputChannel);
-                outputChannel.appendLine(`bitswan_lib found at ${bitswanLibPath}`);
-            } else {
-                outputChannel.appendLine(`Error. bitswan_lib not found at ${bitswanLibPath}`);
+            if (itemSet === "automations") {
+                const bitswanLibPath = path.join(workspacePath, 'bitswan_lib')
+                if (fs.existsSync(bitswanLibPath)) {
+                    zip = await zipDirectory(bitswanLibPath, '', zip, outputChannel);
+                    outputChannel.appendLine(`bitswan_lib found at ${bitswanLibPath}`);
+                } else {
+                    outputChannel.appendLine(`Warning. No bitswan_lib found at ${bitswanLibPath}`);
+                }
             }
             const stream = await zip2stream(zip);
             form.append('file', stream, {
@@ -88,20 +84,25 @@ export async function deployCommand(context: vscode.ExtensionContext, treeDataPr
             const success = await deploy(deployUrl.toString(), form, details.deploySecret);
 
             if (success) {
-                progress.report({ increment: 100, message: "Succesfully uploaded automation on GitOps" });
-                vscode.window.showInformationMessage(`Succesfully uploaded automation on GitOps`);
+                progress.report({ increment: 100, message: "Succesfully uploaded "+messages[itemSet]["item"]+" to GitOps" });
+                vscode.window.showInformationMessage("Succesfully uploaded "+messages[itemSet]["item"]+" to GitOps");
             } else {
-                throw new Error(`Failed to upload automation on GitOps`);
+                throw new Error("Failed to upload "+messages[itemSet]["item"]+" to GitOps");
             }
-            progress.report({ increment: 50, message: "Activating deployment..." });
 
-            const activationSuccess = await activateDeployment(path.join(details.deployUrl,"automations", normalizedFolderName, "deploy").toString(), details.deploySecret);
-            if (activationSuccess) {
-                progress.report({ increment: 100, message: `Succesfully activated automation on GitOps` });
-                vscode.window.showInformationMessage(`Succesfully activated automation on GitOps`);
-                treeDataProvider.refresh();
-            } else {
-                throw new Error(`Failed to activate automation on GitOps`);
+            if (itemSet === "automations") {
+                progress.report({ increment: 50, message: "Activating deployment..." });
+
+                const activationSuccess = await activateDeployment(path.join(details.deployUrl,"automations", normalizedFolderName, "deploy").toString(), details.deploySecret);
+                if (activationSuccess) {
+                    progress.report({ increment: 100, message: `Succesfully activated automation on GitOps` });
+                    vscode.window.showInformationMessage(`Succesfully activated automation on GitOps`);
+                    if (treeDataProvider) {
+                        treeDataProvider.refresh();
+                    }
+                } else {
+                    throw new Error(`Failed to activate automation on GitOps`);
+                }
             }
 
         } catch (error: any) {
@@ -118,4 +119,19 @@ export async function deployCommand(context: vscode.ExtensionContext, treeDataPr
             return;
         }
     });
+
+}
+
+
+export async function deployFromToolbarCommand(context: vscode.ExtensionContext, item: vscode.Uri, itemSet: string) {
+    deployCommandAbstract(context, path.dirname(item.path), itemSet, null);
+}
+
+export async function deployFromNotebookToolbarCommand(context: vscode.ExtensionContext, item: any, itemSet: string) {
+    deployCommandAbstract(context, path.dirname(item.notebookEditor.notebookUri.path), itemSet, null);
+}
+
+export async function deployCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationSourcesViewProvider, folderItem: FolderItem, itemSet: string) {
+    var item : string = folderItem.resourceUri.fsPath;
+    deployCommandAbstract(context, item, itemSet, treeDataProvider);
 } 
