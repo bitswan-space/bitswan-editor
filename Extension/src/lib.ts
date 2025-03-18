@@ -182,3 +182,13 @@ export const deleteAutomation = async (automationUrl: string, secret: string) =>
 
   return response.status == 200;
 }
+
+export const deleteImage = async (imageUrl: string, secret: string) => {
+  const response = await axios.delete(imageUrl, {
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  return response.status == 200;
+}

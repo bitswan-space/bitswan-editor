@@ -7,12 +7,12 @@ import * as fs from 'fs';
  */
 export class FolderItem extends vscode.TreeItem {
     constructor(
-        public readonly label: string,
+        public readonly name: string,
         public readonly resourceUri: vscode.Uri
     ) {
-        super(label, vscode.TreeItemCollapsibleState.None);
-        this.tooltip = `${this.label}`;
-        this.description = path.extname(this.label);
+        super(name, vscode.TreeItemCollapsibleState.None);
+        this.tooltip = `${this.name}`;
+        this.description = path.extname(this.name);
         this.contextValue = 'folder';
         this.iconPath = new vscode.ThemeIcon('folder');
     }

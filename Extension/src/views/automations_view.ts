@@ -65,6 +65,10 @@ export class AutomationItem extends vscode.TreeItem {
         this.iconPath = this.statusIcon(state);
     }
 
+    public urlSlug(): string {
+        return this.name
+    }
+
     private getContextValue(): string {
         const status = this.active ? 'active' : 'inactive';
         return `automation,${status},${this.state ?? 'exited'}`;
@@ -88,10 +92,10 @@ export class AutomationItem extends vscode.TreeItem {
 
 export class StatusCategory extends vscode.TreeItem {
     constructor(
-        public readonly label: string,
+        public readonly name: string,
         public readonly items: AutomationItem[],
     ) {
-        super(label, vscode.TreeItemCollapsibleState.Expanded);
+        super(name, vscode.TreeItemCollapsibleState.Expanded);
         this.contextValue = 'statusCategory';
     }
 }

@@ -138,6 +138,11 @@
         "icon": "$(sync)"
       },
       {
+        "command": "bitswan.deleteImage",
+        "title": "Remove Image",
+        "icon": "$(terminal-kill)"
+      },
+      {
         "command": "bitswan.activateAutomation",
         "title": "Activate Automation",
         "icon": "$(notebook-state-success)"
@@ -249,6 +254,11 @@
           "command": "bitswan.buildImage",
           "when": "view == bitswan-image-sources && viewItem == folder",
           "group": "inline"
+        },
+        {
+          "command": "bitswan.deleteImage",
+          "when": "view == bitswan-images && viewItem =~ /^image/",
+          "group": "inline@4"
         }
       ],
       "view/title": [

@@ -34,13 +34,18 @@ export class ImagesViewProvider implements vscode.TreeDataProvider<ImageItem> {
 
 export class ImageItem extends vscode.TreeItem {
     constructor(
-        public readonly label: string,
+        public readonly name: string,
         public readonly buildTime: string,
         public readonly size: string,
     ) {
-        super(label, vscode.TreeItemCollapsibleState.None);
-        this.tooltip = `${this.label} ${this.buildTime}`;
+        super(name, vscode.TreeItemCollapsibleState.None);
+        this.tooltip = `${this.name} ${this.buildTime}`;
         this.contextValue = 'image';
         this.iconPath = new vscode.ThemeIcon('circuit-board');
+    }
+
+    public urlSlug(): string {
+        // The name is an image like internal/foo:bar the url slug is foo:bar
+        return this.name.split('/')[1];
     }
 }

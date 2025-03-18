@@ -14,10 +14,10 @@ export async function showImageLogsCommand(context: vscode.ExtensionContext, tre
     }
 
     try {
-        outputChannel.appendLine(`Fetching logs for image build process: ${item.label}`);
+        outputChannel.appendLine(`Fetching logs for image build process: ${item.name}`);
 
         // split the image label to get the image tag (it is currently in the form repository/tag)
-        const imageTag = item.label.split('/')[1];
+        const imageTag = item.name.split('/')[1];
         
         const logsUri = path.join(activeInstance.url, "images", imageTag, "logs").toString();
         const logsResponse = await getImageLogs(logsUri, activeInstance.secret);
@@ -27,7 +27,7 @@ export async function showImageLogsCommand(context: vscode.ExtensionContext, tre
         }
         
         // Create a dedicated output channel for this automation's logs
-        const logChannelName = `BitSwan: ${item.label} Logs`;
+        const logChannelName = `BitSwan: ${item.name} Logs`;
         
         // Check if the channel already exists in our map
         let logChannel: vscode.OutputChannel;
@@ -43,7 +43,7 @@ export async function showImageLogsCommand(context: vscode.ExtensionContext, tre
         
         // Display logs in the output channel
         logChannel.appendLine('='.repeat(80));
-        logChannel.appendLine(`Logs for image build: ${item.label}`);
+        logChannel.appendLine(`Logs for image build: ${item.name}`);
         logChannel.appendLine(`Fetched at: ${new Date().toISOString()}`);
         logChannel.appendLine('='.repeat(80));
         logChannel.appendLine('');
@@ -56,7 +56,7 @@ export async function showImageLogsCommand(context: vscode.ExtensionContext, tre
         // Show the output channel
         logChannel.show(true);
         
-        outputChannel.appendLine(`Logs for ${item.label} displayed successfully`);
+        outputChannel.appendLine(`Logs for ${item.name} displayed successfully`);
     } catch (error: any) {
         let errorMessage = error.message || 'Unknown error occurred';
         outputChannel.appendLine(`Error fetching logs: ${errorMessage}`);
