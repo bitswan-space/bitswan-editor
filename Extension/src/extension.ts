@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
 
 import { AutomationItem } from './views/automations_view';
+import { ImageItem } from './views/images_view';
 import { FolderItem } from './views/sources_view';
 import { GitOpsItem } from './views/workspaces_view';
 
 // Import commands from the new command modules
+import * as imageCommands from './commands/images';
 import * as automationCommands from './commands/automations';
 import * as workspaceCommands from './commands/workspaces';
 import * as deploymentCommands from './commands/deployments';
@@ -104,6 +106,10 @@ export function activate(context: vscode.ExtensionContext) {
     
     let refreshAutomationsCommand = vscode.commands.registerCommand('bitswan.refreshAutomations', 
         async () => automationCommands.refreshAutomationsCommand(context, automationsProvider));
+
+    let refreshImagesCommand = vscode.commands.registerCommand('bitswan.refreshImages', 
+        async () => imageCommands.refreshImagesCommand(context, imagesProvider));
+ 
     
     let startAutomationCommand = vscode.commands.registerCommand('bitswan.startAutomation', 
         async (item: AutomationItem) => automationCommands.makeAutomationCommand({
@@ -143,6 +149,10 @@ export function activate(context: vscode.ExtensionContext) {
     
     let showAutomationLogsCommand = vscode.commands.registerCommand('bitswan.showAutomationLogs', 
         async (item: AutomationItem) => automationCommands.showAutomationLogsCommand(context, automationsProvider, item));
+
+    let showImageLogsCommand = vscode.commands.registerCommand('bitswan.showImageLogs', 
+        async (item: ImageItem) => imageCommands.showImageLogsCommand(context, imagesProvider, item));
+
 
     let activateAutomationCommand = vscode.commands.registerCommand('bitswan.activateAutomation', 
         async (item: AutomationItem) => automationCommands.makeAutomationCommand({
@@ -189,6 +199,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(deleteGitOpsCommand);
     context.subscriptions.push(activateGitOpsCommand);
     context.subscriptions.push(refreshAutomationsCommand);
+    context.subscriptions.push(refreshImagesCommand);
     context.subscriptions.push(restartAutomationCommand);
     context.subscriptions.push(startAutomationCommand);
     context.subscriptions.push(stopAutomationCommand);

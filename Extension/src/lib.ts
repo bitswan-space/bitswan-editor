@@ -76,6 +76,21 @@ export const getAutomations = async (automationsUrl: string, secret: string) => 
   }
 }
 
+export const getImages = async (imagesUrl: string, secret: string) => {
+  const response = await axios.get(
+    imagesUrl, {
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  if (response.status == 200) {
+    return response.data;
+  } else {
+    throw new Error(`Failed to get images from GitOps`);
+  }
+}
+
 export const restartAutomation = async (automationUrl: string, secret: string) => {
   const response = await axios.post(
     automationUrl,
@@ -120,6 +135,16 @@ export const stopAutomation = async (automationUrl: string, secret: string) => {
 
 export const getAutomationLogs = async (automationUrl: string, secret: string) => {
   const response = await axios.get(automationUrl, {
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  return response.data;
+}
+
+export const getImageLogs = async (imageUrl: string, secret: string) => {
+  const response = await axios.get(imageUrl, {
     headers: {
       'Authorization': `Bearer ${secret}`,
     },

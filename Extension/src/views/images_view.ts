@@ -20,17 +20,13 @@ export class ImagesViewProvider implements vscode.TreeDataProvider<ImageItem> {
             return [];
         }
 
-
-        if (element) {
-            return [];
-        }
-
         const instances = this.context.globalState.get<any[]>('images', []);
 
         return instances.map(instance => {
             return new ImageItem(
-                instance.name,
-                instance.buidTime,
+                instance.tag,
+                instance.created,
+                instance.size,
             );
         });
     }
@@ -40,9 +36,10 @@ export class ImageItem extends vscode.TreeItem {
     constructor(
         public readonly label: string,
         public readonly buildTime: string,
+        public readonly size: string,
     ) {
         super(label, vscode.TreeItemCollapsibleState.None);
-        this.tooltip = `${this.label}`;
+        this.tooltip = `${this.label} ${this.buildTime}`;
         this.contextValue = 'image';
         this.iconPath = new vscode.ThemeIcon('circuit-board');
     }

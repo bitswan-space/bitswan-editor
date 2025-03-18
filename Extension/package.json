@@ -133,6 +133,11 @@
         "icon": "$(sync)"
       },
       {
+        "command": "bitswan.refreshImages",
+        "title": "Refresh Images",
+        "icon": "$(sync)"
+      },
+      {
         "command": "bitswan.activateAutomation",
         "title": "Activate Automation",
         "icon": "$(notebook-state-success)"
@@ -164,6 +169,11 @@
       },
       {
         "command": "bitswan.showAutomationLogs",
+        "title": "Show Logs",
+        "icon": "$(output)"
+      },
+      {
+        "command": "bitswan.showImageLogs",
         "title": "Show Logs",
         "icon": "$(output)"
       },
@@ -231,6 +241,11 @@
           "group": "inline@5"
         },
         {
+          "command": "bitswan.showImageLogs",
+          "when": "view == bitswan-images && viewItem =~ /^image/",
+          "group": "inline@5"
+        },
+        {
           "command": "bitswan.buildImage",
           "when": "view == bitswan-image-sources && viewItem == folder",
           "group": "inline"
@@ -240,6 +255,11 @@
         {
           "command": "bitswan.refreshAutomations",
           "when": "view == bitswan-automations",
+          "group": "navigation@1"
+        },
+        {
+          "command": "bitswan.refreshImages",
+          "when": "view == bitswan-images",
           "group": "navigation@1"
         },
         {
