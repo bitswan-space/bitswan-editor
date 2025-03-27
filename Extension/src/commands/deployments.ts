@@ -56,7 +56,6 @@ export async function deployCommandAbstract(context: vscode.ExtensionContext, fo
             // The folder name must be all lowercase and have any characters not allowed in image tags removed
             const normalizedFolderName = folderName.toLowerCase().replace(/[^a-z0-9\-]/g, '')
                                                                  .replace(/^[,\.\-]+/g, '');
-        // "fund120-staging".toLowerCase().replace(/[^a-z0-9\-]/g, '');
             const deployUrl = new URL(path.join(details.deployUrl, itemSet, normalizedFolderName));
 
             outputChannel.appendLine(messages[itemSet]["url"] + `: ${deployUrl.toString()}`);
