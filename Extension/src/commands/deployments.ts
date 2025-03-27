@@ -54,7 +54,9 @@ export async function deployCommandAbstract(context: vscode.ExtensionContext, fo
         try {
             const form = new FormData();
             // The folder name must be all lowercase and have any characters not allowed in image tags removed
-            const normalizedFolderName = folderName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const normalizedFolderName = folderName.toLowerCase().replace(/[^a-z0-9\-]/g, '')
+                                                                 .replace(/^[,\.\-]+/g, '');
+        // "fund120-staging".toLowerCase().replace(/[^a-z0-9\-]/g, '');
             const deployUrl = new URL(path.join(details.deployUrl, itemSet, normalizedFolderName));
 
             outputChannel.appendLine(messages[itemSet]["url"] + `: ${deployUrl.toString()}`);
@@ -134,4 +136,4 @@ export async function deployFromNotebookToolbarCommand(context: vscode.Extension
 export async function deployCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationSourcesViewProvider, folderItem: FolderItem, itemSet: string) {
     var item : string = folderItem.resourceUri.fsPath;
     deployCommandAbstract(context, item, itemSet, treeDataProvider);
-} 
+}
