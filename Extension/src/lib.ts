@@ -1,13 +1,19 @@
-import vscode from 'vscode';
-import path from 'path';
-import JSZip from 'jszip';
-import { Readable } from 'stream';
-import axios from 'axios';
-import FormData from 'form-data';
+import vscode from "vscode";
+import path from "path";
+import JSZip from "jszip";
+import { Readable } from "stream";
+import axios from "axios";
+import FormData from "form-data";
 
-export const zipDirectory = async (dirPath: string, relativePath: string = '', zipFile: JSZip = new JSZip(), outputChannel: vscode.OutputChannel) => {
-
-  const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dirPath));
+export const zipDirectory = async (
+  dirPath: string,
+  relativePath: string = "",
+  zipFile: JSZip = new JSZip(),
+  outputChannel: vscode.OutputChannel,
+) => {
+  const entries = await vscode.workspace.fs.readDirectory(
+    vscode.Uri.file(dirPath),
+  );
   for (const [name, type] of entries) {
     const fullPath = path.join(dirPath, name);
     const zipPath = path.join(relativePath, name);
@@ -15,7 +21,9 @@ export const zipDirectory = async (dirPath: string, relativePath: string = '', z
     if (type === vscode.FileType.Directory) {
       await zipDirectory(fullPath, zipPath, zipFile, outputChannel);
     } else {
-      const content = await vscode.workspace.fs.readFile(vscode.Uri.file(fullPath));
+      const content = await vscode.workspace.fs.readFile(
+        vscode.Uri.file(fullPath),
+      );
       outputChannel.appendLine(`Adding file ${fullPath}`);
       zipFile.file(zipPath, content);
     }
@@ -24,28 +32,29 @@ export const zipDirectory = async (dirPath: string, relativePath: string = '', z
   return zipFile;
 };
 
-
 export const zip2stream = async (zipFile: JSZip) => {
   const stream = new Readable();
 
-  stream.push(await zipFile.generateAsync({ type: 'nodebuffer' }));
+  stream.push(await zipFile.generateAsync({ type: "nodebuffer" }));
   stream.push(null);
 
   return stream;
+};
 
-}
-
-
-export const deploy = async (deployUrl: string, form: FormData, secret: string) => {
+export const deploy = async (
+  deployUrl: string,
+  form: FormData,
+  secret: string,
+) => {
   const response = await axios.post(deployUrl, form, {
-    headers: { 
-      'Content-Type': 'multipart/form-data',
-      'Authorization': `Bearer ${secret}`
+    headers: {
+      "Content-Type": "multipart/form-data",
+      Authorization: `Bearer ${secret}`,
     },
   });
 
   return response.status == 200;
-}
+};
 
 export const activateDeployment = async (deployUrl: string, secret: string) => {
   const response = await axios.post(
@@ -53,34 +62,57 @@ export const activateDeployment = async (deployUrl: string, secret: string) => {
     {},
     {
       headers: {
-        'Authorization': `Bearer ${secret}`,
+        Authorization: `Bearer ${secret}`,
       },
-    }
+    },
   );
 
   return response.status == 200;
-}
+};
 
-export const getAutomations = async (automationsUrl: string, secret: string) => {
-  const response = await axios.get(
-    automationsUrl, {
+export const getAutomations = async (
+  automationsUrl: string,
+  secret: string,
+) => {
+  const response = await axios.get(automationsUrl, {
     headers: {
-      'Authorization': `Bearer ${secret}`,
+      Authorization: `Bearer ${secret}`,
     },
   });
+  const log = vscode.window.createOutputChannel("BitSwan Debug");
+  log.show(true); // Optional: auto-show the channel
+
+  log.appendLine(`[getAutomations] Requesting URL: ${automationsUrl}`);
+  console.log(`[getAutomations] Requesting URL: ${automationsUrl}`);
 
   if (response.status == 200) {
+
+    console.log(`[getAutomations] Success:`, response.data);
+    // Confirm the response data is an array
+    if (!Array.isArray(response.data)) {
+      console.warn("[getAutomations] Unexpected response format:", response.data);
+      return [];
+    }
+
+    // Mutate the response.data array directly to inject deploymentUrl
+    response.data.forEach((automation) => {
+      automation.deploymentUrl =
+        automation.deploymentUrl ??
+        `https://${automation.name}.bs.localhost`;
+    });
+    log.appendLine(`[getAutomations] Status: ${response.status}`);
+    log.appendLine(`[getAutomations] Data: ${JSON.stringify(response.data, null, 2)}`);
+    console.log("[getAutomations] Data after injecting deploymentUrl:", response.data);
     return response.data;
   } else {
     throw new Error(`Failed to get automations from GitOps`);
   }
-}
+};
 
 export const getImages = async (imagesUrl: string, secret: string) => {
-  const response = await axios.get(
-    imagesUrl, {
+  const response = await axios.get(imagesUrl, {
     headers: {
-      'Authorization': `Bearer ${secret}`,
+      Authorization: `Bearer ${secret}`,
     },
   });
 
@@ -89,35 +121,58 @@ export const getImages = async (imagesUrl: string, secret: string) => {
   } else {
     throw new Error(`Failed to get images from GitOps`);
   }
-}
+};
 
-export const restartAutomation = async (automationUrl: string, secret: string) => {
+export const restartAutomation = async (
+  automationUrl: string,
+  secret: string,
+) => {
   const response = await axios.post(
     automationUrl,
     {},
     {
       headers: {
-        'Authorization': `Bearer ${secret}`,
+        Authorization: `Bearer ${secret}`,
       },
-    }
+    },
   );
 
   return response.status == 200;
-}
+};
 
-export const startAutomation = async (automationUrl: string, secret: string) => {
+export const startAutomation = async (
+  automationUrl: string,
+  secret: string,
+) => {
   const response = await axios.post(
     automationUrl,
     {},
     {
       headers: {
-        'Authorization': `Bearer ${secret}`,
+        Authorization: `Bearer ${secret}`,
       },
-    }
+    },
   );
 
   return response.status == 200;
-}
+};
+
+export const openurlAutomation = async (
+  automationUrl: string,
+  secret: string,
+) => {
+  const response = await axios.post(
+    automationUrl,
+    {},
+    {
+      headers: {
+        Authorization: `Bearer ${secret}`,
+      },
+    },
+  );
+
+  return response.status == 200;
+};
 
 export const stopAutomation = async (automationUrl: string, secret: string) => {
   const response = await axios.post(
@@ -125,70 +180,90 @@ export const stopAutomation = async (automationUrl: string, secret: string) => {
     {},
     {
       headers: {
-        'Authorization': `Bearer ${secret}`,
+        Authorization: `Bearer ${secret}`,
       },
-    }
+    },
   );
 
   return response.status == 200;
-}
+};
 
-export const getAutomationLogs = async (automationUrl: string, secret: string) => {
+export const getAutomationLogs = async (
+  automationUrl: string,
+  secret: string,
+) => {
   const response = await axios.get(automationUrl, {
     headers: {
-      'Authorization': `Bearer ${secret}`,
+      Authorization: `Bearer ${secret}`,
     },
   });
 
   return response.data;
-}
+};
 
 export const getImageLogs = async (imageUrl: string, secret: string) => {
   const response = await axios.get(imageUrl, {
     headers: {
-      'Authorization': `Bearer ${secret}`,
+      Authorization: `Bearer ${secret}`,
     },
   });
 
   return response.data;
-}
+};
 
-export const activateAutomation = async (automationUrl: string, secret: string) => {
-  const response = await axios.post(automationUrl, {}, {
-    headers: {
-      'Authorization': `Bearer ${secret}`,
+export const activateAutomation = async (
+  automationUrl: string,
+  secret: string,
+) => {
+  const response = await axios.post(
+    automationUrl,
+    {},
+    {
+      headers: {
+        Authorization: `Bearer ${secret}`,
+      },
     },
-  });
+  );
 
   return response.status == 200;
-}
+};
 
-export const deactivateAutomation = async (automationUrl: string, secret: string) => {
-  const response = await axios.post(automationUrl, {}, {
-    headers: {
-      'Authorization': `Bearer ${secret}`,
+export const deactivateAutomation = async (
+  automationUrl: string,
+  secret: string,
+) => {
+  const response = await axios.post(
+    automationUrl,
+    {},
+    {
+      headers: {
+        Authorization: `Bearer ${secret}`,
+      },
     },
-  });
+  );
 
   return response.status == 200;
-}
+};
 
-export const deleteAutomation = async (automationUrl: string, secret: string) => {
+export const deleteAutomation = async (
+  automationUrl: string,
+  secret: string,
+) => {
   const response = await axios.delete(automationUrl, {
     headers: {
-      'Authorization': `Bearer ${secret}`,
+      Authorization: `Bearer ${secret}`,
     },
   });
 
   return response.status == 200;
-}
+};
 
 export const deleteImage = async (imageUrl: string, secret: string) => {
   const response = await axios.delete(imageUrl, {
     headers: {
-      'Authorization': `Bearer ${secret}`,
+      Authorization: `Bearer ${secret}`,
     },
   });
 
   return response.status == 200;
-}
+};

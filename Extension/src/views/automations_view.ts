@@ -31,7 +31,8 @@ export class AutomationsViewProvider implements vscode.TreeDataProvider<vscode.T
                 automation.state,
                 automation.status,
                 automation.deploymentId,
-                automation.active
+                automation.active,
+                automation.deploymentUrl
             )
         );
 
@@ -56,7 +57,8 @@ export class AutomationItem extends vscode.TreeItem {
         public readonly state: string,
         public readonly status: string,
         public readonly deploymentId: string,
-        public readonly active: boolean = false
+        public readonly active: boolean = false,
+        public readonly deploymentUrl: string
     ) {
         super(name, vscode.TreeItemCollapsibleState.None);
         this.tooltip = `${this.name}`;
