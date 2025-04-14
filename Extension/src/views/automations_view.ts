@@ -25,6 +25,13 @@ export class AutomationsViewProvider implements vscode.TreeDataProvider<vscode.T
         }
 
         const automations = this.context.globalState.get<any[]>('automations', []);
+        // log automations to console
+        console.log("[getChildren] Automations:", automations);
+        const log = vscode.window.createOutputChannel("BitSwan Debug");
+        log.show(true); // Optional: brings focus to the output
+
+        // log automations to output channel
+        log.appendLine(`[getChildren] Automations: ${JSON.stringify(automations, null, 2)}`);
         const automationItems = automations.map(automation => 
             new AutomationItem(
                 automation.name,
@@ -32,7 +39,7 @@ export class AutomationsViewProvider implements vscode.TreeDataProvider<vscode.T
                 automation.status,
                 automation.deploymentId,
                 automation.active,
-                automation.deploymentUrl
+                automation.automationUrl
             )
         );
 
@@ -58,7 +65,7 @@ export class AutomationItem extends vscode.TreeItem {
         public readonly status: string,
         public readonly deploymentId: string,
         public readonly active: boolean = false,
-        public readonly deploymentUrl: string
+        public readonly automationUrl: string
     ) {
         super(name, vscode.TreeItemCollapsibleState.None);
         this.tooltip = `${this.name}`;

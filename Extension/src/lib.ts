@@ -96,14 +96,24 @@ export const getAutomations = async (
 
     // Mutate the response.data array directly to inject deploymentUrl
     response.data.forEach((automation) => {
-      automation.deploymentUrl =
+      automation.deployment =
         automation.deploymentUrl ??
         `https://${automation.name}.bs.localhost`;
     });
+    // const mapped = response.data.map((automation: any) => ({
+    //   ...automation,
+    //   deploymentId: automation.deployment_id,
+    //   deploymentUrl: automation.automation_url,
+    // }));
+    const automations = response.data;
+    automations.forEach((a) => {
+      a.deploymentId = a.deployment_id;
+      a.automationUrl = a.automation_url;
+    });
     log.appendLine(`[getAutomations] Status: ${response.status}`);
-    log.appendLine(`[getAutomations] Data: ${JSON.stringify(response.data, null, 2)}`);
-    console.log("[getAutomations] Data after injecting deploymentUrl:", response.data);
-    return response.data;
+    log.appendLine(`[getAutomations] Data: ${JSON.stringify(automations, null, 2)}`);
+    // console.log("[getAutomations] Data after injecting deploymentUrl:", response.data);
+    return automations;
   } else {
     throw new Error(`Failed to get automations from GitOps`);
   }
