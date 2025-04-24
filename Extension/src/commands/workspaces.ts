@@ -6,6 +6,7 @@ import { WorkspacesViewProvider } from '../views/workspaces_view';
 import { AutomationsViewProvider } from '../views/automations_view';
 import { outputChannel, setAutomationRefreshInterval } from '../extension';
 import { refreshAutomationsCommand } from './automations';
+import urlJoin from 'proper-url-join';
 
 export async function addGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: WorkspacesViewProvider) {
     const name = await vscode.window.showInputBox({
@@ -88,7 +89,7 @@ export async function activateGitOpsCommand(
 
     await context.globalState.update('activeGitOpsInstance', item);
     try {
-        const automations = await getAutomations(path.join(item.url, "automations").toString(), item.secret);
+        const automations = await getAutomations(urlJoin(item.url, 'automations', { trailingSlash: true }).toString(), item.secret);
         await context.globalState.update('automations', automations);
 
         // Set up automatic refresh every 10 seconds
