@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import urlJoin from 'proper-url-join';
 import { GitOpsItem } from '../views/workspaces_view';
 import { getAutomations } from '../lib';
 import { WorkspacesViewProvider } from '../views/workspaces_view';
 import { AutomationsViewProvider } from '../views/automations_view';
 import { outputChannel, setAutomationRefreshInterval } from '../extension';
 import { refreshAutomationsCommand } from './automations';
-import urlJoin from 'proper-url-join';
 
 export async function addGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: WorkspacesViewProvider) {
     const name = await vscode.window.showInputBox({
