@@ -7,6 +7,7 @@ import { GitOpsItem } from '../views/workspaces_view';
 import { outputChannel, outputChannelsMap } from '../extension';
 import { refreshAutomationsCommand } from './automations';
 import { refreshImagesCommand } from './images';
+import urlJoin from 'proper-url-join';
 
 export function makeItemCommand(
     commandConfig: {
@@ -181,7 +182,7 @@ export async function refreshItemsCommand(
 
     try {
         const items = await config.getItemsFunction(
-            path.join(activeInstance.url, config.entityType + 's').toString(), 
+            (urlJoin(activeInstance.url, config.entityType + 's', { trailingSlash: true }).toString()),
             activeInstance.secret
         );
         await context.globalState.update(config.entityType + 's', items);
