@@ -70,15 +70,9 @@ export const getAutomations = async (
       Authorization: `Bearer ${secret}`,
     },
   });
-  const log = vscode.window.createOutputChannel("BitSwan Debug");
-  log.show(true); // Optional: auto-show the channel
-
-  log.appendLine(`[getAutomations] Requesting URL: ${automationsUrl}`);
-  console.log(`[getAutomations] Requesting URL: ${automationsUrl}`);
-
+  
   if (response.status == 200) {
 
-    console.log(`[getAutomations] Success:`, response.data);
     if (!Array.isArray(response.data)) {
       console.warn("[getAutomations] Unexpected response format:", response.data);
       return [];
