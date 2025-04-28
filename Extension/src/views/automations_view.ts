@@ -31,7 +31,8 @@ export class AutomationsViewProvider implements vscode.TreeDataProvider<vscode.T
                 automation.state,
                 automation.status,
                 automation.deploymentId,
-                automation.active
+                automation.active,
+                automation.automationUrl
             )
         );
 
@@ -56,7 +57,8 @@ export class AutomationItem extends vscode.TreeItem {
         public readonly state: string,
         public readonly status: string,
         public readonly deploymentId: string,
-        public readonly active: boolean = false
+        public readonly active: boolean = false,
+        public readonly automationUrl: string
     ) {
         super(name, vscode.TreeItemCollapsibleState.None);
         this.tooltip = `${this.name}`;
@@ -71,7 +73,9 @@ export class AutomationItem extends vscode.TreeItem {
 
     private getContextValue(): string {
         const status = this.active ? 'active' : 'inactive';
-        return `automation,${status},${this.state ?? 'exited'}`;
+        const state = this.state ?? 'exited';
+        const urlStatus = this.automationUrl ? 'url' : 'nourl';
+        return `automation,${status},${state} urlStatus:${urlStatus}`;
     }
 
     private statusIcon(status?: string): vscode.ThemeIcon {

@@ -61,20 +61,33 @@ export const activateDeployment = async (deployUrl: string, secret: string) => {
   return response.status == 200;
 }
 
-export const getAutomations = async (automationsUrl: string, secret: string) => {
-  const response = await axios.get(
-    automationsUrl, {
+export const getAutomations = async (
+  automationsUrl: string,
+  secret: string,
+) => {
+  const response = await axios.get(automationsUrl, {
     headers: {
-      'Authorization': `Bearer ${secret}`,
+      Authorization: `Bearer ${secret}`,
     },
   });
-
+  
   if (response.status == 200) {
-    return response.data;
+
+    if (!Array.isArray(response.data)) {
+      console.warn("[getAutomations] Unexpected response format:", response.data);
+      return [];
+    }
+
+    const automations = response.data;
+    automations.forEach((a) => {
+      a.deploymentId = a.deployment_id;
+      a.automationUrl = a.automation_url;
+    });
+    return automations;
   } else {
     throw new Error(`Failed to get automations from GitOps`);
   }
-}
+};
 
 export const getImages = async (imagesUrl: string, secret: string) => {
   const response = await axios.get(

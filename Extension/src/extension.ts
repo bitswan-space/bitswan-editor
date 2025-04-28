@@ -117,6 +117,18 @@ export function activate(context: vscode.ExtensionContext) {
     let refreshImagesCommand = vscode.commands.registerCommand('bitswan.refreshImages', 
         async () => imageCommands.refreshImagesCommand(context, imagesProvider));
  
+    let openExternalUrlCommand = vscode.commands.registerCommand(
+        "bitswan.openExternalUrl",
+        async (item: AutomationItem) => {
+            const url = item.automationUrl;
+            try {
+            await vscode.env.openExternal(vscode.Uri.parse(url));
+            vscode.window.showInformationMessage(`Opened ${item.name} in browser`);
+            } catch (err) {
+            vscode.window.showErrorMessage(`Failed to open URL: ${url}`);
+            }
+        },
+        );
     
     let startAutomationCommand = vscode.commands.registerCommand('bitswan.startAutomation', 
         async (item: AutomationItem) => itemCommands.makeItemCommand({
@@ -223,6 +235,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(activateGitOpsCommand);
     context.subscriptions.push(refreshAutomationsCommand);
     context.subscriptions.push(refreshImagesCommand);
+    context.subscriptions.push(openExternalUrlCommand);
     context.subscriptions.push(restartAutomationCommand);
     context.subscriptions.push(startAutomationCommand);
     context.subscriptions.push(stopAutomationCommand);
