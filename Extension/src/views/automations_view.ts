@@ -71,11 +71,6 @@ export class AutomationItem extends vscode.TreeItem {
         return this.name
     }
 
-    // private getContextValue(): string {
-    //     const status = this.active ? 'active' : 'inactive';
-    //     return `automation,${status},${this.state ?? 'exited'}`;
-    // }
-
     private getContextValue(): string {
         const status = this.active ? 'active' : 'inactive';
         const state = this.state ?? 'exited';
