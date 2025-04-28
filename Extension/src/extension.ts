@@ -18,7 +18,7 @@ import { WorkspacesViewProvider } from './views/workspaces_view';
 import { AutomationsViewProvider } from './views/automations_view';
 import { ImageSourcesViewProvider } from './views/image_sources_view';
 import { ImagesViewProvider } from './views/images_view';
-import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation, openurlAutomation, deleteImage } from './lib';
+import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation, deleteImage } from './lib';
 
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
