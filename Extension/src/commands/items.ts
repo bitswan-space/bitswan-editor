@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import urlJoin from 'proper-url-join';
 import { AutomationsViewProvider} from '../views/automations_view';
 import { ImageItem, ImagesViewProvider } from '../views/images_view';
 import { AutomationItem } from '../views/automations_view';
@@ -57,7 +58,7 @@ export function makeItemCommand(
                     var group = "images";
                 }
 
-                const url = path.join(activeInstance.url, group, item.urlSlug(), commandConfig.urlPath).toString();
+                const url = urlJoin(activeInstance.url, group, item.urlSlug(), commandConfig.urlPath).toString();
                 outputChannel.appendLine(`${commandConfig.title}: ${item.name} at URL: ${url}`);
                 const response = await commandConfig.apiFunction(url, activeInstance.secret);
 
@@ -106,10 +107,10 @@ export async function showLogsCommand<T extends AutomationItem | ImageItem>(
         if (config.entityType === 'image build process') {
             // For images, extract the tag from the name
             const imageTag = item.name.split('/')[1];
-            logsUri = path.join(activeInstance.url, "images", imageTag, "logs").toString();
+            logsUri = urlJoin(activeInstance.url, "images", imageTag, "logs").toString();
         } else {
             // For automations or other entities
-            logsUri = path.join(activeInstance.url, config.entityType + 's', item.name, "logs").toString();
+            logsUri = urlJoin(activeInstance.url, config.entityType + 's', item.name, "logs").toString();
         }
 
         const logsResponse = await config.getLogsFunction(logsUri, activeInstance.secret);
@@ -181,7 +182,7 @@ export async function refreshItemsCommand(
 
     try {
         const items = await config.getItemsFunction(
-            path.join(activeInstance.url, config.entityType + 's').toString(), 
+            (urlJoin(activeInstance.url, config.entityType + 's', { trailingSlash: true }).toString()),
             activeInstance.secret
         );
         await context.globalState.update(config.entityType + 's', items);

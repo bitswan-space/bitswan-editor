@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import urlJoin from 'proper-url-join';
 import { GitOpsItem } from '../views/workspaces_view';
 import { getAutomations } from '../lib';
 import { WorkspacesViewProvider } from '../views/workspaces_view';
@@ -88,7 +89,7 @@ export async function activateGitOpsCommand(
 
     await context.globalState.update('activeGitOpsInstance', item);
     try {
-        const automations = await getAutomations(path.join(item.url, "automations").toString(), item.secret);
+        const automations = await getAutomations(urlJoin(item.url, 'automations', { trailingSlash: true }).toString(), item.secret);
         await context.globalState.update('automations', automations);
 
         // Set up automatic refresh every 10 seconds

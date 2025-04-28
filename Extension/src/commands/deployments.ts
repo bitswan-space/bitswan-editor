@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import FormData from 'form-data';
 import JSZip from 'jszip';
+import urlJoin from 'proper-url-join';
 
 import { FolderItem } from '../views/sources_view';
 import { activateDeployment, deploy, zip2stream, zipDirectory } from '../lib';
@@ -56,7 +57,7 @@ export async function deployCommandAbstract(context: vscode.ExtensionContext, fo
             // The folder name must be all lowercase and have any characters not allowed in image tags removed
             const normalizedFolderName = folderName.toLowerCase().replace(/[^a-z0-9\-]/g, '')
                                                                  .replace(/^[,\.\-]+/g, '');
-            const deployUrl = new URL(path.join(details.deployUrl, itemSet, normalizedFolderName));
+            const deployUrl = urlJoin(details.deployUrl, itemSet, normalizedFolderName);
 
             outputChannel.appendLine(messages[itemSet]["url"] + `: ${deployUrl.toString()}`);
 
@@ -94,7 +95,7 @@ export async function deployCommandAbstract(context: vscode.ExtensionContext, fo
             if (itemSet === "automations") {
                 progress.report({ increment: 50, message: "Activating deployment..." });
 
-                const activationSuccess = await activateDeployment(path.join(details.deployUrl,"automations", normalizedFolderName, "deploy").toString(), details.deploySecret);
+                const activationSuccess = await activateDeployment(urlJoin(details.deployUrl,"automations", normalizedFolderName, "deploy").toString(), details.deploySecret);
                 if (activationSuccess) {
                     progress.report({ increment: 100, message: `Succesfully activated automation on GitOps` });
                     vscode.window.showInformationMessage(`Succesfully activated automation on GitOps`);
