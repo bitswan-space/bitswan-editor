@@ -237,17 +237,17 @@
         },
         {
           "command": "bitswan.stopAutomation",
-          "when": "view == bitswan-automations && viewItem =~ /^automation,active,running$/",
+          "when": "view == bitswan-automations && viewItem =~ /^automation,active,running( |$)/",
           "group": "inline@1"
         },
         {
           "command": "bitswan.openExternalUrl",
-          "when": "view == bitswan-automations && viewItem =~ /^automation,active,running$/",
+          "when": "view == bitswan-automations && viewItem =~ /^automation,active,running( |$).*urlStatus:url/",
           "group": "inline@1"
         },
         {
           "command": "bitswan.startAutomation",
-          "when": "view == bitswan-automations && viewItem =~ /^automation,active,(paused|exited)$/",
+          "when": "view == bitswan-automations && viewItem =~ /^automation,active,(paused|exited)( |$)/",
           "group": "inline@1"
         },
         {

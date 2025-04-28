@@ -187,8 +187,7 @@ export function activate(context: vscode.ExtensionContext) {
       const url = item.automationUrl;
       try {
         await vscode.env.openExternal(vscode.Uri.parse(url));
-        vscode.window.showInformationMessage(`Opened ${item.name} in browser. deployment id ${item.deploymentId} url ${item.automationUrl} item ${item}`);
-        vscode.window.showInformationMessage(JSON.stringify(item, null, 4));
+        vscode.window.showInformationMessage(`Opened ${item.name} in browser`);
       } catch (err) {
         vscode.window.showErrorMessage(`Failed to open URL: ${url}`);
         outputChannel.appendLine(`Error opening URL: ${err}`);

@@ -25,13 +25,6 @@ export class AutomationsViewProvider implements vscode.TreeDataProvider<vscode.T
         }
 
         const automations = this.context.globalState.get<any[]>('automations', []);
-        // log automations to console
-        console.log("[getChildren] Automations:", automations);
-        const log = vscode.window.createOutputChannel("BitSwan Debug");
-        log.show(true); // Optional: brings focus to the output
-
-        // log automations to output channel
-        log.appendLine(`[getChildren] Automations: ${JSON.stringify(automations, null, 2)}`);
         const automationItems = automations.map(automation => 
             new AutomationItem(
                 automation.name,
@@ -78,9 +71,16 @@ export class AutomationItem extends vscode.TreeItem {
         return this.name
     }
 
+    // private getContextValue(): string {
+    //     const status = this.active ? 'active' : 'inactive';
+    //     return `automation,${status},${this.state ?? 'exited'}`;
+    // }
+
     private getContextValue(): string {
         const status = this.active ? 'active' : 'inactive';
-        return `automation,${status},${this.state ?? 'exited'}`;
+        const state = this.state ?? 'exited';
+        const urlStatus = this.automationUrl ? 'url' : 'nourl';
+        return `automation,${status},${state} urlStatus:${urlStatus}`;
     }
 
     private statusIcon(status?: string): vscode.ThemeIcon {
