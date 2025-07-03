@@ -82,6 +82,7 @@ export const getAutomations = async (
     automations.forEach((a) => {
       a.deploymentId = a.deployment_id;
       a.automationUrl = a.automation_url;
+      a.relativePath = a.relative_path;
     });
     return automations;
   } else {

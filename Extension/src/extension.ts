@@ -169,6 +169,9 @@ export function activate(context: vscode.ExtensionContext) {
     let showAutomationLogsCommand = vscode.commands.registerCommand('bitswan.showAutomationLogs', 
         async (item: AutomationItem) => automationCommands.showAutomationLogsCommand(context, automationsProvider, item));
 
+    let jumpToSourceCommand = vscode.commands.registerCommand('bitswan.jumpToSource', 
+        async (item: AutomationItem) => automationCommands.jumpToSourceCommand(context, item));
+
     let showImageLogsCommand = vscode.commands.registerCommand('bitswan.showImageLogs', 
         async (item: ImageItem) => imageCommands.showImageLogsCommand(context, imagesProvider, item));
 
@@ -244,6 +247,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(deactivateAutomationCommand);
     context.subscriptions.push(deleteAutomationCommand);
     context.subscriptions.push(deleteImageCommand);
+    context.subscriptions.push(jumpToSourceCommand);
 
     // Refresh the tree views when files change in the workspace
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
