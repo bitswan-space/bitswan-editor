@@ -1,1 +1,1 @@
-bitswan[dev]==2024.4.1
+bitswan[dev]
