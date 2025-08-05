@@ -188,6 +188,11 @@
         "icon": "$(output)"
       },
       {
+        "command": "bitswan.jumpToSource",
+        "title": "Jump to Source",
+        "icon": "$(go-to-file)"
+      },
+      {
         "command": "bitswan.showImageLogs",
         "title": "Show Logs",
         "icon": "$(output)"
@@ -264,6 +269,11 @@
           "command": "bitswan.showAutomationLogs",
           "when": "view == bitswan-automations && viewItem =~ /^automation,active/",
           "group": "inline@5"
+        },
+        {
+          "command": "bitswan.jumpToSource",
+          "when": "view == bitswan-automations && viewItem =~ /^automation,/",
+          "group": "inline@6"
         },
         {
           "command": "bitswan.showImageLogs",

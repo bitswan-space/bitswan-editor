@@ -81,6 +81,12 @@ export async function deployCommandAbstract(context: vscode.ExtensionContext, fo
                 contentType: 'application/zip',
             });
 
+            // Send relative path
+            if (itemSet === "automations") {
+                const relativePath = path.relative(workspaceFolders[0].uri.fsPath, folderPath);
+                form.append('relative_path', relativePath);
+            }
+
             progress.report({ increment: 50, message: "Uploading to server " + deployUrl.toString() });
 
             const success = await deploy(deployUrl.toString(), form, details.deploySecret);
