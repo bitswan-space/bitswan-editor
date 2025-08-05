@@ -22,12 +22,26 @@ export class ImagesViewProvider implements vscode.TreeDataProvider<ImageItem> {
 
         const instances = this.context.globalState.get<any[]>('images', []);
 
-        return instances.map(instance => {
+        const imageItems = instances.map(instance => {
             return new ImageItem(
                 instance.tag,
                 instance.created,
                 instance.size,
+                instance.building || false,
             );
+        });
+
+        // Sort images: building images first, then by name
+        return imageItems.sort((a, b) => {
+            // Building images come first
+            if (a.building && !b.building) {
+                return -1;
+            }
+            if (!a.building && b.building) {
+                return 1;
+            }
+            // If both have same building status, sort by name
+            return a.name.localeCompare(b.name);
         });
     }
 } 
@@ -35,13 +49,23 @@ export class ImagesViewProvider implements vscode.TreeDataProvider<ImageItem> {
 export class ImageItem extends vscode.TreeItem {
     constructor(
         public readonly name: string,
-        public readonly buildTime: string,
+        public readonly buildTime: string | null,
         public readonly size: string,
+        public readonly building: boolean = false,
     ) {
         super(name, vscode.TreeItemCollapsibleState.None);
-        this.tooltip = `${this.name} ${this.buildTime}`;
+        
+        // Handle tooltip and display based on building status
+        if (this.building) {
+            this.tooltip = `${this.name} (Building...)`;
+            this.description = 'Building...';
+            this.iconPath = new vscode.ThemeIcon('sync~spin');
+        } else {
+            this.tooltip = `${this.name} ${this.buildTime || 'Unknown build time'}`;
+            this.iconPath = new vscode.ThemeIcon('circuit-board');
+        }
+        
         this.contextValue = 'image';
-        this.iconPath = new vscode.ThemeIcon('circuit-board');
     }
 
     public urlSlug(): string {
