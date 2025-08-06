@@ -1,3 +1,6 @@
+FROM quay.io/oauth2-proxy/oauth2-proxy:v7.9.0 AS proxy_builder
+
+
 FROM --platform=linux/amd64 codercom/code-server:4.95.3-ubuntu
 
 ENV VENV_PATH=/tmp/.bitswan
@@ -9,7 +12,7 @@ RUN ln -snf /usr/share/zoneinfo/$CONTAINER_TIMEZONE /etc/localtime && echo $CONT
 
 RUN apt-get update && apt-get install -y \
     software-properties-common \
-    jq
+    jq 
 
 RUN add-apt-repository 'ppa:deadsnakes/ppa' && \
     apt-get update
@@ -17,7 +20,7 @@ RUN add-apt-repository 'ppa:deadsnakes/ppa' && \
 # Install Python and development tools
 RUN apt-get install -y \
     gcc \
-    libffi-dev \ 
+    libffi-dev \
     python3.10 \
     python3.10-venv \
     python3.10-dev \
@@ -29,6 +32,8 @@ RUN apt-get install -y \
     libssl-dev \
     build-essential \
     python-lxml
+
+COPY --from=proxy_builder /bin/oauth2-proxy /usr/local/bin/oauth2-proxy
 
 # Create python3 symlink
 RUN ln -s -f /usr/bin/python3.10 /usr/bin/python3

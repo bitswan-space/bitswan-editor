@@ -89,5 +89,26 @@ fi
 # Copy virtual environment
 cp -r /tmp/.bitswan /home/coder/workspace
 
-# Execute the original entrypoint
-exec "$@"
+
+INTERNAL_CODE_SERVER_PORT="9998"
+# The port the container will expose EXTERNALLY (where oauth2-proxy listens)
+EXTERNAL_PORT="9999"
+
+if [ "$OAUTH_ENABLED" = "true" ]; then
+  echo "OAuth is enabled. Starting oauth2-proxy and code-server."
+
+  export OAUTH2_PROXY_UPSTREAMS="http://127.0.0.1:${INTERNAL_CODE_SERVER_PORT}"
+  export OAUTH2_PROXY_HTTP_ADDRESS="0.0.0.0:${EXTERNAL_PORT}"
+
+  oauth2-proxy &
+
+  exec /usr/bin/entrypoint.sh \
+    --bind-addr "127.0.0.1:${INTERNAL_CODE_SERVER_PORT}" \
+    --auth none \
+    .
+
+else
+  # Execute the original entrypoint
+  echo "OAuth is disabled. Starting code-server directly."
+  exec "$@"
+fi
