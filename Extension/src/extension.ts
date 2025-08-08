@@ -272,11 +272,6 @@ export function activate(context: vscode.ExtensionContext) {
       )
   );
 
-  let showImageLogsCommand = vscode.commands.registerCommand(
-    "bitswan.showImageLogs",
-    async (item: ImageItem) =>
-      imageCommands.showImageLogsCommand(context, imagesProvider, item)
-  );
   let jumpToSourceCommand = vscode.commands.registerCommand(
     "bitswan.jumpToSource",
     async (item: AutomationItem) =>
@@ -371,21 +366,6 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(deactivateAutomationCommand);
   context.subscriptions.push(deleteAutomationCommand);
   context.subscriptions.push(deleteImageCommand);
-  let deleteImageCommand = vscode.commands.registerCommand(
-    "bitswan.deleteImage",
-    async (item: ImageItem) =>
-      itemCommands.makeItemCommand({
-        title: `Removing image ${item.name}`,
-        initialProgress: "Sending request to GitOps...",
-        urlPath: "",
-        apiFunction: deleteImage,
-        successProgress: `Image ${item.name} deleted successfully`,
-        successMessage: `Image ${item.name} deleted successfully`,
-        errorMessage: `Failed to delete image ${item.name}:`,
-        errorLogPrefix: "Image Delete Error:",
-        prompt: false,
-      })(context, imagesProvider, item)
-  );
 
   // Register all commands
   context.subscriptions.push(deployCommand);
