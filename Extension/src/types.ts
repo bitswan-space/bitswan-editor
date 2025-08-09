@@ -14,6 +14,7 @@ export type BitswanJupyterServer = {
   port: number;
   token: string;
   url: string;
+  automationName: string;
 };
 
 export type BitswanJupyterServerRecords = Record<string, BitswanJupyterServer>;

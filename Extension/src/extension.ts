@@ -84,7 +84,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   jupyterExt.exports.createJupyterServerCollection(
     `${context.extension.id}:lab`,
-    "Bitswan Jupyter Server",
+    "Bitswan Jupyter Server(s)",
     {
       provideJupyterServers: () => getJupyterServers(context),
       resolveJupyterServer: (server) => server,

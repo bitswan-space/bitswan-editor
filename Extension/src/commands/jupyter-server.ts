@@ -104,8 +104,17 @@ export async function startJupyterServer(
 
         console.log("jupyter-server:server-info", serverInfo);
 
+        const currentServerRecords =
+          context.globalState.get<BitswanJupyterServerRecords>(
+            JUPYTER_SERVER_RECORDS_KEY
+          );
+
         context.globalState.update(JUPYTER_SERVER_RECORDS_KEY, {
-          [serverInfo.pre]: serverInfo,
+          ...currentServerRecords,
+          [`${serverInfo.pre}-${automationName}`]: {
+            ...serverInfo,
+            automationName,
+          },
         });
 
         console.log("jupyter-server:update-jupyter-server-records");
@@ -125,16 +134,24 @@ export async function getJupyterServers(context: vscode.ExtensionContext) {
     JUPYTER_SERVER_RECORDS_KEY
   );
 
+  console.log("jupyter-server:server-records", serverRecords);
+
   const servers = Object.values(serverRecords ?? {});
 
-  return servers.map((server) => {
+  console.log("jupyter-server:servers", servers);
+
+  const jupyterServers = servers.map((server) => {
     return {
-      id: `${server.pre}:${server.port}`,
-      label: server.url,
+      id: `${server.pre}-${server.automationName}`,
+      label: `${server.automationName} Jupyter Server`,
       connectionInformation: {
         baseUrl: vscode.Uri.parse(server.url),
         token: server.token,
       },
     };
   });
+
+  console.log("jupyter-server:jupyter-servers", jupyterServers);
+
+  return jupyterServers;
 }
