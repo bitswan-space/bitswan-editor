@@ -1,5 +1,6 @@
 import FormData from 'form-data';
 import JSZip from 'jszip';
+import { JupyterServerRequestResponse } from "./types";
 import { Readable } from 'stream';
 import axios from 'axios';
 import path from 'path';
