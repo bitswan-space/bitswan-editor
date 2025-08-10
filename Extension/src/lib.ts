@@ -39,7 +39,7 @@ export const zip2stream = async (zipFile: JSZip) => {
 
 export const deploy = async (deployUrl: string, form: FormData, secret: string) => {
   const response = await axios.post(deployUrl, form, {
-    headers: {
+    headers: { 
       'Content-Type': 'multipart/form-data',
       'Authorization': `Bearer ${secret}`
     },
@@ -71,7 +71,7 @@ export const getAutomations = async (
       Authorization: `Bearer ${secret}`,
     },
   });
-
+  
   if (response.status == 200) {
 
     if (!Array.isArray(response.data)) {
