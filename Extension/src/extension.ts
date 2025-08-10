@@ -19,6 +19,8 @@ import { AutomationsViewProvider } from './views/automations_view';
 import { ImageSourcesViewProvider } from './views/image_sources_view';
 import { ImagesViewProvider } from './views/images_view';
 import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation, deleteImage } from './lib';
+import { Jupyter } from '@vscode/jupyter-extension';
+import { getJupyterServers, notebookInitializationFlow, startJupyterServer } from './commands/jupyter-server';
 
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
