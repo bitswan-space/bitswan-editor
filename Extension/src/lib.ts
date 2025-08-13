@@ -1,10 +1,11 @@
+import vscode from 'vscode';
+
 import FormData from 'form-data';
 import JSZip from 'jszip';
 import { JupyterServerRequestResponse } from "./types";
 import { Readable } from 'stream';
 import axios from 'axios';
 import path from 'path';
-import vscode from 'vscode';
 
 export const zipDirectory = async (dirPath: string, relativePath: string = '', zipFile: JSZip = new JSZip(), outputChannel: vscode.OutputChannel) => {
 
@@ -39,7 +40,7 @@ export const zip2stream = async (zipFile: JSZip) => {
 
 export const deploy = async (deployUrl: string, form: FormData, secret: string) => {
   const response = await axios.post(deployUrl, form, {
-    headers: { 
+    headers: {
       'Content-Type': 'multipart/form-data',
       'Authorization': `Bearer ${secret}`
     },
@@ -71,7 +72,7 @@ export const getAutomations = async (
       Authorization: `Bearer ${secret}`,
     },
   });
-  
+
   if (response.status == 200) {
 
     if (!Array.isArray(response.data)) {
@@ -237,3 +238,20 @@ export const startJupyterServerRequest = async (
 
   return response;
 };
+
+
+export const heartbeatJupyterServer = async (
+  jupyterServerHeartBeatUrl: string,
+  secret: string,
+  jupyterServers: {
+    automationName: string;
+  }[]
+) => {
+  const response = await axios.post(jupyterServerHeartBeatUrl, jupyterServers, {
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  return response;
+}

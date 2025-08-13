@@ -3,10 +3,11 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 
+import { heartbeatJupyterServer, startJupyterServerRequest } from "../lib";
+
 import { BitswanJupyterServerRecords } from "../types";
 import { GitOpsItem } from "../views/workspaces_view";
 import { JUPYTER_SERVER_RECORDS_KEY } from "../constants";
-import { startJupyterServerRequest } from "../lib";
 
 const ConfigParser = configparserModule.default || configparserModule;
 
@@ -15,6 +16,7 @@ export async function notebookInitializationFlow(
 ) {
   for (const nbDoc of vscode.workspace.notebookDocuments) {
     await startJupyterServer(context, nbDoc);
+    startUpJupyterServerHeartbeat(context);
   }
 }
 
@@ -154,4 +156,47 @@ export async function getJupyterServers(context: vscode.ExtensionContext) {
   console.log("jupyter-server:jupyter-servers", jupyterServers);
 
   return jupyterServers;
+}
+
+
+export async function startUpJupyterServerHeartbeat(context: vscode.ExtensionContext) {
+  const intervalId = setInterval(async () => {
+    const serverRecords = context.globalState.get<BitswanJupyterServerRecords>(
+      JUPYTER_SERVER_RECORDS_KEY
+    );
+
+    const activeGitOpsInstance = context.globalState.get<GitOpsItem>(
+      "activeGitOpsInstance"
+    );
+    if (!activeGitOpsInstance) {
+      console.log("jupyter-server:no-active-gitops-instance");
+      return;
+    }
+
+    const jupyterServers = Object.values(serverRecords ?? {}).map((server) => {
+      return {
+        automationName: server.automationName,
+      };
+    });
+
+    const response = await heartbeatJupyterServer(
+      `${activeGitOpsInstance.url}/jupyter/heartbeat`,
+      activeGitOpsInstance.secret,
+      jupyterServers
+    );
+
+    console.log("jupyter-server:heartbeat-jupyter-server-response", response);
+
+    if (response.status == 200) {
+      console.log("jupyter-server:heartbeat-jupyter-server-success");
+    } else {
+      console.log("jupyter-server:heartbeat-jupyter-server-error");
+    }
+  }, 30000);
+
+  context.subscriptions.push({
+    dispose: () => {
+      clearInterval(intervalId);
+    },
+  });
 }
