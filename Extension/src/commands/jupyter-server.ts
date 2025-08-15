@@ -93,11 +93,16 @@ export async function startJupyterServer(
         return;
       }
 
+      // dynamic import to avoid static import conflict with vscode
+      const { nanoid } = await import("nanoid");
+      const sessionId = nanoid()
+
       const response = await startJupyterServerRequest(
         `${activeGitOpsInstance.url}/jupyter/start`,
         activeGitOpsInstance.secret,
         automationName,
-        preImage
+        preImage,
+        sessionId
       );
       if (response.status === 200) {
         console.log("jupyter-server:start-jupyter-server-request-success");
@@ -116,6 +121,7 @@ export async function startJupyterServer(
           [`${serverInfo.pre}-${automationName}`]: {
             ...serverInfo,
             automationName,
+            sessionId,
           },
         });
 
@@ -175,7 +181,10 @@ export async function startUpJupyterServerHeartbeat(context: vscode.ExtensionCon
 
     const jupyterServers = Object.values(serverRecords ?? {}).map((server) => {
       return {
-        automationName: server.automationName,
+        automation_name: server.automationName,
+        session_id: server.sessionId,
+        pre_image: server.pre,
+        token: server.token,
       };
     });
 
@@ -187,7 +196,7 @@ export async function startUpJupyterServerHeartbeat(context: vscode.ExtensionCon
 
     console.log("jupyter-server:heartbeat-jupyter-server-response", response);
 
-    if (response.status == 200) {
+    if (response?.status == 200) {
       console.log("jupyter-server:heartbeat-jupyter-server-success");
     } else {
       console.log("jupyter-server:heartbeat-jupyter-server-error");
