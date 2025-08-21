@@ -116,7 +116,7 @@ export async function startJupyterServer(
             JUPYTER_SERVER_RECORDS_KEY
           );
 
-        context.globalState.update(JUPYTER_SERVER_RECORDS_KEY, {
+        await context.globalState.update(JUPYTER_SERVER_RECORDS_KEY, {
           ...currentServerRecords,
           [`${serverInfo.pre}-${automationName}`]: {
             ...serverInfo,
@@ -125,7 +125,11 @@ export async function startJupyterServer(
           },
         });
 
-        console.log("jupyter-server:update-jupyter-server-records");
+        const updatedServerRecords = context.globalState.get<BitswanJupyterServerRecords>(
+          JUPYTER_SERVER_RECORDS_KEY
+        );
+
+        console.log("jupyter-server:update-jupyter-server-records", updatedServerRecords);
 
         vscode.window.showInformationMessage("Jupyter Server started");
       } else {
