@@ -256,6 +256,8 @@ export const heartbeatJupyterServer = async (
   }[]
 ) => {
 
+  console.log("jupyter-server:heartbeat:jupyter-servers", jupyterServers)
+
   const heartbeatRequestPayload = {
     servers: jupyterServers,
   }
