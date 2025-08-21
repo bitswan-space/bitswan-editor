@@ -68,6 +68,9 @@ export async function startJupyterServer(
 
   console.log("jupyter-server:automation-name", automationName);
 
+  const automationDirectoryPath = path.dirname(notebook.uri.fsPath);
+  console.log("jupyter-server:automation-parent-path", automationDirectoryPath);
+
   const pipelineConfig = getPipelineConfig(notebook);
   if (!pipelineConfig) {
     console.log("jupyter-server:no-pipeline-config");
@@ -102,7 +105,8 @@ export async function startJupyterServer(
         activeGitOpsInstance.secret,
         automationName,
         preImage,
-        sessionId
+        sessionId,
+        automationDirectoryPath
       );
       if (response.status === 200) {
         console.log("jupyter-server:start-jupyter-server-request-success");
@@ -122,6 +126,7 @@ export async function startJupyterServer(
             ...serverInfo,
             automationName,
             sessionId,
+            automationDirectoryPath
           },
         });
 
@@ -189,6 +194,7 @@ export async function startUpJupyterServerHeartbeat(context: vscode.ExtensionCon
         session_id: server.sessionId,
         pre_image: server.pre,
         token: server.token,
+        automation_directory_path: server.automationDirectoryPath,
       };
     });
 

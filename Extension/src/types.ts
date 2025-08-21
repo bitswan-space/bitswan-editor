@@ -16,6 +16,7 @@ export type BitswanJupyterServer = {
   url: string;
   automationName: string;
   sessionId: string;
+  automationDirectoryPath: string;
 };
 
 export type BitswanJupyterServerRecords = Record<string, BitswanJupyterServer>;

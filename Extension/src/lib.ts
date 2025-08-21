@@ -215,11 +215,13 @@ export const startJupyterServerRequest = async (
   automationName: string,
   preImage: string,
   sessionId: string,
+  automationDirectoryPath: string
 ) => {
   const params = new URLSearchParams();
   params.append("automation_name", automationName);
   params.append("pre_image", preImage);
   params.append("session_id", sessionId)
+  params.append("automation_directory_path", automationDirectoryPath)
 
   const response = await axios.post<JupyterServerRequestResponse>(
     jupyterServerUrl,
@@ -246,6 +248,7 @@ export const heartbeatJupyterServer = async (
   jupyterServerHeartBeatUrl: string,
   secret: string,
   jupyterServers: {
+    automation_directory_path: string;
     automation_name: string;
     session_id: string;
     pre_image: string;
