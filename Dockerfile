@@ -54,6 +54,10 @@ RUN . ${VENV_PATH}/bin/activate && \
 COPY update-entrypoint.sh /usr/bin/update-entrypoint.sh
 RUN chmod +x /usr/bin/update-entrypoint.sh
 
+# Copy and install git wrapper script
+COPY git-wrapper.sh /usr/local/bin/git
+RUN chmod +x /usr/local/bin/git
+
 USER coder
 
 EXPOSE 9999
