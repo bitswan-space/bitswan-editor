@@ -1,5 +1,4 @@
 #!/bin/bash
-
 EXTENSIONS_DIR="/home/coder/.local/share/code-server/extensions"
 TEMP_EXTENSIONS_DIR="/tmp/extensions"
 
@@ -89,10 +88,12 @@ fi
 # Copy virtual environment
 cp -r /tmp/.bitswan /home/coder/workspace
 
-
 INTERNAL_CODE_SERVER_PORT="9998"
 # The port the container will expose EXTERNALLY (where oauth2-proxy listens)
 EXTERNAL_PORT="9999"
+# Configure git with hostname-based username and fixed email
+git config --global user.name "$HOSTNAME Bitswan user"
+git config --global user.email "$HOSTNAME-bitswan@example.com"
 
 if [ "$OAUTH_ENABLED" = "true" ]; then
   echo "OAuth is enabled. Starting oauth2-proxy and code-server."
