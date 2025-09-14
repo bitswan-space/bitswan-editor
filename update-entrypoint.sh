@@ -75,7 +75,7 @@ echo "Checking BitSwan extension..."
 REPO="bitswan-space/bitswan-editor"
 
 # Get the latest release tag and version
-TAG=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | jq -r .tag_name)
+TAG=$(curl -sL "https://api.github.com/repos/$REPO/releases/latest" | jq -r .tag_name)
 if [ -n "$TAG" ] && [ "$TAG" != "null" ]; then
     VERSION=$(echo $TAG | sed 's/^v//')
     VSIX_URL="https://github.com/$REPO/releases/download/$TAG/bitswan-$VERSION.vsix"
