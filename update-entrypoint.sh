@@ -1,5 +1,4 @@
 #!/bin/bash
-
 EXTENSIONS_DIR="/home/coder/.local/share/code-server/extensions"
 TEMP_EXTENSIONS_DIR="/tmp/extensions"
 
@@ -76,7 +75,7 @@ echo "Checking BitSwan extension..."
 REPO="bitswan-space/bitswan-editor"
 
 # Get the latest release tag and version
-TAG=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | jq -r .tag_name)
+TAG=$(curl -sL "https://api.github.com/repos/$REPO/releases/latest" | jq -r .tag_name)
 if [ -n "$TAG" ] && [ "$TAG" != "null" ]; then
     VERSION=$(echo $TAG | sed 's/^v//')
     VSIX_URL="https://github.com/$REPO/releases/download/$TAG/bitswan-$VERSION.vsix"
@@ -89,10 +88,12 @@ fi
 # Copy virtual environment
 cp -r /tmp/.bitswan /home/coder/workspace
 
-
 INTERNAL_CODE_SERVER_PORT="9998"
 # The port the container will expose EXTERNALLY (where oauth2-proxy listens)
 EXTERNAL_PORT="9999"
+# Configure git with hostname-based username and fixed email
+git config --global user.name "$HOSTNAME Bitswan user"
+git config --global user.email "$HOSTNAME-bitswan@example.com"
 
 if [ "$OAUTH_ENABLED" = "true" ]; then
   echo "OAuth is enabled. Starting oauth2-proxy and code-server."
