@@ -16,7 +16,8 @@
 				"${workspaceFolder}/out/**/*.js"
 			],
 			"preLaunchTask": "${defaultBuildTask}",
-			"outputCapture": "std"
+      "trace": true,
+			"outputCapture": "console"
 		}
 	]
 }

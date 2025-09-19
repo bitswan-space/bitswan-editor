@@ -19,6 +19,8 @@ import { AutomationsViewProvider } from './views/automations_view';
 import { ImageSourcesViewProvider } from './views/image_sources_view';
 import { ImagesViewProvider } from './views/images_view';
 import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation, deleteImage } from './lib';
+import { Jupyter } from '@vscode/jupyter-extension';
+import { getJupyterServers, notebookInitializationFlow, startJupyterServer } from './commands/jupyter-server';
 
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
@@ -55,6 +57,32 @@ export function activate(context: vscode.ExtensionContext) {
     if (process.env.BITSWAN_DEPLOY_URL || process.env.BITSWAN_DEPLOY_SECRET) {
         vscode.commands.executeCommand('bitswan-workspaces.removeView');
     }
+
+    const jupyterExt =
+      vscode.extensions.getExtension<Jupyter>("ms-toolsai.jupyter");
+    if (!jupyterExt) {
+      throw new Error("Jupyter Extension not installed");
+    }
+    if (!jupyterExt.isActive) {
+      jupyterExt.activate();
+    }
+
+    notebookInitializationFlow(context);
+
+    jupyterExt.exports.createJupyterServerCollection(
+      `${context.extension.id}:lab`,
+      "Bitswan Jupyter Server(s)",
+      {
+        provideJupyterServers: () => getJupyterServers(context),
+        resolveJupyterServer: (server) => server,
+      }
+    );
+
+    context.subscriptions.push(
+      vscode.workspace.onDidOpenNotebookDocument(async (doc) => {
+        await startJupyterServer(context, doc);
+      })
+    );
 
     // Create view providers
     const automationSourcesProvider = new AutomationSourcesViewProvider(context);
