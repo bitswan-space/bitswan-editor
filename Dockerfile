@@ -1,6 +1,3 @@
-FROM quay.io/oauth2-proxy/oauth2-proxy:v7.9.0 AS proxy_builder
-
-
 FROM --platform=linux/amd64 codercom/code-server:4.95.3-ubuntu
 
 ENV VENV_PATH=/tmp/.bitswan
@@ -12,7 +9,9 @@ RUN ln -snf /usr/share/zoneinfo/$CONTAINER_TIMEZONE /etc/localtime && echo $CONT
 
 RUN apt-get update && apt-get install -y \
     software-properties-common \
-    jq 
+    jq \
+    wget \
+    curl
 
 RUN add-apt-repository 'ppa:deadsnakes/ppa' && \
     apt-get update
@@ -33,7 +32,12 @@ RUN apt-get install -y \
     build-essential \
     python-lxml
 
-COPY --from=proxy_builder /bin/oauth2-proxy /usr/local/bin/oauth2-proxy
+# Download oauth2-proxy from GitHub releases
+RUN LATEST_TAG=$(curl -s https://github.com/bitswan-space/bitswan-aoc-oauth2/releases | jq -r .tag_name) && \
+    wget -O /usr/local/bin/oauth2-proxy \
+    "https://github.com/bitswan-space/bitswan-aoc-oauth2/releases/download/${LATEST_TAG}/oauth2-proxy-mqtt" && \
+    chmod +x /usr/local/bin/oauth2-proxy
+
 
 # Create python3 symlink
 RUN ln -s -f /usr/bin/python3.10 /usr/bin/python3
