@@ -33,7 +33,7 @@ RUN apt-get install -y \
     python-lxml
 
 # Download oauth2-proxy from GitHub releases
-RUN LATEST_TAG=$(curl -s https://github.com/bitswan-space/bitswan-aoc-oauth2/releases | jq -r .tag_name) && \
+RUN LATEST_TAG=$(curl -s https://api.github.com/repos/bitswan-space/bitswan-aoc-oauth2/releases/latest | jq -r .tag_name) && \
     wget -O /usr/local/bin/oauth2-proxy \
     "https://github.com/bitswan-space/bitswan-aoc-oauth2/releases/download/${LATEST_TAG}/oauth2-proxy-mqtt" && \
     chmod +x /usr/local/bin/oauth2-proxy
