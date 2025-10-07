@@ -1,9 +1,11 @@
-import vscode from 'vscode';
-import path from 'path';
-import JSZip from 'jszip';
-import { Readable } from 'stream';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
+
 import FormData from 'form-data';
+import JSZip from 'jszip';
+import { JupyterServerRequestResponse } from "./types";
+import { Readable } from 'stream';
+import path from 'path';
+import vscode from 'vscode';
 
 export const zipDirectory = async (dirPath: string, relativePath: string = '', zipFile: JSZip = new JSZip(), outputChannel: vscode.OutputChannel) => {
 
@@ -38,7 +40,7 @@ export const zip2stream = async (zipFile: JSZip) => {
 
 export const deploy = async (deployUrl: string, form: FormData, secret: string) => {
   const response = await axios.post(deployUrl, form, {
-    headers: { 
+    headers: {
       'Content-Type': 'multipart/form-data',
       'Authorization': `Bearer ${secret}`
     },
@@ -70,7 +72,7 @@ export const getAutomations = async (
       Authorization: `Bearer ${secret}`,
     },
   });
-  
+
   if (response.status == 200) {
 
     if (!Array.isArray(response.data)) {
@@ -205,4 +207,75 @@ export const deleteImage = async (imageUrl: string, secret: string) => {
   });
 
   return response.status == 200;
+};
+
+export const startJupyterServerRequest = async (
+  jupyterServerUrl: string,
+  secret: string,
+  automationName: string,
+  preImage: string,
+  sessionId: string,
+  automationDirectoryPath: string
+) => {
+  const params = new URLSearchParams();
+  params.append("automation_name", automationName);
+  params.append("pre_image", preImage);
+  params.append("session_id", sessionId)
+  params.append("automation_directory_path", automationDirectoryPath)
+
+  const response = await axios.post<JupyterServerRequestResponse>(
+    jupyterServerUrl,
+    params,
+    {
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+    }
+  );
+
+  console.log(
+    "jupyter-server:start-jupyter-server-request-response",
+    response.data
+  );
+
+  return response;
+};
+
+
+export const heartbeatJupyterServer = async (
+  jupyterServerHeartBeatUrl: string,
+  secret: string,
+  jupyterServers: {
+    automation_directory_path: string;
+    automation_name: string;
+    session_id: string;
+    pre_image: string;
+    token: string;
+  }[]
+) => {
+
+  console.log("jupyter-server:heartbeat:jupyter-servers", jupyterServers)
+
+  const heartbeatRequestPayload = {
+    servers: jupyterServers,
+  }
+
+  try {
+    const response = await axios.post(jupyterServerHeartBeatUrl, heartbeatRequestPayload, {
+      headers: {
+        'Authorization': `Bearer ${secret}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+    });
+    console.log("jupyter-server:heartbeat:response-body", response.data)
+    return response
+  } catch (error) {
+
+    console.error("jupyter-server:heartbeat:error-sresponse-body",(error as AxiosError).toJSON())
+    console.error("jupyter-server:heartbeat:error-sresponse-body", error)
+  }
+
 }
