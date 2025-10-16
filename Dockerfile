@@ -14,6 +14,16 @@ FROM --platform=linux/amd64 codercom/code-server:4.104.3-ubuntu
 ENV VENV_PATH=/opt/.bitswan
 ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python
 
+# Environment variables for extension compatibility
+ENV VSCODE_AGENT_FOLDER=/home/coder/.vscode-server
+ENV VSCODE_EXTENSIONS_FOLDER=/home/coder/.local/share/code-server/extensions
+ENV CODE_SERVER_EXTENSIONS_DIR=/home/coder/.local/share/code-server/extensions
+
+# Environment variables for MSAL and Microsoft extensions
+ENV ELECTRON_DISABLE_SECURITY_WARNINGS=1
+ENV ELECTRON_NO_ATTACH_CONSOLE=1
+ENV VSCODE_DISABLE_CRASH_REPORTER=1
+
 USER root
 
 # Set the timezone
@@ -24,7 +34,21 @@ RUN mkdir -p /opt/uv/python && chmod -R 755 /opt/uv
 RUN apt-get update && apt-get install -y \
     jq \
     curl \
-    unzip
+    unzip \
+    build-essential \
+    python3-dev \
+    libffi-dev \
+    libssl-dev \
+    libsecret-1-dev \
+    libsecret-1-0 \
+    pkg-config \
+    libgtk-3-dev \
+    libx11-dev \
+    libxss1
+
+# Install Node.js 18 (required for MSAL)
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs
 
 COPY --from=uvbin /uv /uvx /bin/
 
@@ -44,6 +68,11 @@ RUN uv pip install --python ${VENV_PATH}/bin/python --upgrade pip
 # Install Python packages
 COPY requirements.txt /opt/requirements.txt
 RUN uv pip install --python ${VENV_PATH}/bin/python -r /opt/requirements.txt
+
+# Install MSAL node extensions for Microsoft authentication
+RUN npm config set cache /tmp/.npm && \
+    npm install -g @azure/msal-node-extensions && \
+    rm -rf /tmp/.npm
 
 # Copy the built extension from the build stage
 RUN mkdir -p /opt/bitswan-extension
@@ -77,6 +106,18 @@ RUN curl -L -o /opt/extensions/jupyter.vsix.gz "https://marketplace.visualstudio
 
 # Ensure all downloaded extensions are owned by coder user
 RUN chown -R coder:coder /opt/extensions
+
+# Create code-server configuration directory and add settings
+RUN mkdir -p /home/coder/.config/code-server
+RUN echo '{"extensions.supportNodeGlobalNavigator": false}' > /home/coder/.config/code-server/settings.json
+RUN chown -R coder:coder /home/coder/.config
+
+# Ensure MSAL runtime is accessible
+RUN mkdir -p /usr/lib/code-server/lib/vscode/extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions
+RUN chown -R coder:coder /usr/lib/code-server/lib/vscode/extensions
+
+# Create a symlink to the globally installed MSAL runtime
+RUN ln -sf /usr/lib/node_modules/@azure/msal-node-extensions /usr/lib/code-server/lib/vscode/extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions || true
 
 COPY update-entrypoint.sh /usr/bin/update-entrypoint.sh
 RUN chmod +x /usr/bin/update-entrypoint.sh

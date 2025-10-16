@@ -67,6 +67,45 @@ fi
 # Copy virtual environment
 cp -r /opt/.bitswan /home/coder/workspace
 
+# Create additional configuration for extensions
+mkdir -p /home/coder/.config/Code/User
+cat > /home/coder/.config/Code/User/settings.json << 'EOF'
+{
+    "extensions.supportNodeGlobalNavigator": false,
+    "github.copilot.enable": {
+        "*": true,
+        "yaml": true,
+        "plaintext": true,
+        "markdown": true
+    },
+    "python.defaultInterpreterPath": "/home/coder/workspace/.bitswan/bin/python",
+    "jupyter.jupyterServerType": "local",
+    "jupyter.askForKernelRestart": false,
+    "microsoft-authentication.disableAutoSignIn": true,
+    "microsoft-authentication.disableTelemetry": true,
+    "extensions.autoUpdate": false,
+    "extensions.autoCheckUpdates": false,
+    "telemetry.telemetryLevel": "off",
+    "workbench.enableExperiments": false,
+    "workbench.settings.enableNaturalLanguageSearch": false
+}
+EOF
+
+# Set up environment for MSAL
+export ELECTRON_DISABLE_SECURITY_WARNINGS=1
+export ELECTRON_NO_ATTACH_CONSOLE=1
+export VSCODE_DISABLE_CRASH_REPORTER=1
+
+# Ensure MSAL runtime directory is accessible
+if [ -d "/usr/lib/code-server/lib/vscode/extensions/microsoft-authentication" ]; then
+    chmod -R 755 /usr/lib/code-server/lib/vscode/extensions/microsoft-authentication
+fi
+
+# Create symlink to MSAL runtime if it doesn't exist
+if [ ! -L "/usr/lib/code-server/lib/vscode/extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions" ] && [ -d "/usr/lib/node_modules/@azure/msal-node-extensions" ]; then
+    ln -sf /usr/lib/node_modules/@azure/msal-node-extensions /usr/lib/code-server/lib/vscode/extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions
+fi
+
 INTERNAL_CODE_SERVER_PORT="9998"
 # The port the container will expose EXTERNALLY (where oauth2-proxy listens)
 EXTERNAL_PORT="9999"
