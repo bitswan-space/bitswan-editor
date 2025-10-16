@@ -67,28 +67,36 @@ export const getAutomations = async (
   automationsUrl: string,
   secret: string,
 ) => {
-  const response = await axios.get(automationsUrl, {
-    headers: {
-      Authorization: `Bearer ${secret}`,
-    },
-  });
-
-  if (response.status == 200) {
-
-    if (!Array.isArray(response.data)) {
-      console.warn("[getAutomations] Unexpected response format:", response.data);
-      return [];
-    }
-
-    const automations = response.data;
-    automations.forEach((a) => {
-      a.deploymentId = a.deployment_id;
-      a.automationUrl = a.automation_url;
-      a.relativePath = a.relative_path;
+  try {
+    const response = await axios.get(automationsUrl, {
+      headers: {
+        Authorization: `Bearer ${secret}`,
+      },
     });
-    return automations;
-  } else {
-    throw new Error(`Failed to get automations from GitOps`);
+
+    if (response.status == 200) {
+
+      if (!Array.isArray(response.data)) {
+        console.warn("[getAutomations] Unexpected response format:", response.data);
+        return [];
+      }
+
+      const automations = response.data;
+      automations.forEach((a) => {
+        a.deploymentId = a.deployment_id;
+        a.automationUrl = a.automation_url;
+        a.relativePath = a.relative_path;
+      });
+      return automations;
+    } else {
+      throw new Error(`Failed to get automations from GitOps: Request failed with status code ${response.status}. URL: ${automationsUrl}, Secret: ${secret.substring(0, 8)}...`);
+    }
+  } catch (error: any) {
+    if (error instanceof AxiosError) {
+      const statusCode = error.response?.status || 'unknown';
+      throw new Error(`Failed to get automations from GitOps: Request failed with status code ${statusCode}. URL: ${automationsUrl}, Secret: ${secret.substring(0, 8)}...`);
+    }
+    throw error;
   }
 };
 
