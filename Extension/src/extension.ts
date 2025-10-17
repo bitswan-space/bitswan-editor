@@ -288,16 +288,17 @@ export function activate(context: vscode.ExtensionContext) {
     
 
     const activeGitOpsInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
-    if (activeGitOpsInstance) {
-        workspaceCommands.activateGitOpsCommand(context, workspacesProvider, activeGitOpsInstance, automationsProvider);
-        automationsProvider.refresh();
-    } else if (process.env.BITSWAN_DEPLOY_URL && process.env.BITSWAN_DEPLOY_SECRET) {
+
+    if (process.env.BITSWAN_DEPLOY_URL && process.env.BITSWAN_DEPLOY_SECRET) {
         const activeGitOpsInstance = new GitOpsItem(
             'Active GitOps Instance',
             process.env.BITSWAN_DEPLOY_URL,
             process.env.BITSWAN_DEPLOY_SECRET,
             true
         );
+        workspaceCommands.activateGitOpsCommand(context, workspacesProvider, activeGitOpsInstance, automationsProvider);
+        automationsProvider.refresh();
+    } else if (activeGitOpsInstance) {
         workspaceCommands.activateGitOpsCommand(context, workspacesProvider, activeGitOpsInstance, automationsProvider);
         automationsProvider.refresh();
     }
