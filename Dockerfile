@@ -44,11 +44,20 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libgtk-3-dev \
     libx11-dev \
-    libxss1
+    libxss1 \
+    ca-certificates \
+    gnupg \
+    lsb-release
 
 # Install Node.js 18 (required for MSAL)
 RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
     apt-get install -y nodejs
+
+# Install Caddy
+RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg && \
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list && \
+    apt-get update && \
+    apt-get install -y caddy
 
 COPY --from=uvbin /uv /uvx /bin/
 
@@ -122,9 +131,19 @@ RUN ln -sf /usr/lib/node_modules/@azure/msal-node-extensions /usr/lib/code-serve
 COPY update-entrypoint.sh /usr/bin/update-entrypoint.sh
 RUN chmod +x /usr/bin/update-entrypoint.sh
 
+COPY Caddyfile /etc/caddy/Caddyfile
+RUN chmod 644 /etc/caddy/Caddyfile
+
+# Create frame directory and copy HTML file and logo
+RUN mkdir -p /opt/bitswan-frame
+COPY frame.html /opt/bitswan-frame/frame.html
+COPY Extension/resources/bitswan-logo.png /opt/bitswan-frame/bitswan-logo.png
+RUN chmod 644 /opt/bitswan-frame/frame.html /opt/bitswan-frame/bitswan-logo.png
+RUN chown -R coder:coder /opt/bitswan-frame
+
 USER coder
 
 EXPOSE 9999
 
 WORKDIR /home/coder/workspace
-ENTRYPOINT ["/usr/bin/update-entrypoint.sh", "/usr/bin/entrypoint.sh", "--bind-addr", "0.0.0.0:9999", "."]
+ENTRYPOINT ["/usr/bin/update-entrypoint.sh"]
