@@ -223,6 +223,8 @@ echo "Starting code-server on internal port ${INTERNAL_CODE_SERVER_PORT}..."
   . &
 CODE_SERVER_PID=$!
 
+chown -R coder:coder /home/coder
+
 if [ "$OAUTH_ENABLED" = "true" ]; then
   echo "OAuth is enabled. Starting oauth2-proxy and Caddy."
 
