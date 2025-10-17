@@ -1,12 +1,38 @@
 #!/bin/bash
 EXTENSIONS_DIR="/home/coder/.local/share/code-server/extensions"
 TEMP_EXTENSIONS_DIR="/tmp/extensions"
+EXTENSIONS_VERSION_FILE="/home/coder/.local/share/code-server/installed-extensions.json"
 
 mkdir -p ${EXTENSIONS_DIR}
 mkdir -p ${TEMP_EXTENSIONS_DIR}
+mkdir -p "$(dirname "$EXTENSIONS_VERSION_FILE")"
 
-# Function to get installed extension version
+# Initialize extensions version file if it doesn't exist
+if [ ! -f "$EXTENSIONS_VERSION_FILE" ]; then
+    echo "{}" > "$EXTENSIONS_VERSION_FILE"
+fi
+
+# Function to get installed extension version from JSON file
 get_installed_version() {
+    local extension=$1
+    local version=$(jq -r --arg ext "$extension" '.[$ext] // empty' "$EXTENSIONS_VERSION_FILE" 2>/dev/null)
+    if [ -n "$version" ] && [ "$version" != "null" ]; then
+        echo "$version"
+    else
+        echo ""
+    fi
+}
+
+# Function to update installed extension version in JSON file
+update_installed_version() {
+    local extension=$1
+    local version=$2
+    local temp_file=$(mktemp)
+    jq --arg ext "$extension" --arg ver "$version" '.[$ext] = $ver' "$EXTENSIONS_VERSION_FILE" > "$temp_file" && mv "$temp_file" "$EXTENSIONS_VERSION_FILE"
+}
+
+# Function to get installed extension version from filesystem (fallback)
+get_installed_version_filesystem() {
     local extension=$1
     local publisher=$(echo $extension | cut -d'.' -f1)
     local name=$(echo $extension | cut -d'.' -f2)
@@ -20,28 +46,87 @@ get_installed_version() {
     fi
 }
 
+# Function to compare version strings (returns 0 if v1 >= v2, 1 otherwise)
+version_compare() {
+    local v1=$1
+    local v2=$2
+    
+    # If either version is empty, consider it as "not installed"
+    if [ -z "$v1" ]; then
+        return 1  # Need to install
+    fi
+    if [ -z "$v2" ]; then
+        return 0  # Already installed
+    fi
+    
+    # Use sort -V for version comparison
+    if [ "$v1" = "$v2" ]; then
+        return 0  # Same version
+    fi
+    
+    # Check if v1 is newer than v2
+    if printf '%s\n%s\n' "$v1" "$v2" | sort -V -C; then
+        return 0  # v1 >= v2
+    else
+        return 1  # v1 < v2, need to update
+    fi
+}
+
 # Function to install or update an extension from local file
 install_or_update_extension_local() {
     local extension=$1
     local version=$2
     local local_file=$3
-    local installed_version=$(get_installed_version "$extension")
     
-    if [ -z "$installed_version" ] || [ "$installed_version" != "$version" ]; then
+    # Get installed version from JSON file first, fallback to filesystem
+    local installed_version=$(get_installed_version "$extension")
+    if [ -z "$installed_version" ]; then
+        installed_version=$(get_installed_version_filesystem "$extension")
+        # If found in filesystem but not in JSON, update JSON
+        if [ -n "$installed_version" ]; then
+            update_installed_version "$extension" "$installed_version"
+        fi
+    fi
+    
+    # Check if we need to install/update
+    if [ -z "$installed_version" ] || ! version_compare "$installed_version" "$version"; then
         echo "Installing/Updating ${extension} from version ${installed_version:-none} to ${version}..."
         
         if [ -f "$local_file" ]; then
             echo "Installing from local file: $local_file"
-            code-server --install-extension "$local_file" --force
+            if code-server --install-extension "$local_file" --force; then
+                # Update the version in JSON file after successful installation
+                update_installed_version "$extension" "$version"
+                echo "Successfully installed ${extension} version ${version}"
+            else
+                echo "Failed to install ${extension}"
+                return 1
+            fi
         else
             echo "Local file not found: $local_file"
+            return 1
         fi
     else
-        echo "${extension} is already at version ${version}"
+        echo "${extension} is already at version ${installed_version} (>= ${version})"
     fi
 }
 
 echo "Installing/Updating extensions from pre-downloaded files..."
+
+# Track installation results
+INSTALLED_COUNT=0
+UPDATED_COUNT=0
+SKIPPED_COUNT=0
+
+# Function to track installation results
+track_installation() {
+    local result=$1
+    case $result in
+        0) ((INSTALLED_COUNT++)) ;;
+        1) ((UPDATED_COUNT++)) ;;
+        2) ((SKIPPED_COUNT++)) ;;
+    esac
+}
 
 # Install marketplace extensions from pre-downloaded files
 install_or_update_extension_local "GitHub.copilot" "$COPILOT_EXTENSION_VERSION" "/opt/extensions/copilot.vsix"
@@ -63,6 +148,15 @@ if [ -f "$LOCAL_EXTENSION_PATH" ]; then
 else
     echo "Locally built BitSwan extension not found at $LOCAL_EXTENSION_PATH"
 fi
+
+# Extension installation summary
+echo ""
+echo "Extension installation summary:"
+echo "- Installed: $INSTALLED_COUNT"
+echo "- Updated: $UPDATED_COUNT" 
+echo "- Skipped (already up-to-date): $SKIPPED_COUNT"
+echo "- Version tracking file: $EXTENSIONS_VERSION_FILE"
+echo ""
 
 # Copy virtual environment
 cp -r /opt/.bitswan /home/coder/workspace
@@ -107,27 +201,62 @@ if [ ! -L "/usr/lib/code-server/lib/vscode/extensions/microsoft-authentication/n
 fi
 
 INTERNAL_CODE_SERVER_PORT="9998"
-# The port the container will expose EXTERNALLY (where oauth2-proxy listens)
+# The port the container will expose EXTERNALLY (where OAuth proxy or Caddy listens)
 EXTERNAL_PORT="9999"
+# Caddy port (different when OAuth is enabled to avoid conflict)
+CADDY_PORT="9997"
 # Configure git with hostname-based username and fixed email
 git config --global user.name "$HOSTNAME Bitswan user"
 git config --global user.email "$HOSTNAME-bitswan@example.com"
 
-if [ "$OAUTH_ENABLED" = "true" ]; then
-  echo "OAuth is enabled. Starting oauth2-proxy and code-server."
+# Create dynamic HTML file with AOC_URL
+AOC_URL="${AOC_URL:-}"
+# Use a different delimiter to avoid issues with special characters in AOC_URL
+sed "s|AOC_URL_PLACEHOLDER|${AOC_URL}|g" /opt/bitswan-frame/frame.html > /opt/bitswan-frame/index.html
 
-  export OAUTH2_PROXY_UPSTREAMS="http://127.0.0.1:${INTERNAL_CODE_SERVER_PORT}"
+
+# Start code-server on internal port
+echo "Starting code-server on internal port ${INTERNAL_CODE_SERVER_PORT}..."
+/usr/bin/entrypoint.sh \
+  --bind-addr "127.0.0.1:${INTERNAL_CODE_SERVER_PORT}" \
+  --auth none \
+  . &
+CODE_SERVER_PID=$!
+
+if [ "$OAUTH_ENABLED" = "true" ]; then
+  echo "OAuth is enabled. Starting oauth2-proxy and Caddy."
+
+  # Start Caddy on internal port (will be proxied by oauth2-proxy)
+  echo "Starting Caddy on internal port ${CADDY_PORT}..."
+  export CODE_SERVER_PORT="${INTERNAL_CODE_SERVER_PORT}"
+  # Create a temporary Caddyfile with the correct port
+  sed "s/:9999/:${CADDY_PORT}/g" /etc/caddy/Caddyfile > /tmp/Caddyfile-${CADDY_PORT}
+  caddy run --config /tmp/Caddyfile-${CADDY_PORT} --adapter caddyfile &
+  CADDY_PID=$!
+
+  # OAuth proxy listens on the external port and forwards to Caddy
+  export OAUTH2_PROXY_UPSTREAMS="http://127.0.0.1:${CADDY_PORT}"
   export OAUTH2_PROXY_HTTP_ADDRESS="0.0.0.0:${EXTERNAL_PORT}"
 
+  # Start oauth2-proxy (this will be the external service on port 9999)
   oauth2-proxy &
+  OAUTH_PID=$!
 
-  exec /usr/bin/entrypoint.sh \
-    --bind-addr "127.0.0.1:${INTERNAL_CODE_SERVER_PORT}" \
-    --auth none \
-    .
+  # Wait for all processes
+  wait $CADDY_PID $CODE_SERVER_PID $OAUTH_PID
 
 else
-  # Execute the original entrypoint
-  echo "OAuth is disabled. Starting code-server directly."
-  exec "$@"
+  # OAuth disabled - Caddy runs directly on external port
+  echo "OAuth is disabled. Starting Caddy directly on port ${EXTERNAL_PORT}."
+
+  # Start Caddy on external port
+  echo "Starting Caddy on external port ${EXTERNAL_PORT}..."
+  export CODE_SERVER_PORT="${INTERNAL_CODE_SERVER_PORT}"
+  # Create a temporary Caddyfile with the correct port
+  sed "s/:9999/:${EXTERNAL_PORT}/g" /etc/caddy/Caddyfile > /tmp/Caddyfile-${EXTERNAL_PORT}
+  caddy run --config /tmp/Caddyfile-${EXTERNAL_PORT} --adapter caddyfile &
+  CADDY_PID=$!
+
+  # Wait for both processes
+  wait $CADDY_PID $CODE_SERVER_PID
 fi

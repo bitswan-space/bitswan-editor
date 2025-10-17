@@ -1,0 +1,35 @@
+# Caddyfile for BitSwan Editor Frame Server
+# This configuration serves a simple HTML page with iframe and overlay
+
+{
+    # Global options
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+    
+    # Disable admin API to avoid permission issues
+    admin off
+}
+
+# Frame server that serves HTML page with iframe and overlay
+:9999 {
+    # Route for code-server (when iframe loads with special path)
+    handle_path /codeserver/* {
+        reverse_proxy http://127.0.0.1:9998 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+        }
+    }
+    
+    # Serve the main HTML page and static files
+    root * /opt/bitswan-frame
+    file_server
+    
+    # Logging
+    log {
+        output stdout
+        format console
+    }
+}
