@@ -33,31 +33,30 @@
         
         .bitswan-floating-icon {
             position: fixed;
-            top: 5px;
-            left: 20px;
+            top: 0;
+            left: 0;
             z-index: 10000;
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 50%;
-            padding: 4px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 8px;
             transition: all 0.3s ease;
             cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            width: 26px;
-            height: 26px;
+            border-radius: 8px;
+            width: 50px;
+            height: 35px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         .bitswan-floating-icon:hover {
-            background: rgba(255, 255, 255, 0.2);
-            transform: scale(1.1);
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+            background: rgba(255, 255, 255, 1);
+            transform: scale(1.05);
         }
         
         .bitswan-floating-icon img {
             display: block;
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
+            width: 24px;
+            height: 24px;
         }
         
         .loading {
