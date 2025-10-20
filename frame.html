@@ -29,14 +29,16 @@
             height: 100%;
             border: none;
             background: #1e1e1e;
+            position: relative;
+            z-index: 0; /* ensure overlay elements can sit above */
         }
         
         .bitswan-floating-icon {
             position: fixed;
             top: 0;
             left: 0;
-            z-index: 10000;
-            background: rgba(255, 255, 255, 0.9);
+            z-index: 2147483647; /* on top of everything, including iframes */
+            background: rgba(255, 255, 255, 1);
             padding: 8px;
             transition: all 0.3s ease;
             cursor: pointer;
@@ -46,6 +48,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            pointer-events: auto;
         }
         
         .bitswan-floating-icon:hover {
@@ -98,9 +101,6 @@
             margin-bottom: 10px;
         }
         
-        .error p {
-            opacity: 0.8;
-        }
     </style>
 </head>
 <body>
@@ -110,6 +110,9 @@
             <div>Loading BitSwan Editor...</div>
         </div>
         
+        <a class="bitswan-floating-icon" id="bitswan-icon" href="AOC_URL_PLACEHOLDER">
+            <img src="/bitswan-logo.png" alt="BitSwan" />
+        </a>
         <iframe 
             id="codeserver-frame"
             src="/codeserver/"
@@ -121,11 +124,7 @@
         <div class="error" id="error" style="display: none;">
             <h2>Connection Error</h2>
             <p>Unable to connect to code-server. Please check if the service is running.</p>
-        </div>
-        
-        <div class="bitswan-floating-icon" id="bitswan-icon">
-            <img src="/bitswan-logo.png" alt="BitSwan" />
-        </div>
+        </div> 
     </div>
     
     <script>
@@ -155,18 +154,12 @@
                 showError();
             }
         });
-        
-        // Add click handler for AOC_URL if available
-        document.addEventListener('DOMContentLoaded', function() {
-            const icon = document.getElementById('bitswan-icon');
-            const aocUrl = window.AOC_URL || '';
-            
-            if (aocUrl && aocUrl !== 'AOC_URL_PLACEHOLDER') {
-                icon.addEventListener('click', function() {
-                    window.open(aocUrl, '_blank', 'noopener,noreferrer');
-                });
-            }
-        });
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initAocIcon);
+        } else {
+            initAocIcon();
+        }
     </script>
 </body>
 </html>
