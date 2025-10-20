@@ -306,6 +306,27 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(watcher);
 
     outputChannel.appendLine('Tree views registered');
+
+    // Handle vscode:// URI to open BitSwan sidebar from external links
+    const uriHandler: vscode.UriHandler = {
+        handleUri: async (uri: vscode.Uri) => {
+            try {
+                if (uri.path === '/open') {
+                    const params = new URLSearchParams(uri.query);
+                    const target = params.get('target');
+                    if (target === 'sidebar') {
+                        await vscode.commands.executeCommand('workbench.view.extension.bitswan-explorer');
+                        outputChannel.appendLine('Focused BitSwan sidebar via URI handler');
+                        return;
+                    }
+                }
+                outputChannel.appendLine(`Unhandled URI: ${uri.toString()}`);
+            } catch (err) {
+                outputChannel.appendLine(`URI handler error: ${String(err)}`);
+            }
+        }
+    };
+    context.subscriptions.push(vscode.window.registerUriHandler(uriHandler));
 }
 
 /**

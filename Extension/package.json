@@ -27,12 +27,14 @@
   "icon": "icon.png",
   "main": "./out/extension.js",
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onUri"
   ],
   "extensionDependencies": [
     "ms-toolsai.jupyter"
   ],
   "contributes": {
+    "uriHandler": true,
     "colors": [
       {
         "id": "bitswan.statusIcon.green",
