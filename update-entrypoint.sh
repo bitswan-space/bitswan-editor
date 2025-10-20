@@ -161,30 +161,6 @@ echo ""
 # Copy virtual environment
 cp -r /opt/.bitswan /home/coder/workspace
 
-# Create additional configuration for extensions
-mkdir -p /home/coder/.config/Code/User
-cat > /home/coder/.config/Code/User/settings.json << 'EOF'
-{
-    "extensions.supportNodeGlobalNavigator": false,
-    "github.copilot.enable": {
-        "*": true,
-        "yaml": true,
-        "plaintext": true,
-        "markdown": true
-    },
-    "python.defaultInterpreterPath": "/home/coder/workspace/.bitswan/bin/python",
-    "jupyter.jupyterServerType": "local",
-    "jupyter.askForKernelRestart": false,
-    "microsoft-authentication.disableAutoSignIn": true,
-    "microsoft-authentication.disableTelemetry": true,
-    "extensions.autoUpdate": false,
-    "extensions.autoCheckUpdates": false,
-    "telemetry.telemetryLevel": "off",
-    "workbench.enableExperiments": false,
-    "workbench.settings.enableNaturalLanguageSearch": false
-}
-EOF
-
 # Set up environment for MSAL
 export ELECTRON_DISABLE_SECURITY_WARNINGS=1
 export ELECTRON_NO_ATTACH_CONSOLE=1
