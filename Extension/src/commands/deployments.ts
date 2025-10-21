@@ -10,9 +10,16 @@ import { activateDeployment, deploy, zip2stream, zipDirectory } from '../lib';
 import { getDeployDetails } from '../deploy_details';
 import { outputChannel } from '../extension';
 import { AutomationSourcesViewProvider } from '../views/automation_sources_view';
-import { ImageSourcesViewProvider } from '../views/image_sources_view';
+import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
 
-export async function deployCommandAbstract(context: vscode.ExtensionContext, folderPath: string, itemSet: string, treeDataProvider: AutomationSourcesViewProvider | ImageSourcesViewProvider | null) {
+export async function deployCommandAbstract(
+    context: vscode.ExtensionContext, 
+    folderPath: string, 
+    itemSet: string, 
+    treeDataProvider: AutomationSourcesViewProvider | null,
+    unifiedImagesProvider?: UnifiedImagesViewProvider,
+    orphanedImagesProvider?: OrphanedImagesViewProvider
+) {
     var messages: { [key: string]: { [key: string]: string } } = {
         "automations": {
             "deploy": "Deploying automation",
@@ -94,6 +101,12 @@ export async function deployCommandAbstract(context: vscode.ExtensionContext, fo
             if (success) {
                 progress.report({ increment: 100, message: "Succesfully uploaded "+messages[itemSet]["item"]+" to GitOps" });
                 vscode.window.showInformationMessage("Succesfully uploaded "+messages[itemSet]["item"]+" to GitOps");
+                
+                // Refresh image views if this was an image build
+                if (itemSet === "images" && unifiedImagesProvider && orphanedImagesProvider) {
+                    unifiedImagesProvider.refresh();
+                    orphanedImagesProvider.refresh();
+                }
             } else {
                 throw new Error("Failed to upload "+messages[itemSet]["item"]+" to GitOps");
             }
@@ -131,15 +144,34 @@ export async function deployCommandAbstract(context: vscode.ExtensionContext, fo
 }
 
 
-export async function deployFromToolbarCommand(context: vscode.ExtensionContext, item: vscode.Uri, itemSet: string) {
-    deployCommandAbstract(context, path.dirname(item.path), itemSet, null);
+export async function deployFromToolbarCommand(
+    context: vscode.ExtensionContext, 
+    item: vscode.Uri, 
+    itemSet: string,
+    unifiedImagesProvider?: UnifiedImagesViewProvider,
+    orphanedImagesProvider?: OrphanedImagesViewProvider
+) {
+    deployCommandAbstract(context, path.dirname(item.path), itemSet, null, unifiedImagesProvider, orphanedImagesProvider);
 }
 
-export async function deployFromNotebookToolbarCommand(context: vscode.ExtensionContext, item: any, itemSet: string) {
-    deployCommandAbstract(context, path.dirname(item.notebookEditor.notebookUri.path), itemSet, null);
+export async function deployFromNotebookToolbarCommand(
+    context: vscode.ExtensionContext, 
+    item: any, 
+    itemSet: string,
+    unifiedImagesProvider?: UnifiedImagesViewProvider,
+    orphanedImagesProvider?: OrphanedImagesViewProvider
+) {
+    deployCommandAbstract(context, path.dirname(item.notebookEditor.notebookUri.path), itemSet, null, unifiedImagesProvider, orphanedImagesProvider);
 }
 
-export async function deployCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationSourcesViewProvider, folderItem: FolderItem, itemSet: string) {
+export async function deployCommand(
+    context: vscode.ExtensionContext, 
+    treeDataProvider: AutomationSourcesViewProvider, 
+    folderItem: FolderItem, 
+    itemSet: string,
+    unifiedImagesProvider?: UnifiedImagesViewProvider,
+    orphanedImagesProvider?: OrphanedImagesViewProvider
+) {
     var item : string = folderItem.resourceUri.fsPath;
-    deployCommandAbstract(context, item, itemSet, treeDataProvider);
+    deployCommandAbstract(context, item, itemSet, treeDataProvider, unifiedImagesProvider, orphanedImagesProvider);
 }

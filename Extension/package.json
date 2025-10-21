@@ -104,12 +104,12 @@
       ],
       "bitswan-images": [
         {
-          "id": "bitswan-image-sources",
-          "name": "Image Sources"
+          "id": "bitswan-unified-images",
+          "name": "Images"
         },
         {
-          "id": "bitswan-images",
-          "name": "Images"
+          "id": "bitswan-orphaned-images",
+          "name": "Orphaned Images"
         }
       ]
     },
@@ -160,6 +160,16 @@
         "icon": "$(terminal-kill)"
       },
       {
+        "command": "bitswan.deleteOrphanedImage",
+        "title": "Remove Image",
+        "icon": "$(terminal-kill)"
+      },
+      {
+        "command": "bitswan.copyImageTag",
+        "title": "Copy Image Tag",
+        "icon": "$(copy)"
+      },
+      {
         "command": "bitswan.activateAutomation",
         "title": "Activate Automation",
         "icon": "$(notebook-state-success)"
@@ -206,6 +216,11 @@
       },
       {
         "command": "bitswan.showImageLogs",
+        "title": "Show Logs",
+        "icon": "$(output)"
+      },
+      {
+        "command": "bitswan.showOrphanedImageLogs",
         "title": "Show Logs",
         "icon": "$(output)"
       },
@@ -289,18 +304,38 @@
         },
         {
           "command": "bitswan.showImageLogs",
-          "when": "view == bitswan-images && viewItem =~ /^image/",
+          "when": "view == bitswan-unified-images && viewItem == image",
+          "group": "inline@5"
+        },
+        {
+          "command": "bitswan.showOrphanedImageLogs",
+          "when": "view == bitswan-orphaned-images && viewItem == image",
           "group": "inline@5"
         },
         {
           "command": "bitswan.buildImage",
-          "when": "view == bitswan-image-sources && viewItem == folder",
+          "when": "view == bitswan-unified-images && viewItem == imageSource",
           "group": "inline"
         },
         {
           "command": "bitswan.deleteImage",
-          "when": "view == bitswan-images && viewItem =~ /^image/",
+          "when": "view == bitswan-unified-images && viewItem == image",
           "group": "inline@4"
+        },
+        {
+          "command": "bitswan.deleteOrphanedImage",
+          "when": "view == bitswan-orphaned-images && viewItem == image",
+          "group": "inline@4"
+        },
+        {
+          "command": "bitswan.copyImageTag",
+          "when": "view == bitswan-unified-images && viewItem == image",
+          "group": "inline@3"
+        },
+        {
+          "command": "bitswan.copyImageTag",
+          "when": "view == bitswan-orphaned-images && viewItem == image",
+          "group": "inline@3"
         }
       ],
       "view/title": [
@@ -311,7 +346,12 @@
         },
         {
           "command": "bitswan.refreshImages",
-          "when": "view == bitswan-images",
+          "when": "view == bitswan-unified-images",
+          "group": "navigation@1"
+        },
+        {
+          "command": "bitswan.refreshImages",
+          "when": "view == bitswan-orphaned-images",
           "group": "navigation@1"
         },
         {
