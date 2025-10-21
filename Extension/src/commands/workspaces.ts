@@ -5,8 +5,10 @@ import { GitOpsItem } from '../views/workspaces_view';
 import { getAutomations } from '../lib';
 import { WorkspacesViewProvider } from '../views/workspaces_view';
 import { AutomationsViewProvider } from '../views/automations_view';
-import { outputChannel, setAutomationRefreshInterval } from '../extension';
+import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
+import { outputChannel, setAutomationRefreshInterval, setImageRefreshInterval } from '../extension';
 import { refreshAutomationsCommand } from './automations';
+import { refreshImagesCommand } from './images';
 
 export async function addGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: WorkspacesViewProvider) {
     const name = await vscode.window.showInputBox({
@@ -82,21 +84,32 @@ export async function activateGitOpsCommand(
     context: vscode.ExtensionContext, 
     treeDataProvider: WorkspacesViewProvider, 
     item: GitOpsItem,
-    automationsProvider?: AutomationsViewProvider
+    automationsProvider?: AutomationsViewProvider,
+    unifiedImagesProvider?: UnifiedImagesViewProvider,
+    orphanedImagesProvider?: OrphanedImagesViewProvider
 ) {
-    // Clear any existing refresh interval
+    // Clear any existing refresh intervals
     setAutomationRefreshInterval(undefined);
+    setImageRefreshInterval(undefined);
 
     await context.globalState.update('activeGitOpsInstance', item);
     try {
         const automations = await getAutomations(urlJoin(item.url, 'automations', { trailingSlash: true }).toString(), item.secret);
         await context.globalState.update('automations', automations);
 
-        // Set up automatic refresh every 10 seconds
+        // Set up automatic refresh every 10 seconds for automations
         if (automationsProvider) {
             setAutomationRefreshInterval(setInterval(async () => {
                 await refreshAutomationsCommand(context, automationsProvider);
             }, 10000));
+        }
+
+        // Set up automatic refresh every 15 seconds for images
+        if (unifiedImagesProvider && orphanedImagesProvider) {
+            setImageRefreshInterval(setInterval(async () => {
+                await refreshImagesCommand(context, unifiedImagesProvider);
+                await refreshImagesCommand(context, orphanedImagesProvider);
+            }, 15000));
         }
     } catch (error: any) {
         vscode.window.showErrorMessage(`Failed to get automations from GitOps: ${error.message}`);

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import urlJoin from 'proper-url-join';
 import { AutomationsViewProvider} from '../views/automations_view';
-import { ImageItem, ImagesViewProvider } from '../views/images_view';
+import { ImageItem, UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
 import { AutomationItem } from '../views/automations_view';
 import { GitOpsItem } from '../views/workspaces_view';
 import { outputChannel, outputChannelsMap } from '../extension';
@@ -22,7 +22,7 @@ export function makeItemCommand(
         prompt?: boolean;
     }
 ) {
-    return async function (context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider | ImagesViewProvider, item: AutomationItem | ImageItem) {
+    return async function (context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider | UnifiedImagesViewProvider | OrphanedImagesViewProvider, item: AutomationItem | ImageItem) {
         const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
         if (!activeInstance) {
             vscode.window.showErrorMessage('No active GitOps instance');
@@ -54,7 +54,7 @@ export function makeItemCommand(
                 var group="";
                 if (treeDataProvider instanceof AutomationsViewProvider) {
                     var group = "automations";
-                } else if (treeDataProvider instanceof ImagesViewProvider) {
+                } else if (treeDataProvider instanceof UnifiedImagesViewProvider || treeDataProvider instanceof OrphanedImagesViewProvider) {
                     var group = "images";
                 }
 
@@ -67,7 +67,7 @@ export function makeItemCommand(
                     vscode.window.showInformationMessage(commandConfig.successMessage);
                     if (treeDataProvider instanceof AutomationsViewProvider) {
                         refreshAutomationsCommand(context, treeDataProvider);
-                    } else if (treeDataProvider instanceof ImagesViewProvider) {
+                    } else if (treeDataProvider instanceof UnifiedImagesViewProvider || treeDataProvider instanceof OrphanedImagesViewProvider) {
                         refreshImagesCommand(context, treeDataProvider);
                     }
                     treeDataProvider.refresh();
@@ -86,7 +86,7 @@ export function makeItemCommand(
 
 export async function showLogsCommand<T extends AutomationItem | ImageItem>(
     context: vscode.ExtensionContext, 
-    treeDataProvider: AutomationsViewProvider | ImagesViewProvider, 
+    treeDataProvider: AutomationsViewProvider | UnifiedImagesViewProvider | OrphanedImagesViewProvider, 
     item: T,
     config: {
         entityType: string;
@@ -168,7 +168,7 @@ export async function showLogsCommand<T extends AutomationItem | ImageItem>(
 
 export async function refreshItemsCommand(
     context: vscode.ExtensionContext, 
-    treeDataProvider: AutomationsViewProvider | ImagesViewProvider,
+    treeDataProvider: AutomationsViewProvider | UnifiedImagesViewProvider | OrphanedImagesViewProvider,
     config: {
         entityType: string;
         getItemsFunction: (url: string, secret: string) => Promise<any>;
