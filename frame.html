@@ -50,27 +50,6 @@
             justify-content: center;
             pointer-events: auto;
         }
-        .bitswan-floating-icon + .bitswan-open-sidebar {
-            position: fixed;
-            top: 0;
-            left: 60px;
-            z-index: 2147483647;
-            background: rgba(255, 255, 255, 1);
-            padding: 8px 10px;
-            transition: all 0.3s ease;
-            cursor: pointer;
-            border-radius: 8px;
-            height: 35px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #1e1e1e;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 12px;
-            pointer-events: auto;
-        }
-        .bitswan-open-sidebar:hover { transform: scale(1.05); }
         
         .bitswan-floating-icon:hover {
             background: rgba(255, 255, 255, 1);
@@ -134,9 +113,6 @@
         <a class="bitswan-floating-icon" id="bitswan-icon" href="AOC_URL_PLACEHOLDER" target="_blank" rel="noopener noreferrer">
             <img src="/bitswan-logo.png" alt="BitSwan" />
         </a>
-        <button class="bitswan-open-sidebar" id="bitswan-open-sidebar" type="button">
-            Processes & Automations
-        </button>
         <iframe 
             id="codeserver-frame"
             src="/codeserver/"
@@ -179,58 +155,12 @@
             }
         });
 
-        // Ensure AOC link points correctly and sidebar link is available
+        // Ensure AOC link points correctly
         function initAocIcon() {
             const icon = document.getElementById('bitswan-icon');
             if (icon) icon.setAttribute('href', window.AOC_URL);
         }
         
-        function tryActivateBitswan(iframeWindow) {
-            try {
-                const doc = iframeWindow?.document;
-                if (!doc) return false;
-                // Try common selectors used by VS Code activity bar for view containers
-                const candidates = [
-                    '[role="tab"][aria-label="BitSwan"]',
-                    '.monaco-workbench .part.activitybar [aria-label="BitSwan"]',
-                    '.monaco-workbench .part.activitybar .action-item[title="BitSwan"] button',
-                ];
-                for (const sel of candidates) {
-                    const el = doc.querySelector(sel);
-                    if (el instanceof iframeWindow.HTMLElement) {
-                        el.click();
-                        return true;
-                    }
-                }
-            } catch (_) {
-                // ignore cross-origin or timing errors
-            }
-            return false;
-        }
-
-        function openBitswanSidebar() {
-            const iframe = document.getElementById('codeserver-frame');
-            if (!(iframe instanceof HTMLIFrameElement)) return;
-            const iw = iframe.contentWindow;
-            if (!iw) return;
-
-            // Immediate attempt
-            if (tryActivateBitswan(iw)) return;
-
-            // Poll briefly for workbench readiness
-            const start = Date.now();
-            const maxMs = 4000;
-            const interval = setInterval(() => {
-                if (tryActivateBitswan(iw) || Date.now() - start > maxMs) {
-                    clearInterval(interval);
-                }
-            }, 200);
-        }
-
-        const openBtn = document.getElementById('bitswan-open-sidebar');
-        if (openBtn) {
-            openBtn.addEventListener('click', openBitswanSidebar);
-        }
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initAocIcon);
         } else {
