@@ -76,14 +76,19 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "bitswan-explorer",
-          "title": "BitSwan",
-          "icon": "resources/bitswan-logo.png"
+          "id": "bitswan-business-processes",
+          "title": "Business Processes",
+          "icon": "media/business-processes.svg"
+        },
+        {
+          "id": "bitswan-images",
+          "title": "Images",
+          "icon": "media/images.svg"
         }
       ]
     },
     "views": {
-      "bitswan-explorer": [
+      "bitswan-business-processes": [
         {
           "id": "bitswan-automation-sources",
           "name": "Automation Sources"
@@ -93,16 +98,18 @@
           "name": "Automations"
         },
         {
+          "id": "bitswan-workspaces",
+          "name": "Workspaces"
+        }
+      ],
+      "bitswan-images": [
+        {
           "id": "bitswan-image-sources",
           "name": "Image Sources"
         },
         {
           "id": "bitswan-images",
           "name": "Images"
-        },
-        {
-          "id": "bitswan-workspaces",
-          "name": "Workspaces"
         }
       ]
     },
