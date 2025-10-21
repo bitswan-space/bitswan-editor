@@ -91,7 +91,7 @@ export function activate(context: vscode.ExtensionContext) {
     const imageSourcesProvider = new ImageSourcesViewProvider(context);
     const imagesProvider = new ImagesViewProvider(context);
 
-    // Register views
+    // Register Business Processes views
     vscode.window.createTreeView('bitswan-automation-sources', {
         treeDataProvider: automationSourcesProvider,
     });
@@ -104,6 +104,7 @@ export function activate(context: vscode.ExtensionContext) {
         treeDataProvider: automationsProvider,
     });
 
+    // Register Images views
     vscode.window.createTreeView('bitswan-image-sources', {
         treeDataProvider: imageSourcesProvider,
     });
@@ -315,7 +316,7 @@ export function activate(context: vscode.ExtensionContext) {
                     const params = new URLSearchParams(uri.query);
                     const target = params.get('target');
                     if (target === 'sidebar') {
-                        await vscode.commands.executeCommand('workbench.view.extension.bitswan-explorer');
+                        await vscode.commands.executeCommand('workbench.view.extension.bitswan-business-processes');
                         outputChannel.appendLine('Focused BitSwan sidebar via URI handler');
                         return;
                     }
