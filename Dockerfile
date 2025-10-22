@@ -1,5 +1,3 @@
-FROM quay.io/oauth2-proxy/oauth2-proxy:v7.9.0 AS proxy_builder
-
 FROM --platform=linux/amd64 ghcr.io/astral-sh/uv:latest AS uvbin
 
 # Build stage for the extension
@@ -61,8 +59,6 @@ RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --de
 
 COPY --from=uvbin /uv /uvx /bin/
 
-COPY --from=proxy_builder /bin/oauth2-proxy /usr/local/bin/oauth2-proxy
-
 RUN uv python install 3.10
 
 RUN chmod -R 755 /opt/uv
@@ -87,6 +83,10 @@ RUN npm config set cache /tmp/.npm && \
 RUN mkdir -p /opt/bitswan-extension
 COPY --from=extension_builder /build/bitswan-extension.vsix /opt/bitswan-extension/
 RUN chown -R coder:coder /opt/bitswan-extension
+
+RUN LATEST_VERSION=$(curl -s https://api.github.com/repos/bitswan-space/bitswan-aoc-oauth2/releases/latest | jq -r '.tag_name') \
+    && curl -L -o /usr/local/bin/oauth2-proxy https://github.com/bitswan-space/bitswan-aoc-oauth2/releases/download/${LATEST_VERSION}/oauth2-proxy-mqtt \
+    && chmod +x /usr/local/bin/oauth2-proxy
 
 # Download and install all marketplace extensions during build
 RUN mkdir -p /home/coder/.local/share/code-server/extensions
