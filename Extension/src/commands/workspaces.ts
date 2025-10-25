@@ -84,7 +84,7 @@ export async function activateGitOpsCommand(
     context: vscode.ExtensionContext, 
     treeDataProvider: WorkspacesViewProvider, 
     item: GitOpsItem,
-    automationsProvider?: AutomationsViewProvider,
+    automationsProvider?: { refresh(): void },
     unifiedImagesProvider?: UnifiedImagesViewProvider,
     orphanedImagesProvider?: OrphanedImagesViewProvider
 ) {

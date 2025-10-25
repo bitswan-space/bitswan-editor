@@ -1,9 +1,12 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 
 import { AutomationItem } from './views/automations_view';
 import { ImageItem } from './views/unified_images_view';
 import { FolderItem } from './views/sources_view';
 import { GitOpsItem } from './views/workspaces_view';
+import { BusinessProcessItem } from './views/unified_business_processes_view';
+import { AutomationSourceItem } from './views/unified_business_processes_view';
 
 // Import commands from the new command modules
 import * as imageCommands from './commands/images';
@@ -11,12 +14,14 @@ import * as automationCommands from './commands/automations';
 import * as itemCommands from './commands/items';
 import * as workspaceCommands from './commands/workspaces';
 import * as deploymentCommands from './commands/deployments';
+import * as businessProcessCommands from './commands/business_processes';
 
 // Import view providers
 import { AutomationSourcesViewProvider } from './views/automation_sources_view';
 import { WorkspacesViewProvider } from './views/workspaces_view';
 import { AutomationsViewProvider } from './views/automations_view';
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from './views/unified_images_view';
+import { UnifiedBusinessProcessesViewProvider } from './views/unified_business_processes_view';
 import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation, deleteImage } from './lib';
 import { Jupyter } from '@vscode/jupyter-extension';
 import { getJupyterServers, notebookInitializationFlow, startJupyterServer } from './commands/jupyter-server';
@@ -97,18 +102,15 @@ export function activate(context: vscode.ExtensionContext) {
     const automationsProvider = new AutomationsViewProvider(context);
     const unifiedImagesProvider = new UnifiedImagesViewProvider(context);
     const orphanedImagesProvider = new OrphanedImagesViewProvider(context);
+    const unifiedBusinessProcessesProvider = new UnifiedBusinessProcessesViewProvider(context);
 
     // Register Business Processes views
-    vscode.window.createTreeView('bitswan-automation-sources', {
-        treeDataProvider: automationSourcesProvider,
+    vscode.window.createTreeView('bitswan-unified-business-processes', {
+        treeDataProvider: unifiedBusinessProcessesProvider,
     });
 
     vscode.window.createTreeView('bitswan-workspaces', {
         treeDataProvider: workspacesProvider,
-    });
-
-    vscode.window.createTreeView('bitswan-automations', {
-        treeDataProvider: automationsProvider,
     });
 
     // Register Images views
@@ -120,12 +122,21 @@ export function activate(context: vscode.ExtensionContext) {
         treeDataProvider: orphanedImagesProvider,
     });
 
+    console.log('[DEBUG] All tree views registered successfully');
+    console.log('[DEBUG] unifiedBusinessProcessesProvider created:', !!unifiedBusinessProcessesProvider);
+
     let deployFromToolbarCommand = vscode.commands.registerCommand('bitswan.deployAutomationFromToolbar', 
         async (item: string) => deploymentCommands.deployFromNotebookToolbarCommand(context, item, "automations", unifiedImagesProvider, orphanedImagesProvider));
 
     // Register commands using the new command modules
     let deployCommand = vscode.commands.registerCommand('bitswan.deployAutomation', 
-        async (item: FolderItem) => deploymentCommands.deployCommand(context, automationSourcesProvider, item, "automations", unifiedImagesProvider, orphanedImagesProvider));
+        async (item: FolderItem | AutomationSourceItem) => {
+            // Convert AutomationSourceItem to FolderItem if needed
+            const folderItem = item instanceof AutomationSourceItem 
+                ? new FolderItem(item.name, item.resourceUri)
+                : item;
+            return deploymentCommands.deployCommand(context, automationSourcesProvider, folderItem, "automations", unifiedImagesProvider, orphanedImagesProvider);
+        });
 
     let buildImageFromToolbarCommand = vscode.commands.registerCommand('bitswan.buildImageFromToolbar', 
         async (item: vscode.Uri) => deploymentCommands.deployFromToolbarCommand(context, item, "images", unifiedImagesProvider, orphanedImagesProvider));
@@ -154,6 +165,12 @@ export function activate(context: vscode.ExtensionContext) {
         async () => {
             await imageCommands.refreshImagesCommand(context, unifiedImagesProvider);
             await imageCommands.refreshImagesCommand(context, orphanedImagesProvider);
+        });
+
+    let refreshBusinessProcessesCommand = vscode.commands.registerCommand('bitswan.refreshBusinessProcesses', 
+        async () => {
+            console.log('[DEBUG] refreshBusinessProcessesCommand called');
+            await businessProcessCommands.refreshBusinessProcessesCommand(context, unifiedBusinessProcessesProvider);
         });
  
     let openExternalUrlCommand = vscode.commands.registerCommand(
@@ -210,6 +227,17 @@ export function activate(context: vscode.ExtensionContext) {
 
     let jumpToSourceCommand = vscode.commands.registerCommand('bitswan.jumpToSource', 
         async (item: AutomationItem) => automationCommands.jumpToSourceCommand(context, item));
+
+    let openProcessReadmeCommand = vscode.commands.registerCommand('bitswan.openProcessReadme', 
+        async (item: BusinessProcessItem) => {
+            const readmePath = path.join(item.resourceUri.fsPath, 'README.md');
+            try {
+                const uri = vscode.Uri.file(readmePath);
+                await vscode.window.showTextDocument(uri);
+            } catch (error) {
+                vscode.window.showErrorMessage(`Could not open README.md: ${error}`);
+            }
+        });
 
     let showImageLogsCommand = vscode.commands.registerCommand('bitswan.showImageLogs', 
         async (item: ImageItem) => imageCommands.showImageLogsCommand(context, unifiedImagesProvider, item));
@@ -303,6 +331,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(activateGitOpsCommand);
     context.subscriptions.push(refreshAutomationsCommand);
     context.subscriptions.push(refreshImagesCommand);
+    context.subscriptions.push(refreshBusinessProcessesCommand);
     context.subscriptions.push(openExternalUrlCommand);
     context.subscriptions.push(restartAutomationCommand);
     context.subscriptions.push(startAutomationCommand);
@@ -317,6 +346,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(deleteOrphanedImageCommand);
     context.subscriptions.push(copyImageTagCommand);
     context.subscriptions.push(jumpToSourceCommand);
+    context.subscriptions.push(openProcessReadmeCommand);
 
     // Refresh the tree views when files change in the workspace
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
