@@ -168,7 +168,7 @@ export async function showLogsCommand<T extends AutomationItem | ImageItem>(
 
 export async function refreshItemsCommand(
     context: vscode.ExtensionContext, 
-    treeDataProvider: AutomationsViewProvider | UnifiedImagesViewProvider | OrphanedImagesViewProvider,
+    treeDataProvider: { refresh(): void },
     config: {
         entityType: string;
         getItemsFunction: (url: string, secret: string) => Promise<any>;

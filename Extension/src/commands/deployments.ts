@@ -11,6 +11,7 @@ import { getDeployDetails } from '../deploy_details';
 import { outputChannel } from '../extension';
 import { AutomationSourcesViewProvider } from '../views/automation_sources_view';
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
+import { sanitizeName } from '../utils/nameUtils';
 
 export async function deployCommandAbstract(
     context: vscode.ExtensionContext, 
@@ -62,8 +63,7 @@ export async function deployCommandAbstract(
         try {
             const form = new FormData();
             // The folder name must be all lowercase and have any characters not allowed in image tags removed
-            const normalizedFolderName = folderName.toLowerCase().replace(/[^a-z0-9\-]/g, '')
-                                                                 .replace(/^[,\.\-]+/g, '');
+            const normalizedFolderName = sanitizeName(folderName);
             const deployUrl = urlJoin(details.deployUrl, itemSet, normalizedFolderName);
 
             outputChannel.appendLine(messages[itemSet]["url"] + `: ${deployUrl.toString()}`);

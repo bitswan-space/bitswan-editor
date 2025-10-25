@@ -12,7 +12,7 @@ export async function showAutomationLogsCommand(context: vscode.ExtensionContext
     });
 }
 
-export async function refreshAutomationsCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider) {
+export async function refreshAutomationsCommand(context: vscode.ExtensionContext, treeDataProvider: { refresh(): void }) {
     return refreshItemsCommand(context, treeDataProvider, {
         entityType: 'automation',
         getItemsFunction: getAutomations
