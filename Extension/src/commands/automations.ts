@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { AutomationItem } from '../views/automations_view';
 import { getAutomationLogs, getAutomations } from '../lib';
 import { AutomationsViewProvider } from '../views/automations_view';
@@ -19,21 +18,11 @@ export async function refreshAutomationsCommand(context: vscode.ExtensionContext
     });
 }
 
-export async function jumpToSourceCommand(context: vscode.ExtensionContext, automationItem: AutomationItem) {
-    if (automationItem.relativePath) {
-        let targetPath = automationItem.relativePath;
-
-        // If the path is relative, resolve it against the workspace root
-        if (!path.isAbsolute(targetPath)) {
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (workspaceFolders) {
-                targetPath = path.join(workspaceFolders[0].uri.fsPath, targetPath);
-            }
-        }
-        
-        const uri = vscode.Uri.file(targetPath);
+export async function jumpToSourceCommand(context: vscode.ExtensionContext, item: any) {
+    // For AutomationSourceItem, use the resourceUri directly
+    if (item.resourceUri) {
         try {
-            await vscode.commands.executeCommand('revealInExplorer', uri);
+            await vscode.commands.executeCommand('revealInExplorer', item.resourceUri);
             return;
         } catch (error) {
             vscode.window.showErrorMessage(`Could not reveal folder in Explorer`);

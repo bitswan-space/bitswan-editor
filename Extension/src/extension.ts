@@ -122,9 +122,6 @@ export function activate(context: vscode.ExtensionContext) {
         treeDataProvider: orphanedImagesProvider,
     });
 
-    console.log('[DEBUG] All tree views registered successfully');
-    console.log('[DEBUG] unifiedBusinessProcessesProvider created:', !!unifiedBusinessProcessesProvider);
-
     let deployFromToolbarCommand = vscode.commands.registerCommand('bitswan.deployAutomationFromToolbar', 
         async (item: string) => deploymentCommands.deployFromNotebookToolbarCommand(context, item, "automations", unifiedImagesProvider, orphanedImagesProvider));
 
