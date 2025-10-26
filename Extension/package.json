@@ -254,6 +254,11 @@
           "group": "inline"
         },
         {
+          "command": "bitswan.jumpToSource",
+          "when": "view == bitswan-unified-business-processes && viewItem == automationSource",
+          "group": "inline@6"
+        },
+        {
           "command": "bitswan.openProcessReadme",
           "when": "view == bitswan-unified-business-processes && viewItem == businessProcess",
           "group": "inline"
@@ -297,11 +302,6 @@
           "command": "bitswan.showAutomationLogs",
           "when": "view == bitswan-unified-business-processes && viewItem =~ /^automation,active/",
           "group": "inline@5"
-        },
-        {
-          "command": "bitswan.jumpToSource",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automation,/",
-          "group": "inline@6"
         },
         {
           "command": "bitswan.editGitOps",
