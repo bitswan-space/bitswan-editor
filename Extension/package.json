@@ -240,6 +240,12 @@
         "title": "Open README",
         "icon": "$(book)"
       }
+      ,
+      {
+        "command": "bitswan.openAutomationTemplates",
+        "title": "Create Automation",
+        "icon": "$(add)"
+      }
     ],
     "menus": {
       "view/item/context": [

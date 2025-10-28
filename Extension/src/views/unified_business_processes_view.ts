@@ -57,9 +57,23 @@ export class OtherAutomationsItem extends vscode.TreeItem {
  * Unified view provider that shows business processes as trunks with automation sources as branches,
  * and running automations as leaves under their respective automation sources
  */
-export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProvider<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem> {
-    private _onDidChangeTreeData: vscode.EventEmitter<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | undefined | null | void> = new vscode.EventEmitter<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | undefined | null | void>();
-    readonly onDidChangeTreeData: vscode.Event<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | undefined | null | void> = this._onDidChangeTreeData.event;
+export class CreateAutomationItem extends vscode.TreeItem {
+    constructor(public readonly businessProcessName: string) {
+        super('Create Automation', vscode.TreeItemCollapsibleState.None);
+        this.tooltip = 'Create a new automation from a template';
+        this.contextValue = 'createAutomation';
+        this.iconPath = new vscode.ThemeIcon('add');
+        this.command = {
+            command: 'bitswan.openAutomationTemplates',
+            title: 'Create Automation',
+            arguments: [businessProcessName]
+        };
+    }
+}
+
+export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProvider<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem> {
+    private _onDidChangeTreeData: vscode.EventEmitter<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | undefined | null | void> = new vscode.EventEmitter<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | undefined | null | void>();
+    readonly onDidChangeTreeData: vscode.Event<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
     constructor(private context: vscode.ExtensionContext) {}
 
@@ -68,11 +82,11 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         this._onDidChangeTreeData.fire();
     }
 
-    getTreeItem(element: BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem): vscode.TreeItem {
+    getTreeItem(element: BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem): vscode.TreeItem {
         return element;
     }
 
-    async getChildren(element?: BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem): Promise<(BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem)[]> {
+    async getChildren(element?: BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem): Promise<(BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem)[]> {
         const activeInstance = this.context.globalState.get<any>('activeGitOpsInstance');
         console.log(`[DEBUG] getChildren called - activeInstance:`, activeInstance);
         if (!activeInstance) {
@@ -89,7 +103,9 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         if (element instanceof BusinessProcessItem) {
             // Show automation sources for this business process
             console.log(`[DEBUG] getChildren - BusinessProcessItem: "${element.name}"`);
-            return this.getAutomationSourcesForBusinessProcess(element.name);
+            const items = this.getAutomationSourcesForBusinessProcess(element.name);
+            // Add the "+ Create Automation" button at the end
+            return [...items, new CreateAutomationItem(element.name)];
         }
 
         if (element instanceof AutomationSourceItem) {

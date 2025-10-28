@@ -140,6 +140,7 @@ COPY frame.html /opt/bitswan-frame/frame.html
 COPY Extension/resources/bitswan-logo.png /opt/bitswan-frame/bitswan-logo.png
 RUN chmod 644 /opt/bitswan-frame/frame.html /opt/bitswan-frame/bitswan-logo.png
 RUN chown -R coder:coder /opt/bitswan-frame
+RUN chown -R coder:coder /home/coder
 
 USER coder
 

@@ -6,6 +6,7 @@ import { getAutomations } from '../lib';
 import { WorkspacesViewProvider } from '../views/workspaces_view';
 import { AutomationsViewProvider } from '../views/automations_view';
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
+import { UnifiedBusinessProcessesViewProvider } from '../views/unified_business_processes_view';
 import { outputChannel, setAutomationRefreshInterval, setImageRefreshInterval } from '../extension';
 import { refreshAutomationsCommand } from './automations';
 import { refreshImagesCommand } from './images';
@@ -85,6 +86,7 @@ export async function activateGitOpsCommand(
     treeDataProvider: WorkspacesViewProvider, 
     item: GitOpsItem,
     automationsProvider?: { refresh(): void },
+    businessProcessesProvider?: UnifiedBusinessProcessesViewProvider,
     unifiedImagesProvider?: UnifiedImagesViewProvider,
     orphanedImagesProvider?: OrphanedImagesViewProvider
 ) {
@@ -97,10 +99,10 @@ export async function activateGitOpsCommand(
         const automations = await getAutomations(urlJoin(item.url, 'automations', { trailingSlash: true }).toString(), item.secret);
         await context.globalState.update('automations', automations);
 
-        // Set up automatic refresh every 10 seconds for automations
-        if (automationsProvider) {
+        // Set up automatic refresh every 10 seconds for automations (updates global state and refreshes unified view)
+        if (businessProcessesProvider) {
             setAutomationRefreshInterval(setInterval(async () => {
-                await refreshAutomationsCommand(context, automationsProvider);
+                await refreshAutomationsCommand(context, businessProcessesProvider);
             }, 10000));
         }
 
@@ -117,4 +119,7 @@ export async function activateGitOpsCommand(
     }
 
     treeDataProvider.refresh();
+    if (businessProcessesProvider) {
+        businessProcessesProvider.refresh();
+    }
 } 
