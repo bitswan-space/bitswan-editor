@@ -10,14 +10,17 @@ import { activateDeployment, deploy, zip2stream, zipDirectory } from '../lib';
 import { getDeployDetails } from '../deploy_details';
 import { outputChannel } from '../extension';
 import { AutomationSourcesViewProvider } from '../views/automation_sources_view';
+import { UnifiedBusinessProcessesViewProvider } from '../views/unified_business_processes_view';
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
 import { sanitizeName } from '../utils/nameUtils';
+import { refreshAutomationsCommand } from './automations';
 
 export async function deployCommandAbstract(
     context: vscode.ExtensionContext, 
     folderPath: string, 
     itemSet: string, 
     treeDataProvider: AutomationSourcesViewProvider | null,
+    businessProcessesProvider?: UnifiedBusinessProcessesViewProvider,
     unifiedImagesProvider?: UnifiedImagesViewProvider,
     orphanedImagesProvider?: OrphanedImagesViewProvider
 ) {
@@ -118,8 +121,10 @@ export async function deployCommandAbstract(
                 if (activationSuccess) {
                     progress.report({ increment: 100, message: `Succesfully activated automation on GitOps` });
                     vscode.window.showInformationMessage(`Succesfully activated automation on GitOps`);
-                    if (treeDataProvider) {
-                        treeDataProvider.refresh();
+                    // Immediately refetch automations and refresh the unified view
+                    const providerForRefresh = (businessProcessesProvider || treeDataProvider);
+                    if (providerForRefresh) {
+                        await refreshAutomationsCommand(context, providerForRefresh as any);
                     }
                 } else {
                     throw new Error(`Failed to activate automation on GitOps`);
@@ -148,20 +153,22 @@ export async function deployFromToolbarCommand(
     context: vscode.ExtensionContext, 
     item: vscode.Uri, 
     itemSet: string,
+    businessProcessesProvider?: UnifiedBusinessProcessesViewProvider,
     unifiedImagesProvider?: UnifiedImagesViewProvider,
     orphanedImagesProvider?: OrphanedImagesViewProvider
 ) {
-    deployCommandAbstract(context, path.dirname(item.path), itemSet, null, unifiedImagesProvider, orphanedImagesProvider);
+    deployCommandAbstract(context, path.dirname(item.path), itemSet, null, businessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider);
 }
 
 export async function deployFromNotebookToolbarCommand(
     context: vscode.ExtensionContext, 
     item: any, 
     itemSet: string,
+    businessProcessesProvider?: UnifiedBusinessProcessesViewProvider,
     unifiedImagesProvider?: UnifiedImagesViewProvider,
     orphanedImagesProvider?: OrphanedImagesViewProvider
 ) {
-    deployCommandAbstract(context, path.dirname(item.notebookEditor.notebookUri.path), itemSet, null, unifiedImagesProvider, orphanedImagesProvider);
+    deployCommandAbstract(context, path.dirname(item.notebookEditor.notebookUri.path), itemSet, null, businessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider);
 }
 
 export async function deployCommand(
@@ -169,9 +176,10 @@ export async function deployCommand(
     treeDataProvider: AutomationSourcesViewProvider, 
     folderItem: FolderItem, 
     itemSet: string,
+    businessProcessesProvider?: UnifiedBusinessProcessesViewProvider,
     unifiedImagesProvider?: UnifiedImagesViewProvider,
     orphanedImagesProvider?: OrphanedImagesViewProvider
 ) {
     var item : string = folderItem.resourceUri.fsPath;
-    deployCommandAbstract(context, item, itemSet, treeDataProvider, unifiedImagesProvider, orphanedImagesProvider);
+    deployCommandAbstract(context, item, itemSet, treeDataProvider, businessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider);
 }

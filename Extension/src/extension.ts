@@ -22,6 +22,7 @@ import { WorkspacesViewProvider } from './views/workspaces_view';
 import { AutomationsViewProvider } from './views/automations_view';
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from './views/unified_images_view';
 import { UnifiedBusinessProcessesViewProvider } from './views/unified_business_processes_view';
+import { openAutomationTemplates } from './views/templates_gallery';
 import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation, deleteImage } from './lib';
 import { Jupyter } from '@vscode/jupyter-extension';
 import { getJupyterServers, notebookInitializationFlow, startJupyterServer } from './commands/jupyter-server';
@@ -123,7 +124,7 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     let deployFromToolbarCommand = vscode.commands.registerCommand('bitswan.deployAutomationFromToolbar', 
-        async (item: string) => deploymentCommands.deployFromNotebookToolbarCommand(context, item, "automations", unifiedImagesProvider, orphanedImagesProvider));
+        async (item: string) => deploymentCommands.deployFromNotebookToolbarCommand(context, item, "automations", unifiedBusinessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider));
 
     // Register commands using the new command modules
     let deployCommand = vscode.commands.registerCommand('bitswan.deployAutomation', 
@@ -132,14 +133,14 @@ export function activate(context: vscode.ExtensionContext) {
             const folderItem = item instanceof AutomationSourceItem 
                 ? new FolderItem(item.name, item.resourceUri)
                 : item;
-            return deploymentCommands.deployCommand(context, automationSourcesProvider, folderItem, "automations", unifiedImagesProvider, orphanedImagesProvider);
+            return deploymentCommands.deployCommand(context, automationSourcesProvider, folderItem, "automations", unifiedBusinessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider);
         });
 
     let buildImageFromToolbarCommand = vscode.commands.registerCommand('bitswan.buildImageFromToolbar', 
-        async (item: vscode.Uri) => deploymentCommands.deployFromToolbarCommand(context, item, "images", unifiedImagesProvider, orphanedImagesProvider));
+        async (item: vscode.Uri) => deploymentCommands.deployFromToolbarCommand(context, item, "images", unifiedBusinessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider));
  
     let buildImageCommand = vscode.commands.registerCommand('bitswan.buildImage', 
-        async (item: FolderItem) => deploymentCommands.deployCommand(context, automationSourcesProvider, item, "images", unifiedImagesProvider, orphanedImagesProvider));
+        async (item: FolderItem) => deploymentCommands.deployCommand(context, automationSourcesProvider, item, "images", unifiedBusinessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider));
     
     let addGitOpsCommand = vscode.commands.registerCommand('bitswan.addGitOps', 
         async () => workspaceCommands.addGitOpsCommand(context, workspacesProvider));
@@ -152,7 +153,15 @@ export function activate(context: vscode.ExtensionContext) {
     
     let activateGitOpsCommand = vscode.commands.registerCommand('bitswan.activateGitOps', 
         async (item: GitOpsItem) => {
-            await workspaceCommands.activateGitOpsCommand(context, workspacesProvider, item, automationsProvider, unifiedImagesProvider, orphanedImagesProvider); // Refresh automations and images when GitOps instance is activated
+            await workspaceCommands.activateGitOpsCommand(
+                context,
+                workspacesProvider,
+                item,
+                automationsProvider,
+                unifiedBusinessProcessesProvider,
+                unifiedImagesProvider,
+                orphanedImagesProvider
+            );
         });
     
     let refreshAutomationsCommand = vscode.commands.registerCommand('bitswan.refreshAutomations', 
@@ -235,6 +244,9 @@ export function activate(context: vscode.ExtensionContext) {
                 vscode.window.showErrorMessage(`Could not open README.md: ${error}`);
             }
         });
+
+    let openAutomationTemplatesCommand = vscode.commands.registerCommand('bitswan.openAutomationTemplates',
+        async (businessProcessName?: string) => openAutomationTemplates(context, businessProcessName));
 
     let showImageLogsCommand = vscode.commands.registerCommand('bitswan.showImageLogs', 
         async (item: ImageItem) => imageCommands.showImageLogsCommand(context, unifiedImagesProvider, item));
@@ -344,6 +356,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(copyImageTagCommand);
     context.subscriptions.push(jumpToSourceCommand);
     context.subscriptions.push(openProcessReadmeCommand);
+    context.subscriptions.push(openAutomationTemplatesCommand);
 
     // Refresh the tree views when files change in the workspace
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
@@ -367,10 +380,26 @@ export function activate(context: vscode.ExtensionContext) {
             process.env.BITSWAN_DEPLOY_SECRET,
             true
         );
-        workspaceCommands.activateGitOpsCommand(context, workspacesProvider, activeGitOpsInstance, automationsProvider, unifiedImagesProvider, orphanedImagesProvider);
+        workspaceCommands.activateGitOpsCommand(
+            context,
+            workspacesProvider,
+            activeGitOpsInstance,
+            automationsProvider,
+            unifiedBusinessProcessesProvider,
+            unifiedImagesProvider,
+            orphanedImagesProvider
+        );
         automationsProvider.refresh();
     } else if (activeGitOpsInstance) {
-        workspaceCommands.activateGitOpsCommand(context, workspacesProvider, activeGitOpsInstance, automationsProvider, unifiedImagesProvider, orphanedImagesProvider);
+        workspaceCommands.activateGitOpsCommand(
+            context,
+            workspacesProvider,
+            activeGitOpsInstance,
+            automationsProvider,
+            unifiedBusinessProcessesProvider,
+            unifiedImagesProvider,
+            orphanedImagesProvider
+        );
         automationsProvider.refresh();
     }
 
