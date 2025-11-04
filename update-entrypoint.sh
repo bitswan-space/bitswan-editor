@@ -130,6 +130,7 @@ track_installation() {
 
 # Install marketplace extensions from pre-downloaded files
 install_or_update_extension_local "GitHub.copilot" "$COPILOT_EXTENSION_VERSION" "/opt/extensions/copilot.vsix"
+install_or_update_extension_local "GitHub.copilot-chat" "$COPILOT_CHAT_EXTENSION_VERSION" "/opt/extensions/copilot-chat.vsix"
 install_or_update_extension_local "ms-python.vscode-pylance" "$PYLANCE_EXTENSION_VERSION" "/opt/extensions/pylance.vsix"
 install_or_update_extension_local "ms-python.python" "$PYTHON_EXTENSION_VERSION" "/opt/extensions/python.vsix"
 install_or_update_extension_local "ms-toolsai.jupyter" "$JUPYTER_EXTENSION_VERSION" "/opt/extensions/jupyter.vsix"

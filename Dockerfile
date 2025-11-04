@@ -98,11 +98,15 @@ RUN chown -R coder:coder /opt/extensions
 ENV PYTHON_EXTENSION_VERSION="2025.17.2025100201"
 ENV JUPYTER_EXTENSION_VERSION="2025.8.0"
 ENV COPILOT_EXTENSION_VERSION="1.378.1798"
+ENV COPILOT_CHAT_EXTENSION_VERSION="0.31.4"
 ENV PYLANCE_EXTENSION_VERSION="2025.8.3"
 
 # Download marketplace extensions directly to /opt/extensions
 RUN curl -L -o /opt/extensions/copilot.vsix.gz "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/GitHub/vsextensions/copilot/$COPILOT_EXTENSION_VERSION/vspackage" && \
     gunzip /opt/extensions/copilot.vsix.gz
+
+RUN curl -L -o /opt/extensions/copilot-chat.vsix.gz "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/GitHub/vsextensions/copilot-chat/$COPILOT_CHAT_EXTENSION_VERSION/vspackage" && \
+    gunzip /opt/extensions/copilot-chat.vsix.gz
 
 RUN curl -L -o /opt/extensions/pylance.vsix.gz "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-python/vsextensions/vscode-pylance/$PYLANCE_EXTENSION_VERSION/vspackage" && \
     gunzip /opt/extensions/pylance.vsix.gz
