@@ -188,8 +188,10 @@ git config --global user.email "$HOSTNAME-bitswan@example.com"
 
 # Create dynamic HTML file with AOC_URL
 AOC_URL="${AOC_URL:-}"
-# Use a different delimiter to avoid issues with special characters in AOC_URL
-sed "s|AOC_URL_PLACEHOLDER|${AOC_URL}|g" /opt/bitswan-frame/frame.html > /opt/bitswan-frame/index.html
+# Remove "-editor" suffix from hostname for display
+WORKSPACE_NAME="${HOSTNAME%-editor}"
+# Use a different delimiter to avoid issues with special characters in AOC_URL and HOSTNAME
+sed "s|AOC_URL_PLACEHOLDER|${AOC_URL}|g" /opt/bitswan-frame/frame.html | sed "s|WORKSPACE_NAME_PLACEHOLDER|${WORKSPACE_NAME}|g" > /opt/bitswan-frame/index.html
 
 
 # Start code-server on internal port

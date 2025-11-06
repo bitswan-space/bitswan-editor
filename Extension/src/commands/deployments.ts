@@ -6,7 +6,7 @@ import JSZip from 'jszip';
 import urlJoin from 'proper-url-join';
 
 import { FolderItem } from '../views/sources_view';
-import { activateDeployment, deploy, zip2stream, zipDirectory } from '../lib';
+import { activateDeployment, deploy, zip2stream, zipDirectory, uploadAsset, promoteAutomation } from '../lib';
 import { getDeployDetails } from '../deploy_details';
 import { outputChannel } from '../extension';
 import { AutomationSourcesViewProvider } from '../views/automation_sources_view';
@@ -91,43 +91,58 @@ export async function deployCommandAbstract(
                 contentType: 'application/zip',
             });
 
-            // Send relative path
             if (itemSet === "automations") {
+                // For automations, use the promotion workflow
                 const relativePath = path.relative(workspaceFolders[0].uri.fsPath, folderPath);
-                form.append('relative_path', relativePath);
-            }
-
-            progress.report({ increment: 50, message: "Uploading to server " + deployUrl.toString() });
-
-            const success = await deploy(deployUrl.toString(), form, details.deploySecret);
-
-            if (success) {
-                progress.report({ increment: 100, message: "Succesfully uploaded "+messages[itemSet]["item"]+" to GitOps" });
-                vscode.window.showInformationMessage("Succesfully uploaded "+messages[itemSet]["item"]+" to GitOps");
                 
-                // Refresh image views if this was an image build
-                if (itemSet === "images" && unifiedImagesProvider && orphanedImagesProvider) {
-                    unifiedImagesProvider.refresh();
-                    orphanedImagesProvider.refresh();
+                progress.report({ increment: 50, message: "Uploading asset..." });
+
+                // Upload asset to get checksum
+                const assetsUploadUrl = urlJoin(details.deployUrl, "automations", "assets", "upload").toString();
+                const uploadResult = await uploadAsset(assetsUploadUrl, form, details.deploySecret);
+                
+                if (!uploadResult || !uploadResult.checksum) {
+                    throw new Error("Failed to upload asset or get checksum");
                 }
-            } else {
-                throw new Error("Failed to upload "+messages[itemSet]["item"]+" to GitOps");
-            }
 
-            if (itemSet === "automations") {
-                progress.report({ increment: 50, message: "Activating deployment..." });
+                const checksum = uploadResult.checksum;
+                outputChannel.appendLine(`Asset uploaded with checksum: ${checksum}`);
 
-                const activationSuccess = await activateDeployment(urlJoin(details.deployUrl,"automations", normalizedFolderName, "deploy").toString(), details.deploySecret);
+                progress.report({ increment: 75, message: "Deploying to dev stage..." });
+
+                // Deploy to dev stage with -dev suffix
+                const devDeploymentId = `${normalizedFolderName}-dev`;
+                const devDeployUrl = urlJoin(details.deployUrl, "automations", devDeploymentId, "deploy").toString();
+                const activationSuccess = await promoteAutomation(devDeployUrl, details.deploySecret, checksum, 'dev', relativePath);
+                
                 if (activationSuccess) {
-                    progress.report({ increment: 100, message: `Succesfully activated automation on GitOps` });
-                    vscode.window.showInformationMessage(`Succesfully activated automation on GitOps`);
+                    progress.report({ increment: 100, message: `Successfully deployed automation to dev stage` });
+                    vscode.window.showInformationMessage(`Successfully deployed automation to dev stage`);
                     // Immediately refetch automations and refresh the unified view
                     const providerForRefresh = (businessProcessesProvider || treeDataProvider);
                     if (providerForRefresh) {
                         await refreshAutomationsCommand(context, providerForRefresh as any);
                     }
                 } else {
-                    throw new Error(`Failed to activate automation on GitOps`);
+                    throw new Error(`Failed to deploy automation to dev stage`);
+                }
+            } else {
+                // For images, use the old workflow
+                progress.report({ increment: 50, message: "Uploading to server " + deployUrl.toString() });
+
+                const success = await deploy(deployUrl.toString(), form, details.deploySecret);
+
+                if (success) {
+                    progress.report({ increment: 100, message: "Succesfully uploaded "+messages[itemSet]["item"]+" to GitOps" });
+                    vscode.window.showInformationMessage("Succesfully uploaded "+messages[itemSet]["item"]+" to GitOps");
+                    
+                    // Refresh image views if this was an image build
+                    if (itemSet === "images" && unifiedImagesProvider && orphanedImagesProvider) {
+                        unifiedImagesProvider.refresh();
+                        orphanedImagesProvider.refresh();
+                    }
+                } else {
+                    throw new Error("Failed to upload "+messages[itemSet]["item"]+" to GitOps");
                 }
             }
 

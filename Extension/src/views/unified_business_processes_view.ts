@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import urlJoin from 'proper-url-join';
 import { FolderItem } from './sources_view';
 import { AutomationItem } from './automations_view';
 import { sanitizeName } from '../utils/nameUtils';
+import { getAutomationHistory } from '../lib';
 
 /**
  * Tree item representing a business process (directory containing process.toml)
@@ -42,6 +44,44 @@ export class AutomationSourceItem extends vscode.TreeItem {
 }
 
 /**
+ * Tree item representing a stage (dev/staging/production) under an automation source
+ */
+export class StageItem extends vscode.TreeItem {
+    constructor(
+        public readonly stage: 'dev' | 'staging' | 'production',
+        public readonly automationSourceName: string,
+        public readonly automation: AutomationItem | null, // null if stage not deployed
+        public readonly deploymentId: string, // The actual deployment_id (e.g., "my-automation-dev")
+        public readonly checksum: string | null = null // Current checksum for this stage
+    ) {
+        const stageDisplayName = stage.charAt(0).toUpperCase() + stage.slice(1);
+        super(stageDisplayName, vscode.TreeItemCollapsibleState.None);
+        
+        if (automation) {
+            // Stage is deployed - show automation details
+            const checksumDisplay = checksum ? ` (${checksum.substring(0, 5)}...)` : '';
+            this.tooltip = `${stageDisplayName} - ${automation.name}${checksumDisplay}`;
+            // Show status and checksum in description
+            const statusText = automation.status ?? '';
+            const checksumText = checksum ? ` • ${checksum.substring(0, 5)}...` : '';
+            this.description = `${statusText}${checksumText}`;
+            // Build contextValue similar to AutomationItem for menu matching
+            const status = automation.active ? 'active' : 'inactive';
+            const state = automation.state ?? 'exited';
+            const urlStatus = automation.automationUrl ? 'url' : 'nourl';
+            this.contextValue = `automationStage,${stage},deployed,${status},${state},urlStatus:${urlStatus}`;
+            this.iconPath = automation.iconPath;
+        } else {
+            // Stage not deployed - greyed out
+            this.tooltip = `${stageDisplayName} - Not deployed`;
+            this.description = 'Not deployed';
+            this.contextValue = `automationStage,${stage},notDeployed`;
+            this.iconPath = new vscode.ThemeIcon('circle-outline', new vscode.ThemeColor('disabledForeground'));
+        }
+    }
+}
+
+/**
  * Tree item representing the "Other automations" virtual business process
  */
 export class OtherAutomationsItem extends vscode.TreeItem {
@@ -71,9 +111,9 @@ export class CreateAutomationItem extends vscode.TreeItem {
     }
 }
 
-export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProvider<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem> {
-    private _onDidChangeTreeData: vscode.EventEmitter<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | undefined | null | void> = new vscode.EventEmitter<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | undefined | null | void>();
-    readonly onDidChangeTreeData: vscode.Event<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | undefined | null | void> = this._onDidChangeTreeData.event;
+export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProvider<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem> {
+    private _onDidChangeTreeData: vscode.EventEmitter<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem | undefined | null | void> = new vscode.EventEmitter<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem | undefined | null | void>();
+    readonly onDidChangeTreeData: vscode.Event<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
     constructor(private context: vscode.ExtensionContext) {}
 
@@ -82,11 +122,11 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         this._onDidChangeTreeData.fire();
     }
 
-    getTreeItem(element: BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem): vscode.TreeItem {
+    getTreeItem(element: BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem): vscode.TreeItem {
         return element;
     }
 
-    async getChildren(element?: BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem): Promise<(BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem)[]> {
+    async getChildren(element?: BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem): Promise<(BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem)[]> {
         const activeInstance = this.context.globalState.get<any>('activeGitOpsInstance');
         console.log(`[DEBUG] getChildren called - activeInstance:`, activeInstance);
         if (!activeInstance) {
@@ -109,9 +149,9 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         }
 
         if (element instanceof AutomationSourceItem) {
-            // Show running automations for this automation source
+            // Show stages (dev/staging/production) for this automation source
             console.log(`[DEBUG] getChildren - AutomationSourceItem: "${element.name}"`);
-            return this.getAutomationsForSource(element.name);
+            return await this.getStagesForSource(element.name);
         }
 
         if (element instanceof OtherAutomationsItem) {
@@ -234,6 +274,84 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         ));
 
         return result;
+    }
+
+    private async getStagesForSource(sourceName: string): Promise<StageItem[]> {
+        const automations = this.context.globalState.get<any[]>('automations', []);
+        
+        // Extract just the automation source name from the full path
+        const automationSourceName = sourceName.split('/').pop() || sourceName;
+        const sanitizedSourceName = sanitizeName(automationSourceName);
+        
+        console.log(`[DEBUG] getStagesForSource called with sourceName: "${sourceName}"`);
+        console.log(`[DEBUG] Sanitized sourceName: "${sanitizedSourceName}"`);
+        
+        // Map stages to their deployment IDs
+        const stageDeploymentIds = {
+            dev: `${sanitizedSourceName}-dev`,
+            staging: `${sanitizedSourceName}-staging`,
+            production: sanitizedSourceName // Production uses base name without suffix
+        };
+        
+        // Find automations for each stage
+        const stages: StageItem[] = [];
+        const stagesList: Array<'dev' | 'staging' | 'production'> = ['dev', 'staging', 'production'];
+        
+        for (const stage of stagesList) {
+            const deploymentId = stageDeploymentIds[stage];
+            
+            // Find automation matching this deployment_id
+            const automation = automations.find(a => {
+                // Check if deployment_id matches
+                const matches = a.deployment_id === deploymentId || a.deploymentId === deploymentId;
+                
+                // Also check if relative_path matches for production (which might not have -dev/-staging suffix)
+                if (!matches && stage === 'production') {
+                    const automationSourceFromPath = a.relativePath?.split('/').pop() || '';
+                    const sanitizedAutomationSource = sanitizeName(automationSourceFromPath);
+                    return sanitizedAutomationSource === sanitizedSourceName && 
+                           (a.stage === '' || a.stage === 'production' || !a.stage);
+                }
+                
+                return matches;
+            });
+            
+            if (automation) {
+                // Stage is deployed
+                const automationItem = new AutomationItem(
+                    automation.name,
+                    automation.state,
+                    automation.status,
+                    automation.deployment_id || automation.deploymentId,
+                    automation.active,
+                    automation.automation_url || automation.automationUrl,
+                    automation.relative_path || automation.relativePath
+                );
+                
+                // Try to get checksum from history (non-blocking - don't fail if it doesn't work)
+                let checksum: string | null = null;
+                try {
+                    const activeInstance = this.context.globalState.get<any>('activeGitOpsInstance');
+                    if (activeInstance) {
+                        const historyUrl = urlJoin(activeInstance.url, "automations", deploymentId, "history").toString();
+                        const history = await getAutomationHistory(historyUrl, activeInstance.secret, 1, 1);
+                        if (history.items && history.items.length > 0 && history.items[0].checksum) {
+                            checksum = history.items[0].checksum;
+                        }
+                    }
+                } catch (error) {
+                    // Silently fail - checksum is optional
+                    console.log(`[DEBUG] Failed to get checksum for ${deploymentId}: ${error}`);
+                }
+                
+                stages.push(new StageItem(stage, sourceName, automationItem, deploymentId, checksum));
+            } else {
+                // Stage not deployed - show greyed out
+                stages.push(new StageItem(stage, sourceName, null, deploymentId, null));
+            }
+        }
+        
+        return stages;
     }
 
     private getAutomationsForSource(sourceName: string): AutomationItem[] {

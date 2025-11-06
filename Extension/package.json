@@ -245,6 +245,21 @@
         "command": "bitswan.openAutomationTemplates",
         "title": "Create Automation",
         "icon": "$(add)"
+      },
+      {
+        "command": "bitswan.openPromotionManager",
+        "title": "Open Promotion Manager",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "bitswan.promoteToStaging",
+        "title": "Promote to Staging",
+        "icon": "$(arrow-right)"
+      },
+      {
+        "command": "bitswan.promoteToProduction",
+        "title": "Promote to Production",
+        "icon": "$(arrow-right)"
       }
     ],
     "menus": {
@@ -263,6 +278,11 @@
           "command": "bitswan.jumpToSource",
           "when": "view == bitswan-unified-business-processes && viewItem == automationSource",
           "group": "inline@6"
+        },
+        {
+          "command": "bitswan.openPromotionManager",
+          "when": "view == bitswan-unified-business-processes && viewItem == automationSource",
+          "group": "inline@7"
         },
         {
           "command": "bitswan.openProcessReadme",
@@ -308,6 +328,56 @@
           "command": "bitswan.showAutomationLogs",
           "when": "view == bitswan-unified-business-processes && viewItem =~ /^automation,active/",
           "group": "inline@5"
+        },
+        {
+          "command": "bitswan.stopAutomation",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,active,running( |$)/",
+          "group": "inline@1"
+        },
+        {
+          "command": "bitswan.startAutomation",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,active,(paused|exited)( |$)/",
+          "group": "inline@1"
+        },
+        {
+          "command": "bitswan.restartAutomation",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,active/",
+          "group": "inline@2"
+        },
+        {
+          "command": "bitswan.showAutomationLogs",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,active/",
+          "group": "inline@5"
+        },
+        {
+          "command": "bitswan.openExternalUrl",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,(dev|staging|production),deployed,active,.*,urlStatus:url/",
+          "group": "inline@1"
+        },
+        {
+          "command": "bitswan.deleteAutomation",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed/",
+          "group": "inline@4"
+        },
+        {
+          "command": "bitswan.promoteToStaging",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,dev,deployed/",
+          "group": "inline@8"
+        },
+        {
+          "command": "bitswan.promoteToProduction",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,staging,deployed/",
+          "group": "inline@8"
+        },
+        {
+          "command": "bitswan.activateAutomation",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,inactive,/",
+          "group": "inline@3"
+        },
+        {
+          "command": "bitswan.deactivateAutomation",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,active,/",
+          "group": "inline@3"
         },
         {
           "command": "bitswan.editGitOps",
