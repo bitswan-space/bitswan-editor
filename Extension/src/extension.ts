@@ -6,7 +6,7 @@ import { ImageItem } from './views/unified_images_view';
 import { FolderItem } from './views/sources_view';
 import { GitOpsItem } from './views/workspaces_view';
 import { BusinessProcessItem } from './views/unified_business_processes_view';
-import { AutomationSourceItem } from './views/unified_business_processes_view';
+import { AutomationSourceItem, StageItem } from './views/unified_business_processes_view';
 
 // Import commands from the new command modules
 import * as imageCommands from './commands/images';
@@ -15,6 +15,7 @@ import * as itemCommands from './commands/items';
 import * as workspaceCommands from './commands/workspaces';
 import * as deploymentCommands from './commands/deployments';
 import * as businessProcessCommands from './commands/business_processes';
+import * as promotionCommands from './commands/promotions';
 
 // Import view providers
 import { AutomationSourcesViewProvider } from './views/automation_sources_view';
@@ -181,55 +182,75 @@ export function activate(context: vscode.ExtensionContext) {
  
     let openExternalUrlCommand = vscode.commands.registerCommand(
         "bitswan.openExternalUrl",
-        async (item: AutomationItem) => {
-            const url = item.automationUrl;
+        async (item: AutomationItem | StageItem) => {
+            const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
+            const url = automationItem.automationUrl;
+            if (!url) {
+                vscode.window.showWarningMessage(`No URL available for ${automationItem.name}`);
+                return;
+            }
             try {
-            await vscode.env.openExternal(vscode.Uri.parse(url));
-            vscode.window.showInformationMessage(`Opened ${item.name} in browser`);
+                await vscode.env.openExternal(vscode.Uri.parse(url));
+                vscode.window.showInformationMessage(`Opened ${automationItem.name} in browser`);
             } catch (err) {
-            vscode.window.showErrorMessage(`Failed to open URL: ${url}`);
+                vscode.window.showErrorMessage(`Failed to open URL: ${url}`);
             }
         },
-        );
+    );
     
     let startAutomationCommand = vscode.commands.registerCommand('bitswan.startAutomation', 
-        async (item: AutomationItem) => itemCommands.makeItemCommand({
-            title: `Starting Automation ${item.name}`,
-            initialProgress: 'Sending request to GitOps...',
-            urlPath: 'start',
-            apiFunction: startAutomation,
-            successProgress: `Automation ${item.name} started successfully`,
-            successMessage: `Automation ${item.name} started successfully`,
-            errorMessage: `Failed to start automation ${item.name}:`,
-            errorLogPrefix: 'Automation Start Error:'
-        })(context, automationsProvider, item));
+        async (item: AutomationItem | StageItem) => {
+            const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
+            return itemCommands.makeItemCommand({
+                title: `Starting Automation ${automationItem.name}`,
+                initialProgress: 'Sending request to GitOps...',
+                urlPath: 'start',
+                apiFunction: startAutomation,
+                successProgress: `Automation ${automationItem.name} started successfully`,
+                successMessage: `Automation ${automationItem.name} started successfully`,
+                errorMessage: `Failed to start automation ${automationItem.name}:`,
+                errorLogPrefix: 'Automation Start Error:'
+            })(context, automationsProvider, automationItem);
+        });
     
     let stopAutomationCommand = vscode.commands.registerCommand('bitswan.stopAutomation', 
-        async (item: AutomationItem) => itemCommands.makeItemCommand({
-            title: `Stopping Automation ${item.name}`,
-            initialProgress: 'Sending request to GitOps...',
-            urlPath: 'stop',
-            apiFunction: stopAutomation,
-            successProgress: `Automation ${item.name} stopped successfully`,
-            successMessage: `Automation ${item.name} stopped successfully`,
-            errorMessage: `Failed to stop automation ${item.name}:`,
-            errorLogPrefix: 'Automation Stop Error:'
-        })(context, automationsProvider, item));
+        async (item: AutomationItem | StageItem) => {
+            const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
+            return itemCommands.makeItemCommand({
+                title: `Stopping Automation ${automationItem.name}`,
+                initialProgress: 'Sending request to GitOps...',
+                urlPath: 'stop',
+                apiFunction: stopAutomation,
+                successProgress: `Automation ${automationItem.name} stopped successfully`,
+                successMessage: `Automation ${automationItem.name} stopped successfully`,
+                errorMessage: `Failed to stop automation ${automationItem.name}:`,
+                errorLogPrefix: 'Automation Stop Error:'
+            })(context, automationsProvider, automationItem);
+        });
     
     let restartAutomationCommand = vscode.commands.registerCommand('bitswan.restartAutomation',     
-        async (item: AutomationItem) => itemCommands.makeItemCommand({
-            title: `Restarting Automation ${item.name}`,
-            initialProgress: 'Sending request to GitOps...',
-            urlPath: 'restart',
-            apiFunction: restartAutomation,
-            successProgress: `Automation ${item.name} restarted successfully`,
-            successMessage: `Automation ${item.name} restarted successfully`,
-            errorMessage: `Failed to restart automation ${item.name}:`,
-            errorLogPrefix: 'Automation Restart Error:'
-        })(context, automationsProvider, item));
+        async (item: AutomationItem | StageItem) => {
+            const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
+            return itemCommands.makeItemCommand({
+                title: `Restarting Automation ${automationItem.name}`,
+                initialProgress: 'Sending request to GitOps...',
+                urlPath: 'restart',
+                apiFunction: restartAutomation,
+                successProgress: `Automation ${automationItem.name} restarted successfully`,
+                successMessage: `Automation ${automationItem.name} restarted successfully`,
+                errorMessage: `Failed to restart automation ${automationItem.name}:`,
+                errorLogPrefix: 'Automation Restart Error:'
+            })(context, automationsProvider, automationItem);
+        });
     
     let showAutomationLogsCommand = vscode.commands.registerCommand('bitswan.showAutomationLogs', 
-        async (item: AutomationItem) => automationCommands.showAutomationLogsCommand(context, automationsProvider, item));
+        async (item: AutomationItem | StageItem) => {
+            if (item instanceof StageItem && item.automation) {
+                await automationCommands.showAutomationLogsCommand(context, automationsProvider, item.automation);
+            } else if (item instanceof AutomationItem) {
+                await automationCommands.showAutomationLogsCommand(context, automationsProvider, item);
+            }
+        });
 
     let jumpToSourceCommand = vscode.commands.registerCommand('bitswan.jumpToSource', 
         async (item: AutomationItem) => automationCommands.jumpToSourceCommand(context, item));
@@ -248,6 +269,37 @@ export function activate(context: vscode.ExtensionContext) {
     let openAutomationTemplatesCommand = vscode.commands.registerCommand('bitswan.openAutomationTemplates',
         async (businessProcessName?: string) => openAutomationTemplates(context, businessProcessName));
 
+    let promoteToStagingCommand = vscode.commands.registerCommand('bitswan.promoteToStaging',
+        async (item: StageItem | any) => {
+            if (!item || (typeof item !== 'object')) {
+                vscode.window.showErrorMessage('Invalid item selected for promotion');
+                return;
+            }
+            // Check if it looks like a StageItem (has stage and deploymentId properties)
+            if (!('stage' in item) || !('deploymentId' in item)) {
+                vscode.window.showErrorMessage('Invalid item selected for promotion');
+                return;
+            }
+            return promotionCommands.promoteStageCommand(context, item as StageItem, 'staging', unifiedBusinessProcessesProvider);
+        });
+
+    let promoteToProductionCommand = vscode.commands.registerCommand('bitswan.promoteToProduction',
+        async (item: StageItem | any) => {
+            if (!item || (typeof item !== 'object')) {
+                vscode.window.showErrorMessage('Invalid item selected for promotion');
+                return;
+            }
+            // Check if it looks like a StageItem (has stage and deploymentId properties)
+            if (!('stage' in item) || !('deploymentId' in item)) {
+                vscode.window.showErrorMessage('Invalid item selected for promotion');
+                return;
+            }
+            return promotionCommands.promoteStageCommand(context, item as StageItem, 'production', unifiedBusinessProcessesProvider);
+        });
+
+    let openPromotionManagerCommand = vscode.commands.registerCommand('bitswan.openPromotionManager',
+        async (item: AutomationSourceItem) => promotionCommands.openPromotionManagerCommand(context, item.name));
+
     let showImageLogsCommand = vscode.commands.registerCommand('bitswan.showImageLogs', 
         async (item: ImageItem) => imageCommands.showImageLogsCommand(context, unifiedImagesProvider, item));
 
@@ -256,41 +308,50 @@ export function activate(context: vscode.ExtensionContext) {
 
 
     let activateAutomationCommand = vscode.commands.registerCommand('bitswan.activateAutomation', 
-        async (item: AutomationItem) => itemCommands.makeItemCommand({
-            title: `Activating Automation ${item.name}`,
-            initialProgress: 'Sending request to GitOps...',
-            urlPath: 'activate',
-            apiFunction: activateAutomation,
-            successProgress: `Automation ${item.name} activated successfully`,
-            successMessage: `Automation ${item.name} activated successfully`,
-            errorMessage: `Failed to activate automation ${item.name}:`,
-            errorLogPrefix: 'Automation Activate Error:'
-        })(context, automationsProvider, item));
+        async (item: AutomationItem | StageItem) => {
+            const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
+            return itemCommands.makeItemCommand({
+                title: `Activating Automation ${automationItem.name}`,
+                initialProgress: 'Sending request to GitOps...',
+                urlPath: 'activate',
+                apiFunction: activateAutomation,
+                successProgress: `Automation ${automationItem.name} activated successfully`,
+                successMessage: `Automation ${automationItem.name} activated successfully`,
+                errorMessage: `Failed to activate automation ${automationItem.name}:`,
+                errorLogPrefix: 'Automation Activate Error:'
+            })(context, automationsProvider, automationItem);
+        });
     
     let deactivateAutomationCommand = vscode.commands.registerCommand('bitswan.deactivateAutomation', 
-        async (item: AutomationItem) => itemCommands.makeItemCommand({
-            title: `Deactivating Automation ${item.name}`,
-            initialProgress: 'Sending request to GitOps...',
-            urlPath: 'deactivate',
-            apiFunction: deactivateAutomation,
-            successProgress: `Automation ${item.name} deactivated successfully`,
-            successMessage: `Automation ${item.name} deactivated successfully`,
-            errorMessage: `Failed to deactivate automation ${item.name}:`,
-            errorLogPrefix: 'Automation Deactivate Error:'
-        })(context, automationsProvider, item));
+        async (item: AutomationItem | StageItem) => {
+            const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
+            return itemCommands.makeItemCommand({
+                title: `Deactivating Automation ${automationItem.name}`,
+                initialProgress: 'Sending request to GitOps...',
+                urlPath: 'deactivate',
+                apiFunction: deactivateAutomation,
+                successProgress: `Automation ${automationItem.name} deactivated successfully`,
+                successMessage: `Automation ${automationItem.name} deactivated successfully`,
+                errorMessage: `Failed to deactivate automation ${automationItem.name}:`,
+                errorLogPrefix: 'Automation Deactivate Error:'
+            })(context, automationsProvider, automationItem);
+        });
     
     let deleteAutomationCommand = vscode.commands.registerCommand('bitswan.deleteAutomation', 
-        async (item: AutomationItem) => itemCommands.makeItemCommand({
-            title: `Deleting Automation ${item.name}`,
-            initialProgress: 'Sending request to GitOps...',
-            urlPath: '',
-            apiFunction: deleteAutomation,
-            successProgress: `Automation ${item.name} deleted successfully`,
-            successMessage: `Automation ${item.name} deleted successfully`,
-            errorMessage: `Failed to delete automation ${item.name}:`,
-            errorLogPrefix: 'Automation Delete Error:',
-            prompt: true
-        })(context, automationsProvider, item));
+        async (item: AutomationItem | StageItem) => {
+            const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
+            return itemCommands.makeItemCommand({
+                title: `Deleting Automation ${automationItem.name}`,
+                initialProgress: 'Sending request to GitOps...',
+                urlPath: '',
+                apiFunction: deleteAutomation,
+                successProgress: `Automation ${automationItem.name} deleted successfully`,
+                successMessage: `Automation ${automationItem.name} deleted successfully`,
+                errorMessage: `Failed to delete automation ${automationItem.name}:`,
+                errorLogPrefix: 'Automation Delete Error:',
+                prompt: true
+            })(context, automationsProvider, automationItem);
+        });
 
     let deleteImageCommand = vscode.commands.registerCommand('bitswan.deleteImage', 
         async (item: ImageItem) => itemCommands.makeItemCommand({
@@ -357,6 +418,9 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(jumpToSourceCommand);
     context.subscriptions.push(openProcessReadmeCommand);
     context.subscriptions.push(openAutomationTemplatesCommand);
+    context.subscriptions.push(promoteToStagingCommand);
+    context.subscriptions.push(promoteToProductionCommand);
+    context.subscriptions.push(openPromotionManagerCommand);
 
     // Refresh the tree views when files change in the workspace
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');

@@ -86,6 +86,10 @@ export const getAutomations = async (
         a.deploymentId = a.deployment_id;
         a.automationUrl = a.automation_url;
         a.relativePath = a.relative_path;
+        // Stage field is already present, but normalize empty string to 'production'
+        if (a.stage === '' || a.stage === null || a.stage === undefined) {
+          a.stage = 'production';
+        }
       });
       return automations;
     } else {
@@ -286,4 +290,79 @@ export const heartbeatJupyterServer = async (
     console.error("jupyter-server:heartbeat:error-sresponse-body", error)
   }
 
+}
+
+export const uploadAsset = async (assetsUploadUrl: string, form: FormData, secret: string) => {
+  const response = await axios.post(assetsUploadUrl, form, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+      'Authorization': `Bearer ${secret}`
+    },
+  });
+
+  if (response.status === 200) {
+    return response.data;
+  } else {
+    throw new Error(`Failed to upload asset: ${response.status}`);
+  }
+}
+
+export const promoteAutomation = async (
+  deployUrl: string,
+  secret: string,
+  checksum: string,
+  stage: string,
+  relativePath?: string
+) => {
+  const form = new FormData();
+  form.append('checksum', checksum);
+  form.append('stage', stage);
+  if (relativePath) {
+    form.append('relative_path', relativePath);
+  }
+
+  const response = await axios.post(deployUrl, form, {
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  return response.status === 200;
+}
+
+export const getAutomationHistory = async (
+  historyUrl: string,
+  secret: string,
+  page: number = 1,
+  pageSize: number = 20
+) => {
+  const response = await axios.get(historyUrl, {
+    params: {
+      page,
+      page_size: pageSize
+    },
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  if (response.status === 200) {
+    return response.data;
+  } else {
+    throw new Error(`Failed to get automation history: ${response.status}`);
+  }
+}
+
+export const listAssets = async (assetsUrl: string, secret: string) => {
+  const response = await axios.get(assetsUrl, {
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  if (response.status === 200) {
+    return response.data;
+  } else {
+    throw new Error(`Failed to list assets: ${response.status}`);
+  }
 }
