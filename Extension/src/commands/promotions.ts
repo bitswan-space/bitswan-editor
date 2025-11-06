@@ -688,6 +688,40 @@ function getPromotionManagerHtml(
         </p>
     </div>
     
+    <div style="margin-top: 40px; padding: 20px; background-color: var(--vscode-textBlockQuote-background); border-left: 4px solid var(--vscode-textBlockQuote-border); border-radius: 4px;">
+        <h2 style="margin-top: 0;">Per-Stage Secret Groups</h2>
+        <p style="line-height: 1.6;">
+            You can configure different secret groups for each deployment stage to ensure that automations only have access to 
+            the secrets appropriate for their environment. This provides an additional layer of security by isolating secrets 
+            between development, staging, and production environments.
+        </p>
+        <p style="line-height: 1.6;">
+            In your <code>pipelines.conf</code> file, you can specify stage-specific secret groups:
+        </p>
+        <pre style="background-color: var(--vscode-textCodeBlock-background); padding: 12px; border-radius: 4px; overflow-x: auto; margin: 10px 0;"><code>[secrets]
+dev_groups=foodev bardev
+staging_groups=foostaging barstaging
+production_groups=fooprod barprod
+groups=foo bar</code></pre>
+        <p style="line-height: 1.6;">
+            When an automation is deployed to a specific stage:
+        </p>
+        <ul style="line-height: 1.8; padding-left: 20px;">
+            <li><strong>Dev stage</strong>: Uses <code>dev_groups</code> if specified, otherwise falls back to <code>groups</code></li>
+            <li><strong>Staging stage</strong>: Uses <code>staging_groups</code> if specified, otherwise falls back to <code>groups</code></li>
+            <li><strong>Production stage</strong>: Uses <code>production_groups</code> if specified, otherwise falls back to <code>groups</code></li>
+        </ul>
+        <p style="line-height: 1.6; margin-bottom: 0;">
+            The <code>groups</code> setting serves as a fallback for all stages when stage-specific groups are not configured. 
+            This allows you to have shared secrets across all stages if secret isolation is not needed.
+        </p>
+        <p style="line-height: 1.6; margin-top: 15px; margin-bottom: 0;">
+            <strong>Note:</strong> In Jupyter notebooks, secrets are loaded as if the automation is running in the <strong>dev</strong> stage, 
+            meaning <code>dev_groups</code> will be preferred over <code>groups</code> when available. The automation container 
+            also receives a <code>BITSWAN_AUTOMATION_STAGE</code> environment variable indicating its current stage.
+        </p>
+    </div>
+    
     <script>
         const vscode = acquireVsCodeApi();
         
