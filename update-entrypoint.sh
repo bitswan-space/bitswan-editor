@@ -7,6 +7,28 @@ mkdir -p ${EXTENSIONS_DIR}
 mkdir -p ${TEMP_EXTENSIONS_DIR}
 mkdir -p "$(dirname "$EXTENSIONS_VERSION_FILE")"
 
+if [ "$UPDATE_CA_CERTIFICATES" = "true" ]; then
+    echo "Updating CA certificates..."
+    if [ -d /usr/local/share/ca-certificates/custom ]; then
+        # Copy certificates from read-only mount to writable location
+        sudo cp /usr/local/share/ca-certificates/custom/*.crt /usr/local/share/ca-certificates/ 2>/dev/null || true
+        sudo cp /usr/local/share/ca-certificates/custom/*.pem /usr/local/share/ca-certificates/ 2>/dev/null || true
+        
+        # Rename .pem files to .crt (update-ca-certificates requires .crt)
+        for f in /usr/local/share/ca-certificates/*.pem; do
+            [ -f "$f" ] && sudo mv "$f" "${f%.pem}.crt"
+            echo "Renaming .pem files to .crt (update-ca-certificates requires .crt)"
+        done
+        
+        # Update the system CA certificates
+        sudo update-ca-certificates 2>&1 | grep -v "WARNING: ca-certificates.crt does not contain exactly one certificate or CRL"
+        echo "CA certificates updated successfully"
+    else
+        echo "No custom CA certificates found at /usr/local/share/ca-certificates/custom"
+    fi
+fi
+
+
 # Initialize extensions version file if it doesn't exist
 if [ ! -f "$EXTENSIONS_VERSION_FILE" ]; then
     echo "{}" > "$EXTENSIONS_VERSION_FILE"
