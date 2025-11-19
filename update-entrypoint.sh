@@ -194,11 +194,19 @@ WORKSPACE_NAME="${HOSTNAME%-editor}"
 sed "s|AOC_URL_PLACEHOLDER|${AOC_URL}|g" /opt/bitswan-frame/frame.html | sed "s|WORKSPACE_NAME_PLACEHOLDER|${WORKSPACE_NAME}|g" > /opt/bitswan-frame/index.html
 
 
+if [ "$OAUTH_ENABLED" = "true" ]; then
+    CODE_SERVER_AUTH="none"
+    echo "OAuth is enabled - code-server will use --auth none"
+else
+    CODE_SERVER_AUTH="password"
+    echo "OAuth is disabled - code-server will use --auth password"
+fi
+
 # Start code-server on internal port
 echo "Starting code-server on internal port ${INTERNAL_CODE_SERVER_PORT}..."
 /usr/bin/entrypoint.sh \
   --bind-addr "127.0.0.1:${INTERNAL_CODE_SERVER_PORT}" \
-  --auth none \
+  --auth ${CODE_SERVER_AUTH} \
   . &
 CODE_SERVER_PID=$!
 
