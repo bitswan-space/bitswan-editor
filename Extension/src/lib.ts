@@ -86,6 +86,7 @@ export const getAutomations = async (
         a.deploymentId = a.deployment_id;
         a.automationUrl = a.automation_url;
         a.relativePath = a.relative_path;
+        a.versionHash = a.version_hash;
         // Stage field is already present, but normalize empty string to 'production'
         if (a.stage === '' || a.stage === null || a.stage === undefined) {
           a.stage = 'production';

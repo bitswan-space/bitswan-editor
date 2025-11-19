@@ -5,7 +5,6 @@ import urlJoin from 'proper-url-join';
 import { FolderItem } from './sources_view';
 import { AutomationItem } from './automations_view';
 import { sanitizeName } from '../utils/nameUtils';
-import { getAutomationHistory } from '../lib';
 
 /**
  * Tree item representing a business process (directory containing process.toml)
@@ -328,21 +327,8 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                     automation.relative_path || automation.relativePath
                 );
                 
-                // Try to get checksum from history (non-blocking - don't fail if it doesn't work)
-                let checksum: string | null = null;
-                try {
-                    const activeInstance = this.context.globalState.get<any>('activeGitOpsInstance');
-                    if (activeInstance) {
-                        const historyUrl = urlJoin(activeInstance.url, "automations", deploymentId, "history").toString();
-                        const history = await getAutomationHistory(historyUrl, activeInstance.secret, 1, 1);
-                        if (history.items && history.items.length > 0 && history.items[0].checksum) {
-                            checksum = history.items[0].checksum;
-                        }
-                    }
-                } catch (error) {
-                    // Silently fail - checksum is optional
-                    console.log(`[DEBUG] Failed to get checksum for ${deploymentId}: ${error}`);
-                }
+                // Use version_hash from the automation object instead of fetching history
+                const checksum = automation.version_hash || automation.versionHash || null;
                 
                 stages.push(new StageItem(stage, sourceName, automationItem, deploymentId, checksum));
             } else {
