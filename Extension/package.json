@@ -121,6 +121,16 @@
         "icon": "$(cloud-upload)"
       },
       {
+        "command": "bitswan.startBitswanKernel",
+        "title": "Start Bitswan Kernel",
+        "icon": "$(play)"
+      },
+      {
+        "command": "bitswan.stopBitswanKernel",
+        "title": "Stop Bitswan Kernel",
+        "icon": "$(stop)"
+      },
+      {
         "command": "bitswan.addGitOps",
         "title": "Add GitOps",
         "icon": "$(add)"
@@ -506,6 +516,16 @@
         {
           "command": "bitswan.deployAutomationFromToolbar",
           "when": "notebookType == 'jupyter-notebook'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "bitswan.startBitswanKernel",
+          "when": "notebookType == 'jupyter-notebook' && !bitswan.kernelRunning",
+          "group": "navigation@1"
+        },
+        {
+          "command": "bitswan.stopBitswanKernel",
+          "when": "notebookType == 'jupyter-notebook' && bitswan.kernelRunning",
           "group": "navigation@1"
         }
       ],

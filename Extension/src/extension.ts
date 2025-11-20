@@ -24,12 +24,16 @@ import { AutomationsViewProvider } from './views/automations_view';
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from './views/unified_images_view';
 import { UnifiedBusinessProcessesViewProvider } from './views/unified_business_processes_view';
 import { openAutomationTemplates } from './views/templates_gallery';
-import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation, deleteImage } from './lib';
+import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation, deleteImage, setGitOpsOutputChannel } from './lib';
 import { Jupyter } from '@vscode/jupyter-extension';
-import { getJupyterServers, notebookInitializationFlow, startJupyterServer } from './commands/jupyter-server';
+import { getJupyterServers } from './commands/jupyter-server';
+import { startBitswanKernel, stopBitswanKernel, checkAndUpdateKernelStatus, updateKernelStatusContext } from './commands/kernel';
 
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
+
+// GitOps network logging channel
+export let gitopsOutputChannel: vscode.OutputChannel;
 
 // Map to track output channels
 export const outputChannelsMap = new Map<string, vscode.OutputChannel>();
@@ -58,7 +62,16 @@ export function setImageRefreshInterval(interval: NodeJS.Timer | undefined) {
 export function activate(context: vscode.ExtensionContext) {
     // Create and show output channel immediately
     outputChannel = vscode.window.createOutputChannel('BitSwan');
+    
+    // Initialize kernel running context to false
+    vscode.commands.executeCommand('setContext', 'bitswan.kernelRunning', false);
     outputChannel.show(true); // true forces the output channel to take focus
+
+    // Create GitOps network logging channel
+    gitopsOutputChannel = vscode.window.createOutputChannel('BitSwan Gitops');
+    
+    // Initialize GitOps network logging interceptors
+    setGitOpsOutputChannel(gitopsOutputChannel);
 
     outputChannel.appendLine('=====================================');
     outputChannel.appendLine('BitSwan Extension Activation Start');
@@ -81,8 +94,6 @@ export function activate(context: vscode.ExtensionContext) {
       jupyterExt.activate();
     }
 
-    notebookInitializationFlow(context);
-
     jupyterExt.exports.createJupyterServerCollection(
       `${context.extension.id}:lab`,
       "Bitswan Jupyter Server(s)",
@@ -92,11 +103,6 @@ export function activate(context: vscode.ExtensionContext) {
       }
     );
 
-    context.subscriptions.push(
-      vscode.workspace.onDidOpenNotebookDocument(async (doc) => {
-        await startJupyterServer(context, doc);
-      })
-    );
 
     // Create view providers
     const automationSourcesProvider = new AutomationSourcesViewProvider(context);
@@ -126,6 +132,50 @@ export function activate(context: vscode.ExtensionContext) {
 
     let deployFromToolbarCommand = vscode.commands.registerCommand('bitswan.deployAutomationFromToolbar', 
         async (item: string) => deploymentCommands.deployFromNotebookToolbarCommand(context, item, "automations", unifiedBusinessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider));
+    
+    let startKernelCommand = vscode.commands.registerCommand('bitswan.startBitswanKernel',
+        async (item: any) => await startBitswanKernel(context, item));
+    
+    let stopKernelCommand = vscode.commands.registerCommand('bitswan.stopBitswanKernel',
+        async (item: any) => await stopBitswanKernel(context, item));
+    
+    // Check kernel status when notebooks are opened or when active editor changes
+    const updateKernelContextForNotebook = async (notebook: vscode.NotebookDocument) => {
+        if (notebook.uri.fsPath.endsWith('.ipynb')) {
+            const automationName = path.dirname(notebook.uri.fsPath).split("/").pop() || "";
+            if (automationName) {
+                const isRunning = await checkAndUpdateKernelStatus(context, automationName);
+                // Also set a general context variable for the menu
+                await vscode.commands.executeCommand('setContext', 'bitswan.kernelRunning', isRunning);
+            }
+        }
+    };
+    
+    context.subscriptions.push(
+        vscode.workspace.onDidOpenNotebookDocument(updateKernelContextForNotebook)
+    );
+    
+    // Also update when active notebook editor changes
+    context.subscriptions.push(
+        vscode.window.onDidChangeActiveNotebookEditor(async (e) => {
+            if (e?.notebook) {
+                await updateKernelContextForNotebook(e.notebook);
+            }
+        })
+    );
+    
+    // Also check for already open notebooks (async wrapper)
+    (async () => {
+        for (const notebook of vscode.workspace.notebookDocuments) {
+            if (notebook.uri.fsPath.endsWith('.ipynb')) {
+                const automationName = path.dirname(notebook.uri.fsPath).split("/").pop() || "";
+                if (automationName) {
+                    const isRunning = await checkAndUpdateKernelStatus(context, automationName);
+                    await vscode.commands.executeCommand('setContext', 'bitswan.kernelRunning', isRunning);
+                }
+            }
+        }
+    })();
 
     // Register commands using the new command modules
     let deployCommand = vscode.commands.registerCommand('bitswan.deployAutomation', 
@@ -393,6 +443,8 @@ export function activate(context: vscode.ExtensionContext) {
     // Register all commands
     context.subscriptions.push(deployCommand);
     context.subscriptions.push(deployFromToolbarCommand);
+    context.subscriptions.push(startKernelCommand);
+    context.subscriptions.push(stopKernelCommand);
     context.subscriptions.push(buildImageCommand);
     context.subscriptions.push(buildImageFromToolbarCommand);
     context.subscriptions.push(addGitOpsCommand);
@@ -521,6 +573,12 @@ export function deactivate() {
     
     // Clear the map
     outputChannelsMap.clear();
+    
+    // Dispose the GitOps output channel
+    if (gitopsOutputChannel) {
+        gitopsOutputChannel.appendLine('BitSwan GitOps Extension Deactivated');
+        gitopsOutputChannel.dispose();
+    }
     
     // Dispose the main output channel
     outputChannel.appendLine('BitSwan Extension Deactivated');
