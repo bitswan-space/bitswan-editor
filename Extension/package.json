@@ -84,6 +84,11 @@
           "id": "bitswan-images",
           "title": "Images",
           "icon": "media/images.svg"
+        },
+        {
+          "id": "bitswan-secrets",
+          "title": "Secrets",
+          "icon": "media/secrets.svg"
         }
       ]
     },
@@ -107,6 +112,12 @@
           "id": "bitswan-orphaned-images",
           "name": "Orphaned Images"
         }
+      ],
+      "bitswan-secrets": [
+        {
+          "id": "bitswan-secrets-manager",
+          "name": "Secrets Manager"
+        }
       ]
     },
     "commands": [
@@ -129,6 +140,25 @@
         "command": "bitswan.stopBitswanKernel",
         "title": "Stop Bitswan Kernel",
         "icon": "$(stop)"
+      },
+      {
+        "command": "bitswan.refreshSecrets",
+        "title": "Refresh Secrets",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "bitswan.createSecretGroup",
+        "title": "Create Secret Group",
+        "icon": "$(add)"
+      },
+      {
+        "command": "bitswan.openSecretGroup",
+        "title": "Open Secret Group"
+      },
+      {
+        "command": "bitswan.renameSecretGroup",
+        "title": "Rename Secret Group",
+        "icon": "$(edit)"
       },
       {
         "command": "bitswan.addGitOps",
@@ -543,6 +573,16 @@
           "command": "bitswan.copyImageTag",
           "when": "view == bitswan-orphaned-images && viewItem == image",
           "group": "inline@3"
+        },
+        {
+          "command": "bitswan.renameSecretGroup",
+          "when": "view == bitswan-secrets-manager && viewItem == secretGroup",
+          "group": "navigation@1"
+        },
+        {
+          "command": "bitswan.openSecretGroup",
+          "when": "view == bitswan-secrets-manager && viewItem == secretGroup",
+          "group": "navigation@2"
         }
       ],
       "view/title": [
@@ -564,6 +604,16 @@
         {
           "command": "bitswan.refreshBusinessProcesses",
           "when": "view == bitswan-unified-business-processes",
+          "group": "navigation@1"
+        },
+        {
+          "command": "bitswan.createSecretGroup",
+          "when": "view == bitswan-secrets-manager",
+          "group": "navigation@1"
+        },
+        {
+          "command": "bitswan.refreshSecrets",
+          "when": "view == bitswan-secrets-manager",
           "group": "navigation@1"
         },
         {

@@ -226,10 +226,11 @@ fi
 
 # Start code-server on internal port
 echo "Starting code-server on internal port ${INTERNAL_CODE_SERVER_PORT}..."
+cd /home/coder/workspace/workspace
 /usr/bin/entrypoint.sh \
   --bind-addr "127.0.0.1:${INTERNAL_CODE_SERVER_PORT}" \
   --auth ${CODE_SERVER_AUTH} \
-  . &
+  /home/coder/workspace/workspace &
 CODE_SERVER_PID=$!
 
 chown -R coder:coder /home/coder
