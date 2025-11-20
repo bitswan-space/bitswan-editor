@@ -24,6 +24,7 @@ import { AutomationsViewProvider } from './views/automations_view';
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from './views/unified_images_view';
 import { UnifiedBusinessProcessesViewProvider } from './views/unified_business_processes_view';
 import { openAutomationTemplates } from './views/templates_gallery';
+import { SecretsTreeViewProvider, SecretsEditorPanel, SecretGroupItem } from './views/secrets_view';
 import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation, deleteImage, setGitOpsOutputChannel } from './lib';
 import { Jupyter } from '@vscode/jupyter-extension';
 import { getJupyterServers } from './commands/jupyter-server';
@@ -112,6 +113,7 @@ export function activate(context: vscode.ExtensionContext) {
     const unifiedImagesProvider = new UnifiedImagesViewProvider(context);
     const orphanedImagesProvider = new OrphanedImagesViewProvider(context);
     const unifiedBusinessProcessesProvider = new UnifiedBusinessProcessesViewProvider(context);
+    const secretsTreeProvider = new SecretsTreeViewProvider(context);
 
     // Register Business Processes views
     vscode.window.createTreeView('bitswan-unified-business-processes', {
@@ -130,6 +132,12 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.createTreeView('bitswan-orphaned-images', {
         treeDataProvider: orphanedImagesProvider,
     });
+
+    vscode.window.createTreeView('bitswan-secrets-manager', {
+        treeDataProvider: secretsTreeProvider,
+    });
+
+    context.subscriptions.push(secretsTreeProvider);
 
     let deployFromToolbarCommand = vscode.commands.registerCommand('bitswan.deployAutomationFromToolbar', 
         async (item: string) => deploymentCommands.deployFromNotebookToolbarCommand(context, item, "automations", unifiedBusinessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider));
@@ -229,6 +237,127 @@ export function activate(context: vscode.ExtensionContext) {
         async () => {
             console.log('[DEBUG] refreshBusinessProcessesCommand called');
             await businessProcessCommands.refreshBusinessProcessesCommand(context, unifiedBusinessProcessesProvider);
+        });
+
+    let refreshSecretsCommand = vscode.commands.registerCommand('bitswan.refreshSecrets',
+        async () => secretsTreeProvider.refresh());
+
+    let createSecretGroupCommand = vscode.commands.registerCommand('bitswan.createSecretGroup',
+        async () => {
+            const name = await vscode.window.showInputBox({
+                prompt: 'Enter a name for the secret group',
+                placeHolder: 'e.g. staging',
+                validateInput: (value) => {
+                    if (!value || !value.trim()) {
+                        return 'Group name is required';
+                    }
+                    if (!/^[A-Za-z0-9._-]+$/.test(value.trim())) {
+                        return 'Group names may only include letters, numbers, ".", "_" or "-"';
+                    }
+                    return null;
+                }
+            });
+            if (!name) {
+                return;
+            }
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceFolder) {
+                vscode.window.showErrorMessage('No workspace folder found');
+                return;
+            }
+            const workspaceRoot = path.dirname(workspaceFolder);
+            const secretsDir = path.join(workspaceRoot, 'secrets');
+            const normalized = name.trim();
+            const filePath = path.join(secretsDir, normalized);
+            try {
+                const { promises: fs } = await import('fs');
+                await fs.access(filePath);
+                vscode.window.showErrorMessage(`Secret group "${name.trim()}" already exists.`);
+                return;
+            } catch (error: any) {
+                if (error?.code !== 'ENOENT') {
+                    throw error;
+                }
+            }
+            try {
+                const { promises: fs } = await import('fs');
+                await fs.mkdir(secretsDir, { recursive: true });
+                const header = `# Managed by BitSwan Secrets Manager (${new Date().toISOString()})\n`;
+                await fs.writeFile(filePath, header, 'utf8');
+                secretsTreeProvider.refresh();
+                SecretsEditorPanel.createOrShow(context, normalized, name.trim());
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to create secret group: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+        });
+
+    let openSecretGroupCommand = vscode.commands.registerCommand('bitswan.openSecretGroup',
+        async (item: SecretGroupItem) => {
+            if (!item) {
+                return;
+            }
+            const displayName = item.label;
+            SecretsEditorPanel.createOrShow(context, item.id, displayName);
+        });
+
+    let renameSecretGroupCommand = vscode.commands.registerCommand('bitswan.renameSecretGroup',
+        async (item: SecretGroupItem) => {
+            if (!item) {
+                return;
+            }
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceFolder) {
+                vscode.window.showErrorMessage('No workspace folder found');
+                return;
+            }
+            const workspaceRoot = path.dirname(workspaceFolder);
+            const secretsDir = path.join(workspaceRoot, 'secrets');
+            const oldFilePath = path.join(secretsDir, item.id);
+            const oldDisplayName = item.label;
+
+            const newName = await vscode.window.showInputBox({
+                prompt: 'Enter a new name for the secret group',
+                value: oldDisplayName,
+                validateInput: (value) => {
+                    if (!value || !value.trim()) {
+                        return 'Group name is required';
+                    }
+                    if (value.trim() === oldDisplayName) {
+                        return 'New name must be different from the current name';
+                    }
+                    if (!/^[A-Za-z0-9._-]+$/.test(value.trim())) {
+                        return 'Group names may only include letters, numbers, ".", "_" or "-"';
+                    }
+                    return null;
+                }
+            });
+            if (!newName || newName.trim() === oldDisplayName) {
+                return;
+            }
+
+            const newFilePath = path.join(secretsDir, newName.trim());
+            try {
+                const { promises: fs } = await import('fs');
+                // Check if new name already exists
+                try {
+                    await fs.access(newFilePath);
+                    vscode.window.showErrorMessage(`Secret group "${newName.trim()}" already exists.`);
+                    return;
+                } catch (error: any) {
+                    if (error?.code !== 'ENOENT') {
+                        throw error;
+                    }
+                }
+                // Rename the file
+                await fs.rename(oldFilePath, newFilePath);
+                secretsTreeProvider.refresh();
+                // Close old panel if open and open new one
+                SecretsEditorPanel.closePanel(item.id);
+                SecretsEditorPanel.createOrShow(context, newName.trim(), newName.trim());
+                vscode.window.showInformationMessage(`Renamed secret group from "${oldDisplayName}" to "${newName.trim()}".`);
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to rename secret group: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
         });
  
     let openExternalUrlCommand = vscode.commands.registerCommand(
@@ -491,6 +620,10 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(refreshAutomationsCommand);
     context.subscriptions.push(refreshImagesCommand);
     context.subscriptions.push(refreshBusinessProcessesCommand);
+    context.subscriptions.push(refreshSecretsCommand);
+    context.subscriptions.push(createSecretGroupCommand);
+    context.subscriptions.push(openSecretGroupCommand);
+    context.subscriptions.push(renameSecretGroupCommand);
     context.subscriptions.push(openExternalUrlCommand);
     context.subscriptions.push(restartAutomationCommand);
     context.subscriptions.push(startAutomationCommand);
