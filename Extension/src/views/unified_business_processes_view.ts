@@ -484,6 +484,11 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
             for (const entry of entries) {
                 if (entry.isDirectory()) {
+                    // Skip templates directory
+                    if (entry.name === 'templates') {
+                        continue;
+                    }
+                    
                     const fullPath = path.join(dirPath, entry.name);
                     
                     // Check if this directory contains pipelines.conf (automation source marker)
@@ -513,6 +518,11 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
                 // Skip if directory contains .bitswan-ignore
                 if (entries.some(entry => entry.isFile() && entry.name === '.bitswan-ignore')) {
+                    return;
+                }
+
+                // Skip templates directory
+                if (path.basename(dirPath) === 'templates') {
                     return;
                 }
 
