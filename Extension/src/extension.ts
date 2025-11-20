@@ -5,7 +5,7 @@ import { AutomationItem } from './views/automations_view';
 import { ImageItem } from './views/unified_images_view';
 import { FolderItem } from './views/sources_view';
 import { GitOpsItem } from './views/workspaces_view';
-import { BusinessProcessItem } from './views/unified_business_processes_view';
+import { BusinessProcessItem, AutomationSourceFileItem } from './views/unified_business_processes_view';
 import { AutomationSourceItem, StageItem } from './views/unified_business_processes_view';
 
 // Import commands from the new command modules
@@ -28,6 +28,7 @@ import { activateAutomation, deactivateAutomation, deleteAutomation, restartAuto
 import { Jupyter } from '@vscode/jupyter-extension';
 import { getJupyterServers } from './commands/jupyter-server';
 import { startBitswanKernel, stopBitswanKernel, checkAndUpdateKernelStatus, updateKernelStatusContext } from './commands/kernel';
+import * as filesystemCommands from './commands/filesystem';
 
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
@@ -403,6 +404,42 @@ export function activate(context: vscode.ExtensionContext) {
             })(context, automationsProvider, automationItem);
         });
 
+    let createAutomationFileCommand = vscode.commands.registerCommand(
+        'bitswan.createAutomationFile',
+        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
+            filesystemCommands.createAutomationFileCommand(context, item)
+    );
+
+    let createAutomationFolderCommand = vscode.commands.registerCommand(
+        'bitswan.createAutomationFolder',
+        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
+            filesystemCommands.createAutomationFolderCommand(context, item)
+    );
+
+    let renameAutomationResourceCommand = vscode.commands.registerCommand(
+        'bitswan.renameAutomationResource',
+        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
+            filesystemCommands.renameAutomationResourceCommand(context, item)
+    );
+
+    let deleteAutomationResourceCommand = vscode.commands.registerCommand(
+        'bitswan.deleteAutomationResource',
+        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
+            filesystemCommands.deleteAutomationResourceCommand(context, item)
+    );
+
+    let revealAutomationResourceCommand = vscode.commands.registerCommand(
+        'bitswan.revealAutomationResource',
+        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
+            filesystemCommands.revealAutomationResourceCommand(context, item)
+    );
+
+    let openAutomationTerminalCommand = vscode.commands.registerCommand(
+        'bitswan.openAutomationTerminal',
+        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
+            filesystemCommands.openAutomationTerminalCommand(context, item)
+    );
+
     let deleteImageCommand = vscode.commands.registerCommand('bitswan.deleteImage', 
         async (item: ImageItem) => itemCommands.makeItemCommand({
             title: `Removing image ${item.name}`,
@@ -464,6 +501,12 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(activateAutomationCommand);
     context.subscriptions.push(deactivateAutomationCommand);
     context.subscriptions.push(deleteAutomationCommand);
+    context.subscriptions.push(createAutomationFileCommand);
+    context.subscriptions.push(createAutomationFolderCommand);
+    context.subscriptions.push(renameAutomationResourceCommand);
+    context.subscriptions.push(deleteAutomationResourceCommand);
+    context.subscriptions.push(revealAutomationResourceCommand);
+    context.subscriptions.push(openAutomationTerminalCommand);
     context.subscriptions.push(deleteImageCommand);
     context.subscriptions.push(deleteOrphanedImageCommand);
     context.subscriptions.push(copyImageTagCommand);
