@@ -143,8 +143,14 @@ type UnifiedTreeItem = BusinessProcessItem | AutomationSourceItem | AutomationIt
 export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProvider<UnifiedTreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<UnifiedTreeItem | undefined | null | void> = new vscode.EventEmitter<UnifiedTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<UnifiedTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
+    private readonly separatorIconPaths: { light: vscode.Uri; dark: vscode.Uri };
 
-    constructor(private context: vscode.ExtensionContext) {}
+    constructor(private context: vscode.ExtensionContext) {
+        this.separatorIconPaths = {
+            light: vscode.Uri.file(context.asAbsolutePath(path.join('resources', 'icons', 'separator_light.svg'))),
+            dark: vscode.Uri.file(context.asAbsolutePath(path.join('resources', 'icons', 'separator_dark.svg')))
+        };
+    }
 
     refresh(): void {
         console.log(`[DEBUG] UnifiedBusinessProcessesViewProvider.refresh() called`);
@@ -577,16 +583,16 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
     }
 
     private createSeparator(): vscode.TreeItem {
-        const separatorClass = (vscode as any).TreeItemSeparator;
-        if (typeof separatorClass === 'function') {
-            return new separatorClass();
-        }
-        const fallback = new vscode.TreeItem('', vscode.TreeItemCollapsibleState.None);
-        fallback.contextValue = 'automationSeparator';
-        fallback.description = ' ';
-        fallback.tooltip = '';
-        fallback.iconPath = undefined;
-        fallback.command = undefined;
-        return fallback;
+        const separatorItem = new vscode.TreeItem('', vscode.TreeItemCollapsibleState.None);
+        separatorItem.contextValue = 'automationSeparator';
+        separatorItem.tooltip = '';
+        separatorItem.iconPath = this.separatorIconPaths;
+        separatorItem.command = undefined;
+        separatorItem.description = '';
+        separatorItem.accessibilityInformation = {
+            label: 'Automation files divider',
+            role: 'separator'
+        };
+        return separatorItem;
     }
 }
