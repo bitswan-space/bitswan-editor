@@ -51,11 +51,16 @@ export class StageItem extends vscode.TreeItem {
         public readonly automationSourceName: string,
         public readonly automation: AutomationItem | null, // null if stage not deployed
         public readonly deploymentId: string, // The actual deployment_id (e.g., "my-automation-dev")
-        public readonly checksum: string | null = null // Current checksum for this stage
+        public readonly checksum: string | null = null,
+        public readonly sourceUri?: vscode.Uri // Filesystem path for the automation source
     ) {
         const stageDisplayName = stage.charAt(0).toUpperCase() + stage.slice(1);
         super(stageDisplayName, vscode.TreeItemCollapsibleState.None);
         
+        if (sourceUri) {
+            this.resourceUri = sourceUri;
+        }
+
         if (automation) {
             // Stage is deployed - show automation details
             const checksumDisplay = checksum ? ` (${checksum.substring(0, 5)}...)` : '';
@@ -68,14 +73,37 @@ export class StageItem extends vscode.TreeItem {
             const status = automation.active ? 'active' : 'inactive';
             const state = automation.state ?? 'exited';
             const urlStatus = automation.automationUrl ? 'url' : 'nourl';
-            this.contextValue = `automationStage,${stage},deployed,${status},${state},urlStatus:${urlStatus}`;
+            this.contextValue = `automationStage,${stage},deployed,${status},${state},urlStatus:${urlStatus}${sourceUri ? ',fsRoot' : ''}`;
             this.iconPath = automation.iconPath;
         } else {
             // Stage not deployed - greyed out
             this.tooltip = `${stageDisplayName} - Not deployed`;
             this.description = 'Not deployed';
-            this.contextValue = `automationStage,${stage},notDeployed`;
+            this.contextValue = `automationStage,${stage},notDeployed${sourceUri ? ',fsRoot' : ''}`;
             this.iconPath = new vscode.ThemeIcon('circle-outline', new vscode.ThemeColor('disabledForeground'));
+        }
+    }
+}
+
+/**
+ * Tree item representing files/directories inside an automation source
+ */
+export class AutomationSourceFileItem extends vscode.TreeItem {
+    constructor(
+        public readonly resourceUri: vscode.Uri,
+        public readonly isDirectory: boolean
+    ) {
+        const label = path.basename(resourceUri.fsPath) || resourceUri.fsPath;
+        super(label, isDirectory ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None);
+        this.resourceUri = resourceUri;
+        this.tooltip = resourceUri.fsPath;
+        this.contextValue = isDirectory ? 'automationSourceDirectory' : 'automationSourceFile';
+        if (!isDirectory) {
+            this.command = {
+                command: 'vscode.open',
+                title: 'Open File',
+                arguments: [resourceUri]
+            };
         }
     }
 }
@@ -110,9 +138,11 @@ export class CreateAutomationItem extends vscode.TreeItem {
     }
 }
 
-export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProvider<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem> {
-    private _onDidChangeTreeData: vscode.EventEmitter<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem | undefined | null | void> = new vscode.EventEmitter<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem | undefined | null | void>();
-    readonly onDidChangeTreeData: vscode.Event<BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem | undefined | null | void> = this._onDidChangeTreeData.event;
+type UnifiedTreeItem = BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem | AutomationSourceFileItem | vscode.TreeItem;
+
+export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProvider<UnifiedTreeItem> {
+    private _onDidChangeTreeData: vscode.EventEmitter<UnifiedTreeItem | undefined | null | void> = new vscode.EventEmitter<UnifiedTreeItem | undefined | null | void>();
+    readonly onDidChangeTreeData: vscode.Event<UnifiedTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
     constructor(private context: vscode.ExtensionContext) {}
 
@@ -121,11 +151,11 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         this._onDidChangeTreeData.fire();
     }
 
-    getTreeItem(element: BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem): vscode.TreeItem {
+    getTreeItem(element: UnifiedTreeItem): vscode.TreeItem {
         return element;
     }
 
-    async getChildren(element?: BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem): Promise<(BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem)[]> {
+    async getChildren(element?: UnifiedTreeItem): Promise<UnifiedTreeItem[]> {
         const activeInstance = this.context.globalState.get<any>('activeGitOpsInstance');
         console.log(`[DEBUG] getChildren called - activeInstance:`, activeInstance);
         if (!activeInstance) {
@@ -148,9 +178,24 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         }
 
         if (element instanceof AutomationSourceItem) {
-            // Show stages (dev/staging/production) for this automation source
+            // Show stages (dev/staging/production) for this automation source, followed by a separator and file tree entries
             console.log(`[DEBUG] getChildren - AutomationSourceItem: "${element.name}"`);
-            return await this.getStagesForSource(element.name);
+            const [stages, fileEntries] = await Promise.all([
+                this.getStagesForSource(element.name),
+                this.getAutomationSourceFileEntries(element.resourceUri.fsPath)
+            ]);
+            if (stages.length && fileEntries.length) {
+                return [...stages, this.createSeparator(), ...fileEntries];
+            }
+            return [...stages, ...fileEntries];
+        }
+
+        if (element instanceof AutomationSourceFileItem) {
+            // Expand directories the same way the Explorer file tree works
+            if (!element.isDirectory) {
+                return [];
+            }
+            return this.getAutomationSourceFileEntries(element.resourceUri.fsPath);
         }
 
         if (element instanceof OtherAutomationsItem) {
@@ -281,6 +326,10 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         // Extract just the automation source name from the full path
         const automationSourceName = sourceName.split('/').pop() || sourceName;
         const sanitizedSourceName = sanitizeName(automationSourceName);
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        const sourceUri = workspaceFolder
+            ? vscode.Uri.file(path.join(workspaceFolder.uri.fsPath, sourceName))
+            : undefined;
         
         console.log(`[DEBUG] getStagesForSource called with sourceName: "${sourceName}"`);
         console.log(`[DEBUG] Sanitized sourceName: "${sanitizedSourceName}"`);
@@ -330,10 +379,10 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                 // Use version_hash from the automation object instead of fetching history
                 const checksum = automation.version_hash || automation.versionHash || null;
                 
-                stages.push(new StageItem(stage, sourceName, automationItem, deploymentId, checksum));
+                stages.push(new StageItem(stage, sourceName, automationItem, deploymentId, checksum, sourceUri));
             } else {
                 // Stage not deployed - show greyed out
-                stages.push(new StageItem(stage, sourceName, null, deploymentId, null));
+                stages.push(new StageItem(stage, sourceName, null, deploymentId, null, sourceUri));
             }
         }
         
@@ -499,5 +548,45 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         }
 
         return sources;
+    }
+
+    private getAutomationSourceFileEntries(dirPath: string): AutomationSourceFileItem[] {
+        try {
+            const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+            const sortedEntries = entries.sort((a, b) => {
+                const aIsDir = a.isDirectory();
+                const bIsDir = b.isDirectory();
+                if (aIsDir && !bIsDir) {
+                    return -1;
+                }
+                if (!aIsDir && bIsDir) {
+                    return 1;
+                }
+                return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+            });
+
+            return sortedEntries.map(entry => {
+                const fullPath = path.join(dirPath, entry.name);
+                const isDirectory = entry.isDirectory();
+                return new AutomationSourceFileItem(vscode.Uri.file(fullPath), isDirectory);
+            });
+        } catch (error) {
+            console.error(`[DEBUG] Failed to read automation source entries for "${dirPath}":`, error);
+            return [];
+        }
+    }
+
+    private createSeparator(): vscode.TreeItem {
+        const separatorClass = (vscode as any).TreeItemSeparator;
+        if (typeof separatorClass === 'function') {
+            return new separatorClass();
+        }
+        const fallback = new vscode.TreeItem('', vscode.TreeItemCollapsibleState.None);
+        fallback.contextValue = 'automationSeparator';
+        fallback.description = ' ';
+        fallback.tooltip = '';
+        fallback.iconPath = undefined;
+        fallback.command = undefined;
+        return fallback;
     }
 }

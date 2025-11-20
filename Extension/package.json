@@ -270,6 +270,36 @@
         "command": "bitswan.promoteToProduction",
         "title": "Promote to Production",
         "icon": "$(arrow-right)"
+      },
+      {
+        "command": "bitswan.createAutomationFile",
+        "title": "New File",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "bitswan.createAutomationFolder",
+        "title": "New Folder",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "bitswan.renameAutomationResource",
+        "title": "Rename",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "bitswan.deleteAutomationResource",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "bitswan.revealAutomationResource",
+        "title": "Reveal in Explorer",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "bitswan.openAutomationTerminal",
+        "title": "Open in Terminal",
+        "icon": "$(terminal)"
       }
     ],
     "menus": {
@@ -388,6 +418,36 @@
           "command": "bitswan.deactivateAutomation",
           "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,active,/",
           "group": "inline@3"
+        },
+        {
+          "command": "bitswan.createAutomationFile",
+          "when": "view == bitswan-unified-business-processes && (viewItem == automationSource || viewItem == automationSourceDirectory || viewItem =~ /^automationStage,.*fsRoot$/)",
+          "group": "navigation@10"
+        },
+        {
+          "command": "bitswan.createAutomationFolder",
+          "when": "view == bitswan-unified-business-processes && (viewItem == automationSource || viewItem == automationSourceDirectory || viewItem =~ /^automationStage,.*fsRoot$/)",
+          "group": "navigation@11"
+        },
+        {
+          "command": "bitswan.renameAutomationResource",
+          "when": "view == bitswan-unified-business-processes && (viewItem == automationSource || viewItem == automationSourceDirectory || viewItem == automationSourceFile || viewItem =~ /^automationStage,.*fsRoot$/)",
+          "group": "navigation@12"
+        },
+        {
+          "command": "bitswan.deleteAutomationResource",
+          "when": "view == bitswan-unified-business-processes && (viewItem == automationSource || viewItem == automationSourceDirectory || viewItem == automationSourceFile || viewItem =~ /^automationStage,.*fsRoot$/)",
+          "group": "navigation@13"
+        },
+        {
+          "command": "bitswan.revealAutomationResource",
+          "when": "view == bitswan-unified-business-processes && (viewItem == automationSource || viewItem == automationSourceDirectory || viewItem == automationSourceFile || viewItem =~ /^automationStage,.*fsRoot$/)",
+          "group": "navigation@14"
+        },
+        {
+          "command": "bitswan.openAutomationTerminal",
+          "when": "view == bitswan-unified-business-processes && (viewItem == automationSource || viewItem == automationSourceDirectory || viewItem == automationSourceFile || viewItem =~ /^automationStage,.*fsRoot$/)",
+          "group": "navigation@15"
         },
         {
           "command": "bitswan.editGitOps",
