@@ -3,22 +3,13 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 
-import { heartbeatJupyterServer, startJupyterServerRequest } from "../lib";
-
-import { BitswanJupyterServerRecords } from "../types";
-import { GitOpsItem } from "../views/workspaces_view";
-import { JUPYTER_SERVER_RECORDS_KEY } from "../constants";
+import { outputChannel } from "../extension";
+import { getDeployDetails } from "../deploy_details";
+import axios from "axios";
 
 const ConfigParser = configparserModule.default || configparserModule;
 
-export async function notebookInitializationFlow(
-  context: vscode.ExtensionContext
-) {
-  for (const nbDoc of vscode.workspace.notebookDocuments) {
-    await startJupyterServer(context, nbDoc);
-    startUpJupyterServerHeartbeat(context);
-  }
-}
+// Heartbeat and tracking removed - no longer needed
 
 export function getPipelineConfig(doc: vscode.NotebookDocument) {
   const parentDir = path.dirname(doc.uri.fsPath);
@@ -44,178 +35,74 @@ export function getPipelineConfig(doc: vscode.NotebookDocument) {
   return null;
 }
 
-export async function startJupyterServer(
-  context: vscode.ExtensionContext,
-  notebook: vscode.NotebookDocument
-) {
-  console.log("jupyter-server:start");
+export function getPipelineConfigContent(doc: vscode.NotebookDocument): string | null {
+  const parentDir = path.dirname(doc.uri.fsPath);
+  const pipelinesConfPath = path.join(parentDir, "pipelines.conf");
 
-  // get active gitops instance from global state
-  const activeGitOpsInstance = context.globalState.get<GitOpsItem>(
-    "activeGitOpsInstance"
-  );
-  if (!activeGitOpsInstance) {
-    console.log("jupyter-server:no-active-gitops-instance");
-
-    vscode.window.showErrorMessage("No active GitOps instance");
-    return;
-  }
-
-  console.log("jupyter-server:active-gitops-instance", activeGitOpsInstance);
-
-  const automationName =
-    path.dirname(notebook.uri.fsPath).split("/").pop() || "";
-
-  console.log("jupyter-server:automation-name", automationName);
-
-  const automationDirectoryPath = path.dirname(notebook.uri.fsPath);
-  console.log("jupyter-server:automation-parent-path", automationDirectoryPath);
-
-  const pipelineConfig = getPipelineConfig(notebook);
-  if (!pipelineConfig) {
-    console.log("jupyter-server:no-pipeline-config");
-    vscode.window.showErrorMessage("No pipeline config found");
-    return;
-  }
-
-  await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: "Starting Jupyter Server",
-      cancellable: false,
-    },
-    async (progress, _token) => {
-      console.log("jupyter-server:start-jupyter-server-request");
-
-      const preImage = pipelineConfig.get("deployment", "pre");
-      console.log("jupyter-server:pre-image", preImage);
-
-      if (!preImage) {
-        console.log("jupyter-server:no-pre-image");
-        vscode.window.showErrorMessage("No pre image found");
-        return;
-      }
-
-      // dynamic import to avoid static import conflict with vscode
-      const { nanoid } = await import("nanoid");
-      const sessionId = nanoid()
-
-      const response = await startJupyterServerRequest(
-        `${activeGitOpsInstance.url}/jupyter/start`,
-        activeGitOpsInstance.secret,
-        automationName,
-        preImage,
-        sessionId,
-        automationDirectoryPath
-      );
-      if (response.status === 200) {
-        console.log("jupyter-server:start-jupyter-server-request-success");
-
-        const serverInfo = response.data.server_info;
-
-        console.log("jupyter-server:server-info", serverInfo);
-
-        const currentServerRecords =
-          context.globalState.get<BitswanJupyterServerRecords>(
-            JUPYTER_SERVER_RECORDS_KEY
-          );
-
-        await context.globalState.update(JUPYTER_SERVER_RECORDS_KEY, {
-          ...currentServerRecords,
-          [`${serverInfo.pre}-${automationName}`]: {
-            ...serverInfo,
-            automationName,
-            sessionId,
-            automationDirectoryPath
-          },
-        });
-
-        const updatedServerRecords = context.globalState.get<BitswanJupyterServerRecords>(
-          JUPYTER_SERVER_RECORDS_KEY
-        );
-
-        console.log("jupyter-server:update-jupyter-server-records", updatedServerRecords);
-
-        vscode.window.showInformationMessage("Jupyter Server started");
-      } else {
-        console.log("jupyter-server:start-jupyter-server-request-error");
-
-        vscode.window.showErrorMessage("Failed to start Jupyter Server");
-      }
+  if (fs.existsSync(pipelinesConfPath)) {
+    try {
+      const content = fs.readFileSync(pipelinesConfPath, "utf-8");
+      console.log("jupyter-server:pipelines-conf-content-read", pipelinesConfPath);
+      return content;
+    } catch (error) {
+      console.error("jupyter-server:pipelines-conf-content-read-error", error);
+      return null;
     }
-  );
+  }
+
+  console.log("jupyter-server:pipelines-conf-not-found", pipelinesConfPath);
+  return null;
 }
+
+// startJupyterServer function removed - now using toggleBitswanKernel in kernel.ts
 
 export async function getJupyterServers(context: vscode.ExtensionContext) {
-  const serverRecords = context.globalState.get<BitswanJupyterServerRecords>(
-    JUPYTER_SERVER_RECORDS_KEY
-  );
+  const details = await getDeployDetails(context);
+  if (!details) {
+    return [];
+  }
 
-  console.log("jupyter-server:server-records", serverRecords);
+  try {
+    const response = await axios.get(
+      `${details.deployUrl}/jupyter/kernels`,
+      {
+        headers: {
+          Authorization: `Bearer ${details.deploySecret}`,
+        },
+      }
+    );
 
-  const servers = Object.values(serverRecords ?? {});
+    const kernels = response.data;
+    console.log("jupyter-server:kernels", kernels);
 
-  console.log("jupyter-server:servers", servers);
+    const jupyterServers = kernels
+      .filter((kernel: any) => kernel.running && kernel.connection)
+      .map((kernel: any) => {
+        const baseUrl = vscode.Uri.parse(kernel.connection.url);
+        console.log("jupyter-server:creating-server-connection", {
+          id: kernel.deployment_id,
+          url: kernel.connection.url,
+          parsedUrl: baseUrl.toString(),
+          hasToken: !!kernel.connection.token
+        });
+        
+        return {
+          id: kernel.deployment_id,
+          label: `${kernel.deployment_id} Bitswan Kernel`,
+          connectionInformation: {
+            baseUrl: baseUrl,
+            token: kernel.connection.token,
+          },
+        };
+      });
 
-  const jupyterServers = servers.map((server) => {
-    return {
-      id: `${server.pre}-${server.automationName}`,
-      label: `${server.automationName} Jupyter Server`,
-      connectionInformation: {
-        baseUrl: vscode.Uri.parse(server.url),
-        token: server.token,
-      },
-    };
-  });
-
-  console.log("jupyter-server:jupyter-servers", jupyterServers);
-
-  return jupyterServers;
+    console.log("jupyter-server:jupyter-servers", jupyterServers);
+    return jupyterServers;
+  } catch (error: any) {
+    console.error("jupyter-server:error-getting-kernels", error);
+    return [];
+  }
 }
 
 
-export async function startUpJupyterServerHeartbeat(context: vscode.ExtensionContext) {
-  const intervalId = setInterval(async () => {
-    const serverRecords = context.globalState.get<BitswanJupyterServerRecords>(
-      JUPYTER_SERVER_RECORDS_KEY
-    );
-
-    const activeGitOpsInstance = context.globalState.get<GitOpsItem>(
-      "activeGitOpsInstance"
-    );
-    if (!activeGitOpsInstance) {
-      console.log("jupyter-server:no-active-gitops-instance");
-      return;
-    }
-
-    const jupyterServers = Object.values(serverRecords ?? {}).map((server) => {
-      return {
-        automation_name: server.automationName,
-        session_id: server.sessionId,
-        pre_image: server.pre,
-        token: server.token,
-        automation_directory_path: server.automationDirectoryPath,
-      };
-    });
-
-    const response = await heartbeatJupyterServer(
-      `${activeGitOpsInstance.url}/jupyter/heartbeat`,
-      activeGitOpsInstance.secret,
-      jupyterServers
-    );
-
-    console.log("jupyter-server:heartbeat-jupyter-server-response", response);
-
-    if (response?.status == 200) {
-      console.log("jupyter-server:heartbeat-jupyter-server-success");
-    } else {
-      console.log("jupyter-server:heartbeat-jupyter-server-error");
-    }
-  }, 30000);
-
-  context.subscriptions.push({
-    dispose: () => {
-      clearInterval(intervalId);
-    },
-  });
-}
+// Heartbeat and tracking functions removed - no longer needed

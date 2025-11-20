@@ -5,7 +5,7 @@ import { AutomationItem } from './views/automations_view';
 import { ImageItem } from './views/unified_images_view';
 import { FolderItem } from './views/sources_view';
 import { GitOpsItem } from './views/workspaces_view';
-import { BusinessProcessItem } from './views/unified_business_processes_view';
+import { BusinessProcessItem, AutomationSourceFileItem } from './views/unified_business_processes_view';
 import { AutomationSourceItem, StageItem } from './views/unified_business_processes_view';
 
 // Import commands from the new command modules
@@ -24,12 +24,18 @@ import { AutomationsViewProvider } from './views/automations_view';
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from './views/unified_images_view';
 import { UnifiedBusinessProcessesViewProvider } from './views/unified_business_processes_view';
 import { openAutomationTemplates } from './views/templates_gallery';
-import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation, deleteImage } from './lib';
+import { SecretsTreeViewProvider, SecretsEditorPanel, SecretGroupItem } from './views/secrets_view';
+import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation, deleteImage, setGitOpsOutputChannel } from './lib';
 import { Jupyter } from '@vscode/jupyter-extension';
-import { getJupyterServers, notebookInitializationFlow, startJupyterServer } from './commands/jupyter-server';
+import { getJupyterServers } from './commands/jupyter-server';
+import { startBitswanKernel, stopBitswanKernel, checkAndUpdateKernelStatus, updateKernelStatusContext } from './commands/kernel';
+import * as filesystemCommands from './commands/filesystem';
 
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
+
+// GitOps network logging channel
+export let gitopsOutputChannel: vscode.OutputChannel;
 
 // Map to track output channels
 export const outputChannelsMap = new Map<string, vscode.OutputChannel>();
@@ -58,7 +64,16 @@ export function setImageRefreshInterval(interval: NodeJS.Timer | undefined) {
 export function activate(context: vscode.ExtensionContext) {
     // Create and show output channel immediately
     outputChannel = vscode.window.createOutputChannel('BitSwan');
+    
+    // Initialize kernel running context to false
+    vscode.commands.executeCommand('setContext', 'bitswan.kernelRunning', false);
     outputChannel.show(true); // true forces the output channel to take focus
+
+    // Create GitOps network logging channel
+    gitopsOutputChannel = vscode.window.createOutputChannel('BitSwan Gitops');
+    
+    // Initialize GitOps network logging interceptors
+    setGitOpsOutputChannel(gitopsOutputChannel);
 
     outputChannel.appendLine('=====================================');
     outputChannel.appendLine('BitSwan Extension Activation Start');
@@ -81,8 +96,6 @@ export function activate(context: vscode.ExtensionContext) {
       jupyterExt.activate();
     }
 
-    notebookInitializationFlow(context);
-
     jupyterExt.exports.createJupyterServerCollection(
       `${context.extension.id}:lab`,
       "Bitswan Jupyter Server(s)",
@@ -92,11 +105,6 @@ export function activate(context: vscode.ExtensionContext) {
       }
     );
 
-    context.subscriptions.push(
-      vscode.workspace.onDidOpenNotebookDocument(async (doc) => {
-        await startJupyterServer(context, doc);
-      })
-    );
 
     // Create view providers
     const automationSourcesProvider = new AutomationSourcesViewProvider(context);
@@ -105,6 +113,7 @@ export function activate(context: vscode.ExtensionContext) {
     const unifiedImagesProvider = new UnifiedImagesViewProvider(context);
     const orphanedImagesProvider = new OrphanedImagesViewProvider(context);
     const unifiedBusinessProcessesProvider = new UnifiedBusinessProcessesViewProvider(context);
+    const secretsTreeProvider = new SecretsTreeViewProvider(context);
 
     // Register Business Processes views
     vscode.window.createTreeView('bitswan-unified-business-processes', {
@@ -124,8 +133,58 @@ export function activate(context: vscode.ExtensionContext) {
         treeDataProvider: orphanedImagesProvider,
     });
 
+    vscode.window.createTreeView('bitswan-secrets-manager', {
+        treeDataProvider: secretsTreeProvider,
+    });
+
+    context.subscriptions.push(secretsTreeProvider);
+
     let deployFromToolbarCommand = vscode.commands.registerCommand('bitswan.deployAutomationFromToolbar', 
         async (item: string) => deploymentCommands.deployFromNotebookToolbarCommand(context, item, "automations", unifiedBusinessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider));
+    
+    let startKernelCommand = vscode.commands.registerCommand('bitswan.startBitswanKernel',
+        async (item: any) => await startBitswanKernel(context, item));
+    
+    let stopKernelCommand = vscode.commands.registerCommand('bitswan.stopBitswanKernel',
+        async (item: any) => await stopBitswanKernel(context, item));
+    
+    // Check kernel status when notebooks are opened or when active editor changes
+    const updateKernelContextForNotebook = async (notebook: vscode.NotebookDocument) => {
+        if (notebook.uri.fsPath.endsWith('.ipynb')) {
+            const automationName = path.dirname(notebook.uri.fsPath).split("/").pop() || "";
+            if (automationName) {
+                const isRunning = await checkAndUpdateKernelStatus(context, automationName);
+                // Also set a general context variable for the menu
+                await vscode.commands.executeCommand('setContext', 'bitswan.kernelRunning', isRunning);
+            }
+        }
+    };
+    
+    context.subscriptions.push(
+        vscode.workspace.onDidOpenNotebookDocument(updateKernelContextForNotebook)
+    );
+    
+    // Also update when active notebook editor changes
+    context.subscriptions.push(
+        vscode.window.onDidChangeActiveNotebookEditor(async (e) => {
+            if (e?.notebook) {
+                await updateKernelContextForNotebook(e.notebook);
+            }
+        })
+    );
+    
+    // Also check for already open notebooks (async wrapper)
+    (async () => {
+        for (const notebook of vscode.workspace.notebookDocuments) {
+            if (notebook.uri.fsPath.endsWith('.ipynb')) {
+                const automationName = path.dirname(notebook.uri.fsPath).split("/").pop() || "";
+                if (automationName) {
+                    const isRunning = await checkAndUpdateKernelStatus(context, automationName);
+                    await vscode.commands.executeCommand('setContext', 'bitswan.kernelRunning', isRunning);
+                }
+            }
+        }
+    })();
 
     // Register commands using the new command modules
     let deployCommand = vscode.commands.registerCommand('bitswan.deployAutomation', 
@@ -178,6 +237,127 @@ export function activate(context: vscode.ExtensionContext) {
         async () => {
             console.log('[DEBUG] refreshBusinessProcessesCommand called');
             await businessProcessCommands.refreshBusinessProcessesCommand(context, unifiedBusinessProcessesProvider);
+        });
+
+    let refreshSecretsCommand = vscode.commands.registerCommand('bitswan.refreshSecrets',
+        async () => secretsTreeProvider.refresh());
+
+    let createSecretGroupCommand = vscode.commands.registerCommand('bitswan.createSecretGroup',
+        async () => {
+            const name = await vscode.window.showInputBox({
+                prompt: 'Enter a name for the secret group',
+                placeHolder: 'e.g. staging',
+                validateInput: (value) => {
+                    if (!value || !value.trim()) {
+                        return 'Group name is required';
+                    }
+                    if (!/^[A-Za-z0-9._-]+$/.test(value.trim())) {
+                        return 'Group names may only include letters, numbers, ".", "_" or "-"';
+                    }
+                    return null;
+                }
+            });
+            if (!name) {
+                return;
+            }
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceFolder) {
+                vscode.window.showErrorMessage('No workspace folder found');
+                return;
+            }
+            const workspaceRoot = path.dirname(workspaceFolder);
+            const secretsDir = path.join(workspaceRoot, 'secrets');
+            const normalized = name.trim();
+            const filePath = path.join(secretsDir, normalized);
+            try {
+                const { promises: fs } = await import('fs');
+                await fs.access(filePath);
+                vscode.window.showErrorMessage(`Secret group "${name.trim()}" already exists.`);
+                return;
+            } catch (error: any) {
+                if (error?.code !== 'ENOENT') {
+                    throw error;
+                }
+            }
+            try {
+                const { promises: fs } = await import('fs');
+                await fs.mkdir(secretsDir, { recursive: true });
+                const header = `# Managed by BitSwan Secrets Manager (${new Date().toISOString()})\n`;
+                await fs.writeFile(filePath, header, 'utf8');
+                secretsTreeProvider.refresh();
+                SecretsEditorPanel.createOrShow(context, normalized, name.trim());
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to create secret group: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+        });
+
+    let openSecretGroupCommand = vscode.commands.registerCommand('bitswan.openSecretGroup',
+        async (item: SecretGroupItem) => {
+            if (!item) {
+                return;
+            }
+            const displayName = item.label;
+            SecretsEditorPanel.createOrShow(context, item.id, displayName);
+        });
+
+    let renameSecretGroupCommand = vscode.commands.registerCommand('bitswan.renameSecretGroup',
+        async (item: SecretGroupItem) => {
+            if (!item) {
+                return;
+            }
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceFolder) {
+                vscode.window.showErrorMessage('No workspace folder found');
+                return;
+            }
+            const workspaceRoot = path.dirname(workspaceFolder);
+            const secretsDir = path.join(workspaceRoot, 'secrets');
+            const oldFilePath = path.join(secretsDir, item.id);
+            const oldDisplayName = item.label;
+
+            const newName = await vscode.window.showInputBox({
+                prompt: 'Enter a new name for the secret group',
+                value: oldDisplayName,
+                validateInput: (value) => {
+                    if (!value || !value.trim()) {
+                        return 'Group name is required';
+                    }
+                    if (value.trim() === oldDisplayName) {
+                        return 'New name must be different from the current name';
+                    }
+                    if (!/^[A-Za-z0-9._-]+$/.test(value.trim())) {
+                        return 'Group names may only include letters, numbers, ".", "_" or "-"';
+                    }
+                    return null;
+                }
+            });
+            if (!newName || newName.trim() === oldDisplayName) {
+                return;
+            }
+
+            const newFilePath = path.join(secretsDir, newName.trim());
+            try {
+                const { promises: fs } = await import('fs');
+                // Check if new name already exists
+                try {
+                    await fs.access(newFilePath);
+                    vscode.window.showErrorMessage(`Secret group "${newName.trim()}" already exists.`);
+                    return;
+                } catch (error: any) {
+                    if (error?.code !== 'ENOENT') {
+                        throw error;
+                    }
+                }
+                // Rename the file
+                await fs.rename(oldFilePath, newFilePath);
+                secretsTreeProvider.refresh();
+                // Close old panel if open and open new one
+                SecretsEditorPanel.closePanel(item.id);
+                SecretsEditorPanel.createOrShow(context, newName.trim(), newName.trim());
+                vscode.window.showInformationMessage(`Renamed secret group from "${oldDisplayName}" to "${newName.trim()}".`);
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to rename secret group: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
         });
  
     let openExternalUrlCommand = vscode.commands.registerCommand(
@@ -353,6 +533,42 @@ export function activate(context: vscode.ExtensionContext) {
             })(context, automationsProvider, automationItem);
         });
 
+    let createAutomationFileCommand = vscode.commands.registerCommand(
+        'bitswan.createAutomationFile',
+        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
+            filesystemCommands.createAutomationFileCommand(context, item)
+    );
+
+    let createAutomationFolderCommand = vscode.commands.registerCommand(
+        'bitswan.createAutomationFolder',
+        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
+            filesystemCommands.createAutomationFolderCommand(context, item)
+    );
+
+    let renameAutomationResourceCommand = vscode.commands.registerCommand(
+        'bitswan.renameAutomationResource',
+        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
+            filesystemCommands.renameAutomationResourceCommand(context, item)
+    );
+
+    let deleteAutomationResourceCommand = vscode.commands.registerCommand(
+        'bitswan.deleteAutomationResource',
+        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
+            filesystemCommands.deleteAutomationResourceCommand(context, item)
+    );
+
+    let revealAutomationResourceCommand = vscode.commands.registerCommand(
+        'bitswan.revealAutomationResource',
+        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
+            filesystemCommands.revealAutomationResourceCommand(context, item)
+    );
+
+    let openAutomationTerminalCommand = vscode.commands.registerCommand(
+        'bitswan.openAutomationTerminal',
+        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
+            filesystemCommands.openAutomationTerminalCommand(context, item)
+    );
+
     let deleteImageCommand = vscode.commands.registerCommand('bitswan.deleteImage', 
         async (item: ImageItem) => itemCommands.makeItemCommand({
             title: `Removing image ${item.name}`,
@@ -393,6 +609,8 @@ export function activate(context: vscode.ExtensionContext) {
     // Register all commands
     context.subscriptions.push(deployCommand);
     context.subscriptions.push(deployFromToolbarCommand);
+    context.subscriptions.push(startKernelCommand);
+    context.subscriptions.push(stopKernelCommand);
     context.subscriptions.push(buildImageCommand);
     context.subscriptions.push(buildImageFromToolbarCommand);
     context.subscriptions.push(addGitOpsCommand);
@@ -402,6 +620,10 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(refreshAutomationsCommand);
     context.subscriptions.push(refreshImagesCommand);
     context.subscriptions.push(refreshBusinessProcessesCommand);
+    context.subscriptions.push(refreshSecretsCommand);
+    context.subscriptions.push(createSecretGroupCommand);
+    context.subscriptions.push(openSecretGroupCommand);
+    context.subscriptions.push(renameSecretGroupCommand);
     context.subscriptions.push(openExternalUrlCommand);
     context.subscriptions.push(restartAutomationCommand);
     context.subscriptions.push(startAutomationCommand);
@@ -412,6 +634,12 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(activateAutomationCommand);
     context.subscriptions.push(deactivateAutomationCommand);
     context.subscriptions.push(deleteAutomationCommand);
+    context.subscriptions.push(createAutomationFileCommand);
+    context.subscriptions.push(createAutomationFolderCommand);
+    context.subscriptions.push(renameAutomationResourceCommand);
+    context.subscriptions.push(deleteAutomationResourceCommand);
+    context.subscriptions.push(revealAutomationResourceCommand);
+    context.subscriptions.push(openAutomationTerminalCommand);
     context.subscriptions.push(deleteImageCommand);
     context.subscriptions.push(deleteOrphanedImageCommand);
     context.subscriptions.push(copyImageTagCommand);
@@ -521,6 +749,12 @@ export function deactivate() {
     
     // Clear the map
     outputChannelsMap.clear();
+    
+    // Dispose the GitOps output channel
+    if (gitopsOutputChannel) {
+        gitopsOutputChannel.appendLine('BitSwan GitOps Extension Deactivated');
+        gitopsOutputChannel.dispose();
+    }
     
     // Dispose the main output channel
     outputChannel.appendLine('BitSwan Extension Deactivated');

@@ -63,13 +63,15 @@ export async function deployCommandAbstract(
         title: messages[itemSet]["deploy"] ,
         cancellable: false
     }, async (progress, _token) => {
+        // Declare deployUrl outside try block so it's accessible in catch block
+        let deployUrl: string | undefined;
         try {
             const form = new FormData();
             // The folder name must be all lowercase and have any characters not allowed in image tags removed
             const normalizedFolderName = sanitizeName(folderName);
-            const deployUrl = urlJoin(details.deployUrl, itemSet, normalizedFolderName);
+            deployUrl = urlJoin(details.deployUrl, itemSet, normalizedFolderName).toString();
 
-            outputChannel.appendLine(messages[itemSet]["url"] + `: ${deployUrl.toString()}`);
+            outputChannel.appendLine(messages[itemSet]["url"] + `: ${deployUrl}`);
 
             progress.report({ increment: 0, message: "Packing..." });
 
@@ -128,9 +130,9 @@ export async function deployCommandAbstract(
                 }
             } else {
                 // For images, use the old workflow
-                progress.report({ increment: 50, message: "Uploading to server " + deployUrl.toString() });
+                progress.report({ increment: 50, message: "Uploading to server " + deployUrl });
 
-                const success = await deploy(deployUrl.toString(), form, details.deploySecret);
+                const success = await deploy(deployUrl, form, details.deploySecret, outputChannel);
 
                 if (success) {
                     progress.report({ increment: 100, message: "Succesfully uploaded "+messages[itemSet]["item"]+" to GitOps" });
@@ -149,8 +151,24 @@ export async function deployCommandAbstract(
         } catch (error: any) {
             let errorMessage: string;
             if (error.response) {
-                outputChannel.appendLine(`Error response data: ${JSON.stringify(error.response.data)}`);
-                errorMessage = `Server responded with status ${error.response.status}`;
+                const status = error.response.status;
+                // Log full error details for 500 errors
+                if (status >= 500) {
+                    outputChannel.appendLine("=".repeat(60));
+                    outputChannel.appendLine(`Deployment Error (${status})`);
+                    outputChannel.appendLine("=".repeat(60));
+                    outputChannel.appendLine(`URL: ${deployUrl || details.deployUrl}`);
+                    outputChannel.appendLine(`Status: ${status} ${error.response.statusText}`);
+                    outputChannel.appendLine(`Response Data:`);
+                    outputChannel.appendLine(JSON.stringify(error.response.data, null, 2));
+                    outputChannel.appendLine(`Response Headers:`);
+                    outputChannel.appendLine(JSON.stringify(error.response.headers, null, 2));
+                    outputChannel.appendLine("=".repeat(60));
+                    outputChannel.show(true);
+                } else {
+                    outputChannel.appendLine(`Error response data: ${JSON.stringify(error.response.data)}`);
+                }
+                errorMessage = `Server responded with status ${status}`;
             } else if (error.request) {
                 errorMessage = 'No response received from server';
             } else {
