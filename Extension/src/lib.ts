@@ -1,4 +1,4 @@
-import axios, { AxiosError } from 'axios';
+import axios, { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 
 import FormData from 'form-data';
 import JSZip from 'jszip';
@@ -6,6 +6,233 @@ import { JupyterServerRequestResponse } from "./types";
 import { Readable } from 'stream';
 import path from 'path';
 import vscode from 'vscode';
+
+// Set up axios interceptors to log all GitOps network calls
+let interceptorsInitialized = false;
+let gitopsOutputChannel: vscode.OutputChannel | undefined;
+
+export function setGitOpsOutputChannel(channel: vscode.OutputChannel) {
+    gitopsOutputChannel = channel;
+    if (!interceptorsInitialized) {
+        initializeGitOpsLogging();
+    }
+}
+
+function initializeGitOpsLogging() {
+    if (interceptorsInitialized) {
+        return;
+    }
+    
+    // Request interceptor - log outgoing requests
+    axios.interceptors.request.use(
+        (config: InternalAxiosRequestConfig) => {
+            if (gitopsOutputChannel) {
+                const timestamp = new Date().toISOString();
+                gitopsOutputChannel.appendLine('='.repeat(80));
+                gitopsOutputChannel.appendLine(`[${timestamp}] REQUEST`);
+                gitopsOutputChannel.appendLine('='.repeat(80));
+                gitopsOutputChannel.appendLine(`Method: ${config.method?.toUpperCase() || 'UNKNOWN'}`);
+                gitopsOutputChannel.appendLine(`URL: ${config.url || 'N/A'}`);
+                gitopsOutputChannel.appendLine(`Base URL: ${config.baseURL || 'N/A'}`);
+                gitopsOutputChannel.appendLine(`Full URL: ${config.baseURL ? config.baseURL + config.url : config.url || 'N/A'}`);
+                
+                if (config.headers) {
+                    gitopsOutputChannel.appendLine('Headers:');
+                    // Mask the Authorization token for security
+                    const headersToLog: any = { ...config.headers };
+                    if (headersToLog.Authorization) {
+                        const authHeader = headersToLog.Authorization as string;
+                        if (authHeader.startsWith('Bearer ')) {
+                            headersToLog.Authorization = `Bearer ${authHeader.substring(7, 15)}...`;
+                        }
+                    }
+                    gitopsOutputChannel.appendLine(JSON.stringify(headersToLog, null, 2));
+                }
+                
+                if (config.params) {
+                    gitopsOutputChannel.appendLine('Query Parameters:');
+                    gitopsOutputChannel.appendLine(JSON.stringify(config.params, null, 2));
+                }
+                
+                if (config.data) {
+                    gitopsOutputChannel.appendLine('Request Body:');
+                    // Handle FormData specially (form-data package)
+                    if (config.data && typeof config.data === 'object' && 'getHeaders' in config.data) {
+                        gitopsOutputChannel.appendLine('[FormData - multipart/form-data]');
+                        // Try to get form data headers if possible
+                        try {
+                            const formData = config.data as any;
+                            if (typeof formData.getHeaders === 'function') {
+                                gitopsOutputChannel.appendLine('FormData Headers:');
+                                gitopsOutputChannel.appendLine(JSON.stringify(formData.getHeaders(), null, 2));
+                            }
+                            // Note: FormData stream content cannot be easily logged without consuming it
+                            gitopsOutputChannel.appendLine('[FormData content is a stream and cannot be logged]');
+                        } catch (e) {
+                            gitopsOutputChannel.appendLine(`[Error accessing FormData: ${e}]`);
+                        }
+                    } else if (typeof config.data === 'string') {
+                        // Try to parse as JSON if possible
+                        try {
+                            const parsed = JSON.parse(config.data);
+                            gitopsOutputChannel.appendLine(JSON.stringify(parsed, null, 2));
+                        } catch {
+                            gitopsOutputChannel.appendLine(config.data.substring(0, 1000) + (config.data.length > 1000 ? '...' : ''));
+                        }
+                    } else if (typeof config.data === 'object' && config.data !== null) {
+                        try {
+                            gitopsOutputChannel.appendLine(JSON.stringify(config.data, null, 2));
+                        } catch (e) {
+                            gitopsOutputChannel.appendLine(`[Unable to serialize request body: ${e}]`);
+                        }
+                    } else {
+                        gitopsOutputChannel.appendLine(String(config.data));
+                    }
+                }
+                
+                gitopsOutputChannel.appendLine('');
+            }
+            return config;
+        },
+        (error) => {
+            if (gitopsOutputChannel) {
+                const timestamp = new Date().toISOString();
+                gitopsOutputChannel.appendLine(`[${timestamp}] REQUEST ERROR: ${error.message || 'Unknown error'}`);
+                gitopsOutputChannel.appendLine('');
+            }
+            return Promise.reject(error);
+        }
+    );
+    
+    // Response interceptor - log incoming responses
+    axios.interceptors.response.use(
+        (response: AxiosResponse) => {
+            if (gitopsOutputChannel) {
+                const timestamp = new Date().toISOString();
+                gitopsOutputChannel.appendLine('='.repeat(80));
+                gitopsOutputChannel.appendLine(`[${timestamp}] RESPONSE`);
+                gitopsOutputChannel.appendLine('='.repeat(80));
+                gitopsOutputChannel.appendLine(`Status: ${response.status} ${response.statusText || ''}`);
+                gitopsOutputChannel.appendLine(`URL: ${response.config?.url || 'N/A'}`);
+                gitopsOutputChannel.appendLine(`Full URL: ${response.config?.baseURL ? response.config.baseURL + response.config.url : response.config?.url || 'N/A'}`);
+                
+                if (response.headers) {
+                    gitopsOutputChannel.appendLine('Response Headers:');
+                    gitopsOutputChannel.appendLine(JSON.stringify(response.headers, null, 2));
+                }
+                
+                gitopsOutputChannel.appendLine('Response Data:');
+                try {
+                    // Try to format as JSON if it's an object/array
+                    if (typeof response.data === 'object' && response.data !== null) {
+                        gitopsOutputChannel.appendLine(JSON.stringify(response.data, null, 2));
+                    } else if (typeof response.data === 'string') {
+                        // Try to parse as JSON
+                        try {
+                            const parsed = JSON.parse(response.data);
+                            gitopsOutputChannel.appendLine(JSON.stringify(parsed, null, 2));
+                        } catch {
+                            gitopsOutputChannel.appendLine(response.data);
+                        }
+                    } else {
+                        gitopsOutputChannel.appendLine(String(response.data));
+                    }
+                } catch (e) {
+                    gitopsOutputChannel.appendLine('[Unable to serialize response data]');
+                }
+                
+                gitopsOutputChannel.appendLine('');
+            }
+            return response;
+        },
+        (error: AxiosError) => {
+            if (gitopsOutputChannel) {
+                const timestamp = new Date().toISOString();
+                gitopsOutputChannel.appendLine('='.repeat(80));
+                gitopsOutputChannel.appendLine(`[${timestamp}] RESPONSE ERROR`);
+                gitopsOutputChannel.appendLine('='.repeat(80));
+                
+                if (error.config) {
+                    gitopsOutputChannel.appendLine(`Method: ${error.config.method?.toUpperCase() || 'UNKNOWN'}`);
+                    gitopsOutputChannel.appendLine(`URL: ${error.config.url || 'N/A'}`);
+                    gitopsOutputChannel.appendLine(`Full URL: ${error.config.baseURL ? error.config.baseURL + error.config.url : error.config.url || 'N/A'}`);
+                }
+                
+                if (error.response) {
+                    gitopsOutputChannel.appendLine(`Status: ${error.response.status} ${error.response.statusText || ''}`);
+                    
+                    if (error.response.headers) {
+                        gitopsOutputChannel.appendLine('Response Headers:');
+                        gitopsOutputChannel.appendLine(JSON.stringify(error.response.headers, null, 2));
+                    }
+                    
+                    gitopsOutputChannel.appendLine('Error Response Data:');
+                    try {
+                        if (typeof error.response.data === 'object' && error.response.data !== null) {
+                            gitopsOutputChannel.appendLine(JSON.stringify(error.response.data, null, 2));
+                        } else if (typeof error.response.data === 'string') {
+                            try {
+                                const parsed = JSON.parse(error.response.data);
+                                gitopsOutputChannel.appendLine(JSON.stringify(parsed, null, 2));
+                            } catch {
+                                gitopsOutputChannel.appendLine(error.response.data);
+                            }
+                        } else {
+                            gitopsOutputChannel.appendLine(String(error.response.data));
+                        }
+                    } catch (e) {
+                        gitopsOutputChannel.appendLine('[Unable to serialize error response data]');
+                    }
+                } else if (error.request) {
+                    gitopsOutputChannel.appendLine('No response received from server');
+                    gitopsOutputChannel.appendLine(`Request: ${JSON.stringify(error.request, null, 2)}`);
+                } else {
+                    gitopsOutputChannel.appendLine(`Error: ${error.message || 'Unknown error'}`);
+                }
+                
+                gitopsOutputChannel.appendLine('');
+            }
+            return Promise.reject(error);
+        }
+    );
+    
+    interceptorsInitialized = true;
+}
+
+/**
+ * Helper function to log HTTP error responses to the output channel
+ */
+export function logHttpError(
+  error: AxiosError,
+  context: string,
+  outputChannel?: vscode.OutputChannel
+): void {
+  if (!error.response || !outputChannel) {
+    return;
+  }
+
+  const status = error.response.status;
+  const responseData = error.response.data;
+  const responseHeaders = error.response.headers;
+  const config = error.config;
+
+  outputChannel.appendLine("=".repeat(60));
+  outputChannel.appendLine(`${context} - HTTP Error (${status})`);
+  outputChannel.appendLine("=".repeat(60));
+  if (config) {
+    outputChannel.appendLine(`URL: ${config.url || 'N/A'}`);
+    outputChannel.appendLine(`Method: ${config.method?.toUpperCase() || 'N/A'}`);
+  }
+  outputChannel.appendLine(`Status: ${status} ${error.response.statusText}`);
+  outputChannel.appendLine(`Response Data:`);
+  outputChannel.appendLine(JSON.stringify(responseData, null, 2));
+  if (responseHeaders) {
+    outputChannel.appendLine(`Response Headers:`);
+    outputChannel.appendLine(JSON.stringify(responseHeaders, null, 2));
+  }
+  outputChannel.appendLine("=".repeat(60));
+  outputChannel.show(true);
+}
 
 export const zipDirectory = async (dirPath: string, relativePath: string = '', zipFile: JSZip = new JSZip(), outputChannel: vscode.OutputChannel) => {
 
@@ -38,15 +265,27 @@ export const zip2stream = async (zipFile: JSZip) => {
 }
 
 
-export const deploy = async (deployUrl: string, form: FormData, secret: string) => {
-  const response = await axios.post(deployUrl, form, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-      'Authorization': `Bearer ${secret}`
-    },
-  });
+export const deploy = async (
+  deployUrl: string, 
+  form: FormData, 
+  secret: string,
+  outputChannel?: vscode.OutputChannel
+) => {
+  try {
+    const response = await axios.post(deployUrl, form, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        'Authorization': `Bearer ${secret}`
+      },
+    });
 
-  return response.status == 200;
+    return response.status == 200;
+  } catch (error: any) {
+    if (error instanceof AxiosError && error.response) {
+      logHttpError(error, "Deploy Request", outputChannel);
+    }
+    throw error;
+  }
 }
 
 export const activateDeployment = async (deployUrl: string, secret: string) => {
@@ -228,32 +467,63 @@ export const startJupyterServerRequest = async (
   automationName: string,
   preImage: string,
   sessionId: string,
-  automationDirectoryPath: string
+  automationDirectoryPath: string,
+  relativePath: string,
+  pipelinesConfContent: string,
+  outputChannel?: vscode.OutputChannel
 ) => {
   const params = new URLSearchParams();
   params.append("automation_name", automationName);
   params.append("pre_image", preImage);
   params.append("session_id", sessionId)
   params.append("automation_directory_path", automationDirectoryPath)
+  params.append("relative_path", relativePath)
+  params.append("pipelines_conf_content", pipelinesConfContent)
 
-  const response = await axios.post<JupyterServerRequestResponse>(
-    jupyterServerUrl,
-    params,
-    {
-      headers: {
-        Authorization: `Bearer ${secret}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
+  try {
+    const response = await axios.post<JupyterServerRequestResponse>(
+      jupyterServerUrl,
+      params,
+      {
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+      }
+    );
+
+    console.log(
+      "jupyter-server:start-jupyter-server-request-response",
+      response.data
+    );
+
+    return response;
+  } catch (error: any) {
+    if (error instanceof AxiosError && error.response) {
+      const status = error.response.status;
+      const responseData = error.response.data;
+      const responseHeaders = error.response.headers;
+      
+      const errorDetails = {
+        status,
+        statusText: error.response.statusText,
+        data: responseData,
+        headers: responseHeaders,
+        url: jupyterServerUrl,
+        method: 'POST',
+      };
+
+      const errorMessage = `Jupyter Server Request Failed (${status}):\n${JSON.stringify(errorDetails, null, 2)}`;
+      
+      console.error("jupyter-server:start-jupyter-server-request-error", errorDetails);
+      
+      logHttpError(error, "Jupyter Server Request", outputChannel);
+      
+      throw error;
     }
-  );
-
-  console.log(
-    "jupyter-server:start-jupyter-server-request-response",
-    response.data
-  );
-
-  return response;
+    throw error;
+  }
 };
 
 
@@ -266,7 +536,8 @@ export const heartbeatJupyterServer = async (
     session_id: string;
     pre_image: string;
     token: string;
-  }[]
+  }[],
+  outputChannel?: vscode.OutputChannel
 ) => {
 
   console.log("jupyter-server:heartbeat:jupyter-servers", jupyterServers)
@@ -285,10 +556,28 @@ export const heartbeatJupyterServer = async (
     });
     console.log("jupyter-server:heartbeat:response-body", response.data)
     return response
-  } catch (error) {
+  } catch (error: any) {
+    if (error instanceof AxiosError && error.response) {
+      const status = error.response.status;
+      const responseData = error.response.data;
+      const responseHeaders = error.response.headers;
+      
+      const errorDetails = {
+        status,
+        statusText: error.response.statusText,
+        data: responseData,
+        headers: responseHeaders,
+        url: jupyterServerHeartBeatUrl,
+        method: 'POST',
+      };
 
-    console.error("jupyter-server:heartbeat:error-sresponse-body",(error as AxiosError).toJSON())
-    console.error("jupyter-server:heartbeat:error-sresponse-body", error)
+      console.error("jupyter-server:heartbeat:error", errorDetails);
+      
+      logHttpError(error, "Jupyter Server Heartbeat", outputChannel);
+    } else {
+      console.error("jupyter-server:heartbeat:error", error);
+    }
+    return undefined;
   }
 
 }
