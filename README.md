@@ -1,17 +1,70 @@
 # Bitswan Editor
+
 ## Deployment
+
 Use the [`bitswan cli`](https://github.com/bitswan-space/bitswan-workspaces) to deploy.
 
-## Development
+### Building the Editor Image
 
-Open the `Extension` directory in vscode. Go to the Run menu and click "Start Debugging"
+Before starting development, you need to build the editor Docker image:
 
-![image](https://github.com/user-attachments/assets/098bfd23-20fe-436d-a4ec-181cbb496c65)
+```bash
+docker build -t <1> <2>
+```
+**1.** Name of the container of your choosing, for example editor-test
+**2.** Path to bitswan-editor, if in the folder then"."
 
-To hook up a gitops instance for development purposes switch to the newly created window. Find the bitswan icon. Scroll down to "WORKSPACES" in the side bar, and click the plus icon:
+### Updating the Editor Container
 
-![image](https://github.com/user-attachments/assets/c9eaf9e0-63bc-4a4e-82aa-a956e262484b)
+After building a new editor image, update the workspace container:
 
-In development, the URL for [bitswan-gitops](https://github.com/bitswan-space/bitswan-gitops) is `bitswan.localhost:8079`.
+```bash
+bitswan workspace update --editor-image <container name> <workspace>
+```
 
-The secret can be found in the `.env` file you created when setting it up.
+Replace `<workspace>` with your workspace name.
+
+### Managing Workspaces
+
+**List all workspaces:**
+```bash
+bitswan workspace list
+```
+
+**List workspaces with passwords (for local development):**
+```bash
+bitswan workspace list --long --passwords
+```
+
+**Initialize a new workspace:**
+```bash
+bitswan workspace init
+```
+
+**Get help with workspace commands:**
+```bash
+bitswan workspace --help
+```
+
+**Available workspace commands:**
+- `init` - Initializes a new GitOps, Caddy and Bitswan editor
+- `list` - List available bitswan workspaces
+- `open` - Open the editor for a workspace
+- `pull-and-deploy` - Pull a specific branch into workspace gitops folder, build all automation images, and deploy them
+- `remove` - Remove a workspace
+- `select` - Select a workspace for activation
+- `service` - Manage workspace services
+- `update` - Update workspace configuration
+
+### Debugging
+
+**Check if the bitswan-network exists:**
+```bash
+docker network ls
+```
+
+**Access terminal in the editor container:**
+```bash
+docker exec -it dev-editor-bitswan-editor-1 bash
+```
+
