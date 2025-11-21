@@ -6,6 +6,8 @@ import { JupyterServerRequestResponse } from "./types";
 import { Readable } from 'stream';
 import path from 'path';
 import vscode from 'vscode';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
 
 // Set up axios interceptors to log all GitOps network calls
 let interceptorsInitialized = false;
@@ -233,6 +235,129 @@ export function logHttpError(
   outputChannel.appendLine("=".repeat(60));
   outputChannel.show(true);
 }
+
+/**
+ * Calculate git blob hash for a file (SHA1 of "blob <size>\0<content>")
+ */
+async function calculateGitBlobHash(filePath: string): Promise<string> {
+  const content = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
+  const size = content.length;
+  const header = Buffer.from(`blob ${size}\0`);
+  const blob = Buffer.concat([header, Buffer.from(content)]);
+  return crypto.createHash('sha1').update(blob).digest('hex');
+}
+
+/**
+ * Calculate git tree hash for a directory.
+ * Implements git's tree object format directly without spawning git processes.
+ * Tree format: "tree <size>\0<entries>" where each entry is "<mode> <name>\0<20-byte-sha1>"
+ */
+async function calculateGitTreeHashRecursive(
+  dirPath: string,
+  outputChannel?: vscode.OutputChannel
+): Promise<string> {
+  const entries: Array<{ mode: string; name: string; hash: string }> = [];
+  
+  const dirEntries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dirPath));
+  
+  // Process entries in sorted order (git requires sorted entries)
+  const sortedEntries = dirEntries.sort((a, b) => {
+    // Directories come before files, then alphabetical
+    if (a[1] === vscode.FileType.Directory && b[1] !== vscode.FileType.Directory) {
+      return -1;
+    }
+    if (a[1] !== vscode.FileType.Directory && b[1] === vscode.FileType.Directory) {
+      return 1;
+    }
+    return a[0].localeCompare(b[0]);
+  });
+  
+  for (const [name, type] of sortedEntries) {
+    // Skip .git directory
+    if (name === '.git') {
+      continue;
+    }
+    
+    const fullPath = path.join(dirPath, name);
+    
+    if (type === vscode.FileType.Directory) {
+      // Recursively calculate tree hash for subdirectory
+      const treeHash = await calculateGitTreeHashRecursive(fullPath, outputChannel);
+      entries.push({
+        mode: '040000', // Directory mode
+        name: name,
+        hash: treeHash
+      });
+    } else if (type === vscode.FileType.File) {
+      // Calculate blob hash for file
+      // Check if file is executable (simplified: check if it has execute permission)
+      // In practice, git uses 100644 for regular files and 100755 for executables
+      // For simplicity, we'll use 100644 (regular file) unless we can detect executable
+      let mode = '100644';
+      try {
+        const stats = fs.statSync(fullPath);
+        // Check if file is executable (Unix: any execute bit set)
+        if (stats.mode & 0o111) {
+          mode = '100755';
+        }
+      } catch {
+        // If we can't stat, default to regular file
+      }
+      
+      const blobHash = await calculateGitBlobHash(fullPath);
+      entries.push({
+        mode: mode,
+        name: name,
+        hash: blobHash
+      });
+    }
+  }
+  
+  // Build tree object: "tree <size>\0<entries>"
+  const entryBuffers: Buffer[] = [];
+  for (const entry of entries) {
+    // Each entry: "<mode> <name>\0<20-byte-sha1>"
+    const hashBuffer = Buffer.from(entry.hash, 'hex');
+    const entryStr = `${entry.mode} ${entry.name}\0`;
+    entryBuffers.push(Buffer.from(entryStr, 'utf8'));
+    entryBuffers.push(hashBuffer);
+  }
+  
+  const treeContent = Buffer.concat(entryBuffers);
+  const treeSize = treeContent.length;
+  const treeHeader = Buffer.from(`tree ${treeSize}\0`);
+  const treeObject = Buffer.concat([treeHeader, treeContent]);
+  
+  // Calculate SHA1 hash of tree object
+  const treeHash = crypto.createHash('sha1').update(treeObject).digest('hex');
+  
+  return treeHash;
+}
+
+/**
+ * Calculate git tree hash for a directory using git's tree object format.
+ * This implementation directly calculates the hash without spawning git processes,
+ * making it much more efficient.
+ */
+export const calculateGitTreeHash = async (
+  dirPath: string,
+  outputChannel?: vscode.OutputChannel
+): Promise<string> => {
+  try {
+    const treeHash = await calculateGitTreeHashRecursive(dirPath, outputChannel);
+    
+    if (outputChannel) {
+      outputChannel.appendLine(`Calculated git tree hash: ${treeHash}`);
+    }
+    
+    return treeHash;
+  } catch (error: any) {
+    if (outputChannel) {
+      outputChannel.appendLine(`Failed to calculate git tree hash: ${error.message}`);
+    }
+    throw new Error(`Failed to calculate git tree hash: ${error.message}`);
+  }
+};
 
 export const zipDirectory = async (dirPath: string, relativePath: string = '', zipFile: JSZip = new JSZip(), outputChannel: vscode.OutputChannel) => {
 

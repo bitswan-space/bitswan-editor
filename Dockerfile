@@ -149,5 +149,5 @@ USER coder
 
 EXPOSE 9999
 
-WORKDIR /home/coder/workspace
+WORKDIR /home/coder/
 ENTRYPOINT ["/usr/bin/update-entrypoint.sh"]
