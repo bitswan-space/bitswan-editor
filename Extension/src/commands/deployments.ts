@@ -6,7 +6,7 @@ import JSZip from 'jszip';
 import urlJoin from 'proper-url-join';
 
 import { FolderItem } from '../views/sources_view';
-import { activateDeployment, deploy, zip2stream, zipDirectory, uploadAsset, promoteAutomation } from '../lib';
+import { activateDeployment, deploy, zip2stream, zipDirectory, uploadAsset, promoteAutomation, calculateGitTreeHash } from '../lib';
 import { getDeployDetails } from '../deploy_details';
 import { outputChannel } from '../extension';
 import { AutomationSourcesViewProvider } from '../views/automation_sources_view';
@@ -73,7 +73,19 @@ export async function deployCommandAbstract(
 
             outputChannel.appendLine(messages[itemSet]["url"] + `: ${deployUrl}`);
 
-            progress.report({ increment: 0, message: "Packing..." });
+            progress.report({ increment: 0, message: "Calculating checksum..." });
+
+            // Calculate git tree hash for the directory
+            let checksum: string;
+            try {
+                checksum = await calculateGitTreeHash(folderPath, outputChannel);
+                outputChannel.appendLine(`Calculated checksum: ${checksum}`);
+            } catch (error: any) {
+                outputChannel.appendLine(`Warning: Failed to calculate git tree hash: ${error.message}`);
+                throw new Error(`Failed to calculate checksum: ${error.message}`);
+            }
+
+            progress.report({ increment: 20, message: "Packing..." });
 
             // Zip the pipeline config folder and add it to the form
             let zip = await zipDirectory(folderPath, '', JSZip(), outputChannel);
@@ -92,6 +104,8 @@ export async function deployCommandAbstract(
                 filename: 'deployment.zip',
                 contentType: 'application/zip',
             });
+            // Add checksum to form
+            form.append('checksum', checksum);
 
             if (itemSet === "automations") {
                 // For automations, use the promotion workflow
@@ -99,15 +113,18 @@ export async function deployCommandAbstract(
                 
                 progress.report({ increment: 50, message: "Uploading asset..." });
 
-                // Upload asset to get checksum
+                // Upload asset with pre-calculated checksum
                 const assetsUploadUrl = urlJoin(details.deployUrl, "automations", "assets", "upload").toString();
                 const uploadResult = await uploadAsset(assetsUploadUrl, form, details.deploySecret);
                 
                 if (!uploadResult || !uploadResult.checksum) {
-                    throw new Error("Failed to upload asset or get checksum");
+                    throw new Error("Failed to upload asset");
                 }
 
-                const checksum = uploadResult.checksum;
+                // Verify the checksum matches
+                if (uploadResult.checksum !== checksum) {
+                    outputChannel.appendLine(`Warning: Server checksum (${uploadResult.checksum}) differs from calculated checksum (${checksum})`);
+                }
                 outputChannel.appendLine(`Asset uploaded with checksum: ${checksum}`);
 
                 progress.report({ increment: 75, message: "Deploying to dev stage..." });
@@ -129,7 +146,7 @@ export async function deployCommandAbstract(
                     throw new Error(`Failed to deploy automation to dev stage`);
                 }
             } else {
-                // For images, use the old workflow
+                // For images, use the workflow with checksum
                 progress.report({ increment: 50, message: "Uploading to server " + deployUrl });
 
                 const success = await deploy(deployUrl, form, details.deploySecret, outputChannel);
