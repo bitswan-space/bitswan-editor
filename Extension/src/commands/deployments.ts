@@ -6,7 +6,7 @@ import JSZip from 'jszip';
 import urlJoin from 'proper-url-join';
 
 import { FolderItem } from '../views/sources_view';
-import { activateDeployment, deploy, zip2stream, zipDirectory, uploadAsset, promoteAutomation, calculateGitTreeHash } from '../lib';
+import { activateDeployment, deploy, zip2stream, zipDirectory, uploadAsset, promoteAutomation, calculateGitTreeHash, getImages, getAutomations } from '../lib';
 import { getDeployDetails } from '../deploy_details';
 import { outputChannel } from '../extension';
 import { AutomationSourcesViewProvider } from '../views/automation_sources_view';
@@ -14,6 +14,7 @@ import { UnifiedBusinessProcessesViewProvider } from '../views/unified_business_
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
 import { sanitizeName } from '../utils/nameUtils';
 import { refreshAutomationsCommand } from './automations';
+import * as vscode from 'vscode';
 
 export async function deployCommandAbstract(
     context: vscode.ExtensionContext, 
@@ -85,47 +86,69 @@ export async function deployCommandAbstract(
                 throw new Error(`Failed to calculate checksum: ${error.message}`);
             }
 
-            progress.report({ increment: 20, message: "Packing..." });
-
-            // Zip the pipeline config folder and add it to the form
-            let zip = await zipDirectory(folderPath, '', JSZip(), outputChannel);
-            const workspacePath = path.join(workspaceFolders[0].uri.fsPath, 'workspace')
             if (itemSet === "automations") {
-                const bitswanLibPath = path.join(workspacePath, 'bitswan_lib')
-                if (fs.existsSync(bitswanLibPath)) {
-                    zip = await zipDirectory(bitswanLibPath, '', zip, outputChannel);
-                    outputChannel.appendLine(`bitswan_lib found at ${bitswanLibPath}`);
-                } else {
-                    outputChannel.appendLine(`Warning. No bitswan_lib found at ${bitswanLibPath}`);
+                // For automations, check if asset already exists by looking at the automations list
+                progress.report({ increment: 10, message: "Checking if asset already exists..." });
+                let assetExists = false;
+                try {
+                    // Get the automations list from the server
+                    const automationsUrl = urlJoin(details.deployUrl, "automations").toString();
+                    const automations = await getAutomations(automationsUrl, details.deploySecret);
+                    
+                    // Check if any automation uses this checksum (which means the asset exists)
+                    assetExists = automations.some((automation: any) => 
+                        automation.version_hash === checksum || automation.versionHash === checksum
+                    );
+                    
+                    if (assetExists) {
+                        outputChannel.appendLine(`Asset with checksum ${checksum} already exists, skipping upload`);
+                        progress.report({ increment: 30, message: "Asset already exists, skipping upload" });
+                    }
+                } catch (error: any) {
+                    // If check fails, proceed with upload
+                    outputChannel.appendLine(`Warning: Failed to check asset existence: ${error.message}, proceeding with upload`);
                 }
-            }
-            const stream = await zip2stream(zip);
-            form.append('file', stream, {
-                filename: 'deployment.zip',
-                contentType: 'application/zip',
-            });
-            // Add checksum to form
-            form.append('checksum', checksum);
 
-            if (itemSet === "automations") {
+                if (!assetExists) {
+                    progress.report({ increment: 20, message: "Packing..." });
+
+                    // Zip the pipeline config folder and add it to the form
+                    let zip = await zipDirectory(folderPath, '', JSZip(), outputChannel);
+                    const workspacePath = path.join(workspaceFolders[0].uri.fsPath, 'workspace')
+                    const bitswanLibPath = path.join(workspacePath, 'bitswan_lib')
+                    if (fs.existsSync(bitswanLibPath)) {
+                        zip = await zipDirectory(bitswanLibPath, '', zip, outputChannel);
+                        outputChannel.appendLine(`bitswan_lib found at ${bitswanLibPath}`);
+                    } else {
+                        outputChannel.appendLine(`Warning. No bitswan_lib found at ${bitswanLibPath}`);
+                    }
+                    const stream = await zip2stream(zip);
+                    form.append('file', stream, {
+                        filename: 'deployment.zip',
+                        contentType: 'application/zip',
+                    });
+                    // Add checksum to form
+                    form.append('checksum', checksum);
+
+                    progress.report({ increment: 50, message: "Uploading asset..." });
+
+                    // Upload asset with pre-calculated checksum
+                    const assetsUploadUrl = urlJoin(details.deployUrl, "automations", "assets", "upload").toString();
+                    const uploadResult = await uploadAsset(assetsUploadUrl, form, details.deploySecret);
+                    
+                    if (!uploadResult || !uploadResult.checksum) {
+                        throw new Error("Failed to upload asset");
+                    }
+
+                    // Verify the checksum matches
+                    if (uploadResult.checksum !== checksum) {
+                        outputChannel.appendLine(`Warning: Server checksum (${uploadResult.checksum}) differs from calculated checksum (${checksum})`);
+                    }
+                    outputChannel.appendLine(`Asset uploaded with checksum: ${checksum}`);
+                }
+
                 // For automations, use the promotion workflow
                 const relativePath = path.relative(workspaceFolders[0].uri.fsPath, folderPath);
-                
-                progress.report({ increment: 50, message: "Uploading asset..." });
-
-                // Upload asset with pre-calculated checksum
-                const assetsUploadUrl = urlJoin(details.deployUrl, "automations", "assets", "upload").toString();
-                const uploadResult = await uploadAsset(assetsUploadUrl, form, details.deploySecret);
-                
-                if (!uploadResult || !uploadResult.checksum) {
-                    throw new Error("Failed to upload asset");
-                }
-
-                // Verify the checksum matches
-                if (uploadResult.checksum !== checksum) {
-                    outputChannel.appendLine(`Warning: Server checksum (${uploadResult.checksum}) differs from calculated checksum (${checksum})`);
-                }
-                outputChannel.appendLine(`Asset uploaded with checksum: ${checksum}`);
 
                 progress.report({ increment: 75, message: "Deploying to dev stage..." });
 
@@ -146,7 +169,48 @@ export async function deployCommandAbstract(
                     throw new Error(`Failed to deploy automation to dev stage`);
                 }
             } else {
-                // For images, use the workflow with checksum
+                // For images, check if image already exists by looking at the images list
+                progress.report({ increment: 10, message: "Checking if image already exists..." });
+                let imageExists = false;
+                try {
+                    // Get the images list from the server
+                    const imagesUrl = urlJoin(details.deployUrl, "images").toString();
+                    const images = await getImages(imagesUrl, details.deploySecret);
+                    
+                    // Check if an image with the expected tag exists
+                    const expectedTag = `internal/${normalizedFolderName}:sha${checksum}`;
+                    imageExists = images.some((img: any) => img.tag === expectedTag);
+                    
+                    if (imageExists) {
+                        outputChannel.appendLine(`Image with checksum ${checksum} already exists, skipping upload`);
+                        progress.report({ increment: 100, message: "Image already exists, skipping upload" });
+                        vscode.window.showInformationMessage("Image already exists, skipping upload");
+                        
+                        // Refresh image views
+                        if (unifiedImagesProvider && orphanedImagesProvider) {
+                            unifiedImagesProvider.refresh();
+                            orphanedImagesProvider.refresh();
+                        }
+                        return;
+                    }
+                } catch (error: any) {
+                    // If check fails, proceed with upload
+                    outputChannel.appendLine(`Warning: Failed to check image existence: ${error.message}, proceeding with upload`);
+                }
+
+                // Image doesn't exist, proceed with upload
+                progress.report({ increment: 20, message: "Packing..." });
+
+                // Zip the pipeline config folder and add it to the form
+                let zip = await zipDirectory(folderPath, '', JSZip(), outputChannel);
+                const stream = await zip2stream(zip);
+                form.append('file', stream, {
+                    filename: 'deployment.zip',
+                    contentType: 'application/zip',
+                });
+                // Add checksum to form
+                form.append('checksum', checksum);
+
                 progress.report({ increment: 50, message: "Uploading to server " + deployUrl });
 
                 const success = await deploy(deployUrl, form, details.deploySecret, outputChannel);
