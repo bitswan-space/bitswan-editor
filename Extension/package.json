@@ -211,6 +211,11 @@
         "icon": "$(copy)"
       },
       {
+        "command": "bitswan.openImageDetails",
+        "title": "Open Image Details",
+        "icon": "$(info)"
+      },
+      {
         "command": "bitswan.activateAutomation",
         "title": "Activate Automation",
         "icon": "$(notebook-state-success)"
@@ -545,6 +550,11 @@
           "group": "inline@5"
         },
         {
+          "command": "bitswan.showImageLogs",
+          "when": "view == bitswan-unified-business-processes && viewItem == automationSourceImage",
+          "group": "inline@5"
+        },
+        {
           "command": "bitswan.showOrphanedImageLogs",
           "when": "view == bitswan-orphaned-images && viewItem == image",
           "group": "inline@5"
@@ -560,6 +570,11 @@
           "group": "inline@4"
         },
         {
+          "command": "bitswan.deleteImage",
+          "when": "view == bitswan-unified-business-processes && viewItem == automationSourceImage",
+          "group": "inline@4"
+        },
+        {
           "command": "bitswan.deleteOrphanedImage",
           "when": "view == bitswan-orphaned-images && viewItem == image",
           "group": "inline@4"
@@ -572,6 +587,11 @@
         {
           "command": "bitswan.copyImageTag",
           "when": "view == bitswan-orphaned-images && viewItem == image",
+          "group": "inline@3"
+        },
+        {
+          "command": "bitswan.copyImageTag",
+          "when": "view == bitswan-unified-business-processes && viewItem == automationSourceImage",
           "group": "inline@3"
         },
         {

@@ -1,6 +1,15 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { isImageMatchingSource } from '../utils/imageMatching';
+
+const getTimestamp = (value?: string | null): number => {
+    if (!value) {
+        return 0;
+    }
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+};
 
 /**
  * Tree item representing an image source (folder with Dockerfile)
@@ -21,13 +30,18 @@ export class ImageSourceItem extends vscode.TreeItem {
 /**
  * Tree item representing an image built from a source
  */
+export type ImageItemOwner = 'images' | 'orphanedImages' | 'businessProcesses';
+
 export class ImageItem extends vscode.TreeItem {
     constructor(
         public readonly name: string,
         public readonly buildTime: string | null,
         public readonly size: string,
         public readonly buildStatus: string = 'ready',
-        public readonly sourceName?: string
+        public readonly sourceName?: string,
+        public readonly owner: ImageItemOwner = 'images',
+        contextValue: string = 'image',
+        public readonly metadata?: any
     ) {
         super(name, vscode.TreeItemCollapsibleState.None);
         
@@ -44,7 +58,12 @@ export class ImageItem extends vscode.TreeItem {
             this.iconPath = new vscode.ThemeIcon('circuit-board');
         }
         
-        this.contextValue = 'image';
+        this.contextValue = contextValue;
+        this.command = {
+            command: 'bitswan.openImageDetails',
+            title: 'Open Image Details',
+            arguments: [this]
+        };
     }
 
     public get building(): boolean {
@@ -108,6 +127,11 @@ export class UnifiedImagesViewProvider implements vscode.TreeDataProvider<ImageS
         // Read all entries in current directory
         const entries = fs.readdirSync(folderPath, { withFileTypes: true });
 
+        // Skip directories explicitly named "image"
+        if (path.basename(folderPath) === 'image') {
+            return results;
+        }
+
         // If the current directory contains a file named .bitswan-ignore, skip it
         if (entries.some(entry => entry.isFile() && entry.name === '.bitswan-ignore')) {
             return results;
@@ -140,91 +164,23 @@ export class UnifiedImagesViewProvider implements vscode.TreeDataProvider<ImageS
         const instances = this.context.globalState.get<any[]>('images', []);
         
         // Filter images that match this source using smarter matching
-        const sourceImages = instances.filter(instance => {
-            const imageName = instance.tag;
-            return this.isImageMatchingSource(imageName, sourceName);
-        });
+        const sourceImages = instances
+            .filter(instance => {
+                const imageName = instance.tag;
+                return isImageMatchingSource(imageName, sourceName);
+            })
+            .sort((a, b) => getTimestamp(b.created) - getTimestamp(a.created));
 
-        return sourceImages.map(instance => {
-            return new ImageItem(
-                instance.tag,
-                instance.created,
-                instance.size,
-                instance.build_status || (instance.building ? 'building' : 'ready'),
-                sourceName
-            );
-        });
-    }
-
-    /**
-     * Smart matching between image names and source folder names
-     * Handles various naming conventions and case differences
-     */
-    private isImageMatchingSource(imageName: string, sourceName: string): boolean {
-        // Extract the image source part (e.g., "internal/memegenerator:latest" -> "memegenerator")
-        const imageSourcePart = imageName.split('/')[1]?.split(':')[0];
-        if (!imageSourcePart) {
-            return false;
-        }
-
-        // Extract the folder name from the source path (e.g., "workspace/MemeGenerator" -> "MemeGenerator")
-        const sourceFolderName = path.basename(sourceName);
-
-        // Normalize both names for comparison
-        const normalizedImageName = imageSourcePart.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const normalizedSourceName = sourceFolderName.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-        // Direct match
-        if (normalizedImageName === normalizedSourceName) {
-            return true;
-        }
-
-        // Check if image name is contained in source name or vice versa
-        if (normalizedImageName.includes(normalizedSourceName) || normalizedSourceName.includes(normalizedImageName)) {
-            return true;
-        }
-
-        // Check for common variations (e.g., "memegenerator" vs "meme-generator" vs "meme_generator")
-        const imageVariations = this.generateNameVariations(normalizedImageName);
-        const sourceVariations = this.generateNameVariations(normalizedSourceName);
-
-        // Check if any variations match
-        for (const imageVar of imageVariations) {
-            for (const sourceVar of sourceVariations) {
-                if (imageVar === sourceVar) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Generate common variations of a name for matching
-     */
-    private generateNameVariations(name: string): string[] {
-        const variations = [name];
-        
-        // Add variations with different separators
-        variations.push(name.replace(/-/g, ''));
-        variations.push(name.replace(/_/g, ''));
-        variations.push(name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase());
-        variations.push(name.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase());
-        
-        // Add camelCase variations
-        const camelCase = name.replace(/[-_](.)/g, (_, char) => char.toUpperCase());
-        variations.push(camelCase);
-        
-        // Add kebab-case variations
-        const kebabCase = name.replace(/([A-Z])/g, '-$1').toLowerCase().replace(/^-/, '');
-        variations.push(kebabCase);
-        
-        // Add snake_case variations
-        const snakeCase = name.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '');
-        variations.push(snakeCase);
-
-        return [...new Set(variations)]; // Remove duplicates
+        return sourceImages.map(instance => new ImageItem(
+            instance.tag,
+            instance.created,
+            instance.size,
+            instance.build_status || (instance.building ? 'building' : 'ready'),
+            sourceName,
+            'images',
+            'image',
+            instance
+        ));
     }
 }
 
@@ -257,33 +213,25 @@ export class OrphanedImagesViewProvider implements vscode.TreeDataProvider<Image
         const imageSources = this.getImageSourceNames();
         
         // Filter out images that have associated sources using smart matching
-        const orphanedImages = instances.filter(instance => {
-            const imageName = instance.tag;
-            // Check if this image matches any source using the same smart matching logic
-            return !imageSources.some(sourceName => this.isImageMatchingSource(imageName, sourceName));
-        });
+        const orphanedImages = instances
+            .filter(instance => {
+                const imageName = instance.tag;
+                return !imageSources.some(sourceName => isImageMatchingSource(imageName, sourceName));
+            })
+            .sort((a, b) => getTimestamp(b.created) - getTimestamp(a.created));
 
-        const imageItems = orphanedImages.map(instance => {
+        return orphanedImages.map(instance => {
             const status = instance.build_status || (instance.building ? 'building' : 'ready');
             return new ImageItem(
                 instance.tag,
                 instance.created,
                 instance.size,
                 status,
+                undefined,
+                'orphanedImages',
+                'image',
+                instance
             );
-        });
-
-        // Sort images: building images first, then by name
-        return imageItems.sort((a, b) => {
-            // Building images come first
-            if (a.building && !b.building) {
-                return -1;
-            }
-            if (!a.building && b.building) {
-                return 1;
-            }
-            // If both have same building status, sort by name
-            return a.name.localeCompare(b.name);
         });
     }
 
@@ -302,6 +250,10 @@ export class OrphanedImagesViewProvider implements vscode.TreeDataProvider<Image
 
         // Read all entries in current directory
         const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+
+        if (path.basename(folderPath) === 'image') {
+            return results;
+        }
 
         // If the current directory contains a file named .bitswan-ignore, skip it
         if (entries.some(entry => entry.isFile() && entry.name === '.bitswan-ignore')) {
@@ -328,74 +280,4 @@ export class OrphanedImagesViewProvider implements vscode.TreeDataProvider<Image
         return results;
     }
 
-    /**
-     * Smart matching between image names and source folder names
-     * Handles various naming conventions and case differences
-     */
-    private isImageMatchingSource(imageName: string, sourceName: string): boolean {
-        // Extract the image source part (e.g., "internal/memegenerator:latest" -> "memegenerator")
-        const imageSourcePart = imageName.split('/')[1]?.split(':')[0];
-        if (!imageSourcePart) {
-            return false;
-        }
-
-        // Extract the folder name from the source path (e.g., "workspace/MemeGenerator" -> "MemeGenerator")
-        const sourceFolderName = path.basename(sourceName);
-
-        // Normalize both names for comparison
-        const normalizedImageName = imageSourcePart.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const normalizedSourceName = sourceFolderName.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-        // Direct match
-        if (normalizedImageName === normalizedSourceName) {
-            return true;
-        }
-
-        // Check if image name is contained in source name or vice versa
-        if (normalizedImageName.includes(normalizedSourceName) || normalizedSourceName.includes(normalizedImageName)) {
-            return true;
-        }
-
-        // Check for common variations (e.g., "memegenerator" vs "meme-generator" vs "meme_generator")
-        const imageVariations = this.generateNameVariations(normalizedImageName);
-        const sourceVariations = this.generateNameVariations(normalizedSourceName);
-
-        // Check if any variations match
-        for (const imageVar of imageVariations) {
-            for (const sourceVar of sourceVariations) {
-                if (imageVar === sourceVar) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Generate common variations of a name for matching
-     */
-    private generateNameVariations(name: string): string[] {
-        const variations = [name];
-        
-        // Add variations with different separators
-        variations.push(name.replace(/-/g, ''));
-        variations.push(name.replace(/_/g, ''));
-        variations.push(name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase());
-        variations.push(name.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase());
-        
-        // Add camelCase variations
-        const camelCase = name.replace(/[-_](.)/g, (_, char) => char.toUpperCase());
-        variations.push(camelCase);
-        
-        // Add kebab-case variations
-        const kebabCase = name.replace(/([A-Z])/g, '-$1').toLowerCase().replace(/^-/, '');
-        variations.push(kebabCase);
-        
-        // Add snake_case variations
-        const snakeCase = name.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '');
-        variations.push(snakeCase);
-
-        return [...new Set(variations)]; // Remove duplicates
-    }
 }
