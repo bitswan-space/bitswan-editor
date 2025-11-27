@@ -6,6 +6,7 @@ import { outputChannel } from "../extension";
 import { getDeployDetails } from "../deploy_details";
 import { getPipelineConfigContent } from "./jupyter-server";
 import { logHttpError } from "../lib";
+import { ensureAutomationImageReady } from "../utils/automationImageBuilder";
 
 export async function updateKernelStatusContext(
   context: vscode.ExtensionContext,
@@ -106,6 +107,15 @@ async function startKernelInternal(deployDetails: any, automationName: string, n
     return;
   }
 
+  const automationDirectoryPath = path.dirname(notebookPath);
+
+  try {
+    await ensureAutomationImageReady(deployDetails, automationDirectoryPath, outputChannel);
+  } catch (imageError: any) {
+    vscode.window.showErrorMessage(`Failed to prepare automation image: ${imageError.message || imageError}`);
+    return;
+  }
+
   const pipelinesConfContent = getPipelineConfigContent(notebookDoc) || "";
   if (!pipelinesConfContent) {
     vscode.window.showErrorMessage("pipelines.conf not found");
@@ -118,7 +128,6 @@ async function startKernelInternal(deployDetails: any, automationName: string, n
   if (workspaceFolders && workspaceFolders.length > 0) {
     try {
       const workspaceRoot = workspaceFolders[0].uri.fsPath;
-      const automationDirectoryPath = path.dirname(notebookPath);
       
       let workspaceMountPoint = workspaceRoot;
       if (workspaceRoot.endsWith(path.sep + "workspace") || workspaceRoot.endsWith("/workspace") || workspaceRoot.endsWith("\\workspace")) {

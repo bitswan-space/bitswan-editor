@@ -14,7 +14,7 @@ import { UnifiedBusinessProcessesViewProvider } from '../views/unified_business_
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
 import { sanitizeName } from '../utils/nameUtils';
 import { refreshAutomationsCommand } from './automations';
-import * as vscode from 'vscode';
+import { ensureAutomationImageReady } from '../utils/automationImageBuilder';
 
 export async function deployCommandAbstract(
     context: vscode.ExtensionContext, 
@@ -87,6 +87,25 @@ export async function deployCommandAbstract(
             }
 
             if (itemSet === "automations") {
+                progress.report({ increment: 5, message: "Preparing automation image..." });
+                let imageBuildResult: Awaited<ReturnType<typeof ensureAutomationImageReady>> = null;
+                try {
+                    imageBuildResult = await ensureAutomationImageReady(details, folderPath, outputChannel);
+                } catch (imageError: any) {
+                    throw new Error(`Failed to prepare automation image: ${imageError.message || imageError}`);
+                }
+
+                if (imageBuildResult) {
+                    outputChannel.appendLine("Recalculating checksum after image preparation...");
+                    try {
+                        checksum = await calculateGitTreeHash(folderPath, outputChannel);
+                        outputChannel.appendLine(`Recalculated checksum: ${checksum}`);
+                    } catch (error: any) {
+                        outputChannel.appendLine(`Warning: Failed to recalculate git tree hash: ${error.message}`);
+                        throw new Error(`Failed to recalculate checksum after image preparation: ${error.message}`);
+                    }
+                }
+
                 // For automations, check if asset already exists by looking at the automations list
                 progress.report({ increment: 10, message: "Checking if asset already exists..." });
                 let assetExists = false;
