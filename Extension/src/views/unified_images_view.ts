@@ -26,13 +26,16 @@ export class ImageItem extends vscode.TreeItem {
         public readonly name: string,
         public readonly buildTime: string | null,
         public readonly size: string,
-        public readonly building: boolean = false,
+        public readonly buildStatus: string = 'ready',
         public readonly sourceName?: string
     ) {
         super(name, vscode.TreeItemCollapsibleState.None);
         
-        // Handle tooltip and display based on building status
-        if (this.building) {
+        if (this.buildStatus === 'failed') {
+            this.tooltip = `${this.name} (Build failed)`;
+            this.description = 'Build failed';
+            this.iconPath = new vscode.ThemeIcon('error');
+        } else if (this.buildStatus === 'building') {
             this.tooltip = `${this.name} (Building...)`;
             this.description = 'Building...';
             this.iconPath = new vscode.ThemeIcon('sync~spin');
@@ -42,6 +45,10 @@ export class ImageItem extends vscode.TreeItem {
         }
         
         this.contextValue = 'image';
+    }
+
+    public get building(): boolean {
+        return this.buildStatus === 'building';
     }
 
     public urlSlug(): string {
@@ -143,7 +150,7 @@ export class UnifiedImagesViewProvider implements vscode.TreeDataProvider<ImageS
                 instance.tag,
                 instance.created,
                 instance.size,
-                instance.building || false,
+                instance.build_status || (instance.building ? 'building' : 'ready'),
                 sourceName
             );
         });
@@ -257,11 +264,12 @@ export class OrphanedImagesViewProvider implements vscode.TreeDataProvider<Image
         });
 
         const imageItems = orphanedImages.map(instance => {
+            const status = instance.build_status || (instance.building ? 'building' : 'ready');
             return new ImageItem(
                 instance.tag,
                 instance.created,
                 instance.size,
-                instance.building || false,
+                status,
             );
         });
 
