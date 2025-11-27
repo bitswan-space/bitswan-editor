@@ -781,3 +781,5 @@ export const listAssets = async (assetsUrl: string, secret: string) => {
     throw new Error(`Failed to list assets: ${response.status}`);
   }
 }
+
+
