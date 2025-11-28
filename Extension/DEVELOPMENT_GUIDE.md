@@ -39,15 +39,12 @@ Automations that wait for user input or HTTP requests. Perfect for web forms, RE
 
 **ProtectedWebFormSource** (`examples/ProtectedWebForm`): Web form protected with a secret key. 
 
+**FileField** (`examples/Filefield`): Example of how to add a file upload field to a webform and handle uploaded files in your automation
+
 ### Event-triggered automations
 Automations that react to messages from streaming platforms, message queues, or real-time data sources. Best for event-driven architectures and data pipelines.
 
 **KafkaSource**  (`examples/Kafka2Kafka`): Consumes events from Kafka topics. Processes and optionally forwards to other Kafka topics or systems.
-
-### File and storage based automations
-Automations that read files, directories or remote storage
-
-**FileField** (`examples/Filefield`): Example of how to add a file upload field to a webform and handle uploaded files in your automation
 
 ## Project structure (suggested)
 ```
