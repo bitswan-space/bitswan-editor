@@ -47,14 +47,15 @@ Automations that react to messages from streaming platforms, message queues, or 
 ### File and storage based automations
 Automations that read files, directories or remote storage
 
-**FileField** (`examples/Filefield`):  Reading files uploaded via webform
+**FileField** (`examples/Filefield`): Example of how to add a file upload field to a webform and handle uploaded files in your automation
 
 ## Project structure (suggested)
 ```
 automation/
   main.ipynb                # main notebook
   pipelines.conf            # defines connections & config for sources, sinks, secrets, and pipelines
-  Dockerfile                # ~ can be used to install extra dependencies for the notebook. 
+  image/
+    Dockerfile              # ~ can be used to install extra dependencies for the notebook. 
 ```
 
 - `main.ipynb`: the primary notebook where `auto_pipeline(...)` is called. Cells below it implement the processing steps; helper functions (or imports of helper functions) are typically defined before the `auto_pipeline(...)` call.
@@ -119,8 +120,8 @@ Tip: during development, simulate events to enable step‑by‑step execution of
 
 `Dockerfile` (typical deployed automation)
 ```dockerfile
-from bitswan/pipeline-runtime-environment:2025-17915492359-git-e5c422a #image with which was the automation created
-run pip install -U openai #Further installs for the automations container
+FROM bitswan/pipeline-runtime-environment:2025-17915492359-git-e5c422a #image with which was the automation created
+RUN pip install -U openai #Further installs for the automations container
 ```
 
 ## Configuration with `pipelines.conf`
@@ -135,12 +136,51 @@ Examples:
   expose=true
   ```
 
-Secrets in `pipelines.conf` reference secret groups backed by files in your `secrets/` directory, one group per service.
+Secrets in `pipelines.conf` reference secret groups backed by the groups you've created in your `secrets` tab.
 
 ### Secrets
+
+- In AOC: secrets are mounted under a shared path and exposed to the runtime
 - Create a secret group in secrets
-- Reference the group in `pipelines.conf`
-- In AOC: secrets are mounted under a shared path and exposed to the runtime 
+
+#### Managing Secrets in the VS Code Extension
+
+The BitSwan extension provides a **Secrets Manager** in the sidebar for managing secret groups and their values.
+
+**Creating a Secret Group:**
+
+1. Open the **Secrets** tab in the sidebar
+2. Click the **+** button (marked ①) to create a new secret group
+3. Enter a name for the group in the input field
+
+![Creating a secret group](resources/DEVELOPMENT_GUIDE/secrets/secrets1.png)
+
+**Adding Secrets to a Group:**
+
+1. Click on a secret group to open it
+2. Enter the secret name and value:
+   - Type the name (marked ①) and the secret in the Secret value field (marked ②)
+   - Alternativelly click **Generate Random** (marked ③) to create a random secret value if there is none yet
+3. Click **Add Secret** to create a new secret
+
+![Adding secrets to a group](resources/DEVELOPMENT_GUIDE/secrets/secrets2.png)
+
+**Managing Secrets:**
+
+Once created, you can:
+- Add new secrets using the **Add Secret** button
+- Edit existing secrets by clicking one of the buttons near the given secret
+
+![Managing secrets](resources/DEVELOPMENT_GUIDE/secrets/secrets3.png)
+
+**Reference in `pipelines.conf`:**
+
+After creating secret groups, reference them in your `pipelines.conf`:
+
+```ini
+[secrets]
+groups = group_name1, group_name2
+``` 
 
 ## Custom PRE
 A PRE is a pre‑built component/image you can reference from your automation (e.g., custom sources/sinks/utilities). Where to register and how to author a PRE depends on your environment.
