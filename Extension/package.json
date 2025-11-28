@@ -279,8 +279,12 @@
         "command": "bitswan.openProcessReadme",
         "title": "Open README",
         "icon": "$(book)"
-      }
-      ,
+      },
+      {
+        "command": "bitswan.openDevelopmentGuide",
+        "title": "Open Development Guide",
+        "icon": "$(book)"
+      },
       {
         "command": "bitswan.openAutomationTemplates",
         "title": "Create Automation",
@@ -605,6 +609,11 @@
           "command": "bitswan.refreshBusinessProcesses",
           "when": "view == bitswan-unified-business-processes",
           "group": "navigation@1"
+        },
+        {
+          "command": "bitswan.openDevelopmentGuide",
+          "when": "view == bitswan-unified-business-processes",
+          "group": "navigation@2"
         },
         {
           "command": "bitswan.createSecretGroup",

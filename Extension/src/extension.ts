@@ -449,6 +449,9 @@ export function activate(context: vscode.ExtensionContext) {
     let openAutomationTemplatesCommand = vscode.commands.registerCommand('bitswan.openAutomationTemplates',
         async (businessProcessName?: string) => openAutomationTemplates(context, businessProcessName));
 
+    let openDevelopmentGuideCommand = vscode.commands.registerCommand('bitswan.openDevelopmentGuide',
+        async () => businessProcessCommands.openDevelopmentGuideCommand(context));
+
     let promoteToStagingCommand = vscode.commands.registerCommand('bitswan.promoteToStaging',
         async (item: StageItem | any) => {
             if (!item || (typeof item !== 'object')) {
@@ -646,6 +649,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(jumpToSourceCommand);
     context.subscriptions.push(openProcessReadmeCommand);
     context.subscriptions.push(openAutomationTemplatesCommand);
+    context.subscriptions.push(openDevelopmentGuideCommand);
     context.subscriptions.push(promoteToStagingCommand);
     context.subscriptions.push(promoteToProductionCommand);
     context.subscriptions.push(openPromotionManagerCommand);
