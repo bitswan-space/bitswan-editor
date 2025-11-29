@@ -484,10 +484,22 @@ export function activate(context: vscode.ExtensionContext) {
         async (item: AutomationSourceItem) => promotionCommands.openPromotionManagerCommand(context, item.name));
 
     let showImageLogsCommand = vscode.commands.registerCommand('bitswan.showImageLogs', 
-        async (item: ImageItem) => imageCommands.showImageLogsCommand(context, unifiedImagesProvider, item));
+        async (item: ImageItem) => {
+            if (!item) {
+                vscode.window.showErrorMessage('No image selected');
+                return;
+            }
+            const provider = item.owner === 'orphanedImages'
+                ? orphanedImagesProvider
+                : unifiedImagesProvider;
+            await imageCommands.showImageLogsCommand(context, provider, item);
+        });
 
     let showOrphanedImageLogsCommand = vscode.commands.registerCommand('bitswan.showOrphanedImageLogs', 
         async (item: ImageItem) => imageCommands.showImageLogsCommand(context, orphanedImagesProvider, item));
+
+    let openImageDetailsCommand = vscode.commands.registerCommand('bitswan.openImageDetails',
+        async (item: ImageItem) => imageCommands.openImageDetailsCommand(context, item));
 
 
     let activateAutomationCommand = vscode.commands.registerCommand('bitswan.activateAutomation', 
@@ -573,17 +585,29 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     let deleteImageCommand = vscode.commands.registerCommand('bitswan.deleteImage', 
-        async (item: ImageItem) => itemCommands.makeItemCommand({
-            title: `Removing image ${item.name}`,
-            initialProgress: 'Sending request to GitOps...',
-            urlPath: '',
-            apiFunction: deleteImage,
-            successProgress: `Image ${item.name} deleted successfully`,
-            successMessage: `Image ${item.name} deleted successfully`,
-            errorMessage: `Failed to delete image ${item.name}:`,
-            errorLogPrefix: 'Image Delete Error:',
-            prompt: false 
-        })(context, unifiedImagesProvider, item));
+        async (item: ImageItem) => {
+            if (!item) {
+                vscode.window.showErrorMessage('No image selected');
+                return;
+            }
+            const provider = item.owner === 'orphanedImages'
+                ? orphanedImagesProvider
+                : unifiedImagesProvider;
+            await itemCommands.makeItemCommand({
+                title: `Removing image ${item.name}`,
+                initialProgress: 'Sending request to GitOps...',
+                urlPath: '',
+                apiFunction: deleteImage,
+                successProgress: `Image ${item.name} deleted successfully`,
+                successMessage: `Image ${item.name} deleted successfully`,
+                errorMessage: `Failed to delete image ${item.name}:`,
+                errorLogPrefix: 'Image Delete Error:',
+                prompt: false 
+            })(context, provider, item);
+            if (item.owner === 'businessProcesses') {
+                unifiedBusinessProcessesProvider.refresh();
+            }
+        });
 
     let deleteOrphanedImageCommand = vscode.commands.registerCommand('bitswan.deleteOrphanedImage', 
         async (item: ImageItem) => itemCommands.makeItemCommand({
@@ -634,6 +658,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(showAutomationLogsCommand);
     context.subscriptions.push(showImageLogsCommand);
     context.subscriptions.push(showOrphanedImageLogsCommand);
+    context.subscriptions.push(openImageDetailsCommand);
     context.subscriptions.push(activateAutomationCommand);
     context.subscriptions.push(deactivateAutomationCommand);
     context.subscriptions.push(deleteAutomationCommand);

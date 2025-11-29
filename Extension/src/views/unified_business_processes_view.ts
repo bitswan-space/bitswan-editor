@@ -4,7 +4,17 @@ import * as fs from 'fs';
 import urlJoin from 'proper-url-join';
 import { FolderItem } from './sources_view';
 import { AutomationItem } from './automations_view';
+import { ImageItem } from './unified_images_view';
+import { isImageMatchingSource } from '../utils/imageMatching';
 import { sanitizeName } from '../utils/nameUtils';
+
+const getTimestamp = (value?: string | null): number => {
+    if (!value) {
+        return 0;
+    }
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+};
 
 /**
  * Tree item representing a business process (directory containing process.toml)
@@ -85,6 +95,37 @@ export class StageItem extends vscode.TreeItem {
     }
 }
 
+export class AutomationSourceImagesItem extends vscode.TreeItem {
+    constructor(
+        public readonly sourceName: string,
+        public readonly images: AutomationSourceImageItem[]
+    ) {
+        super(
+            `Images (${images.length})`,
+            images.length ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
+        );
+        this.tooltip = images.length
+            ? `Image builds found for ${sourceName}`
+            : `No image builds found for ${sourceName}`;
+        this.description = images.length ? undefined : 'No builds yet';
+        this.contextValue = 'automationSourceImages';
+        this.iconPath = new vscode.ThemeIcon('circuit-board');
+    }
+}
+
+export class AutomationSourceImageItem extends ImageItem {
+    constructor(
+        name: string,
+        buildTime: string | null,
+        size: string,
+        buildStatus: string,
+        sourceName: string,
+        metadata: any
+    ) {
+        super(name, buildTime, size, buildStatus, sourceName, 'businessProcesses', 'automationSourceImage', metadata);
+    }
+}
+
 /**
  * Tree item representing files/directories inside an automation source
  */
@@ -138,7 +179,17 @@ export class CreateAutomationItem extends vscode.TreeItem {
     }
 }
 
-type UnifiedTreeItem = BusinessProcessItem | AutomationSourceItem | AutomationItem | OtherAutomationsItem | CreateAutomationItem | StageItem | AutomationSourceFileItem | vscode.TreeItem;
+type UnifiedTreeItem =
+    | BusinessProcessItem
+    | AutomationSourceItem
+    | AutomationItem
+    | OtherAutomationsItem
+    | CreateAutomationItem
+    | StageItem
+    | AutomationSourceFileItem
+    | AutomationSourceImagesItem
+    | AutomationSourceImageItem
+    | vscode.TreeItem;
 
 export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProvider<UnifiedTreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<UnifiedTreeItem | undefined | null | void> = new vscode.EventEmitter<UnifiedTreeItem | undefined | null | void>();
@@ -184,16 +235,35 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         }
 
         if (element instanceof AutomationSourceItem) {
-            // Show stages (dev/staging/production) for this automation source, followed by a separator and file tree entries
+            // Show stages (dev/staging/production) for this automation source, followed by file entries and image builds
             console.log(`[DEBUG] getChildren - AutomationSourceItem: "${element.name}"`);
             const [stages, fileEntries] = await Promise.all([
                 this.getStagesForSource(element.name),
                 this.getAutomationSourceFileEntries(element.resourceUri.fsPath)
             ]);
-            if (stages.length && fileEntries.length) {
-                return [...stages, this.createSeparator(), ...fileEntries];
+            const images = this.getImagesForAutomationSource(element.name);
+            const imagesSection = new AutomationSourceImagesItem(element.name, images);
+
+            const items: UnifiedTreeItem[] = [];
+
+            if (stages.length) {
+                items.push(...stages);
             }
-            return [...stages, ...fileEntries];
+
+            if (fileEntries.length) {
+                if (items.length) {
+                    items.push(this.createSeparator());
+                }
+                items.push(...fileEntries);
+            }
+
+            if (items.length) {
+                items.push(this.createSeparator());
+            }
+
+            items.push(imagesSection);
+
+            return items;
         }
 
         if (element instanceof AutomationSourceFileItem) {
@@ -202,6 +272,10 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                 return [];
             }
             return this.getAutomationSourceFileEntries(element.resourceUri.fsPath);
+        }
+
+        if (element instanceof AutomationSourceImagesItem) {
+            return element.images;
         }
 
         if (element instanceof OtherAutomationsItem) {
@@ -393,6 +467,25 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         }
         
         return stages;
+    }
+
+    private getImagesForAutomationSource(sourceName: string): AutomationSourceImageItem[] {
+        const images = this.context.globalState.get<any[]>('images', []);
+        const matchingImages = images
+            .filter(instance => {
+                const imageName = instance.tag;
+                return isImageMatchingSource(imageName, sourceName);
+            })
+            .sort((a, b) => getTimestamp(b.created) - getTimestamp(a.created));
+
+        return matchingImages.map(instance => new AutomationSourceImageItem(
+            instance.tag,
+            instance.created,
+            instance.size,
+            instance.build_status || (instance.building ? 'building' : 'ready'),
+            sourceName,
+            instance
+        ));
     }
 
     private getAutomationsForSource(sourceName: string): AutomationItem[] {
