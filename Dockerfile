@@ -132,8 +132,9 @@ RUN uv pip install --python ${VENV_PATH}/bin/python -r /opt/requirements.txt
 COPY --from=extension_builder /build/bitswan-extension.vsix /opt/bitswan-extension/
 
 # Copy scripts and configuration files (source code)
-COPY update-entrypoint.sh /usr/bin/update-entrypoint.sh
-RUN chmod +x /usr/bin/update-entrypoint.sh
+COPY entrypoint-root.sh /usr/bin/entrypoint-root.sh
+COPY entrypoint-coder-user.sh /usr/bin/entrypoint-coder-user.sh
+RUN chmod +x /usr/bin/entrypoint-root.sh /usr/bin/entrypoint-coder-user.sh
 
 COPY Caddyfile /etc/caddy/Caddyfile
 RUN chmod 644 /etc/caddy/Caddyfile
@@ -143,11 +144,8 @@ COPY frame.html /opt/bitswan-frame/frame.html
 COPY Extension/resources/bitswan-logo.png /opt/bitswan-frame/bitswan-logo.png
 RUN chmod 644 /opt/bitswan-frame/frame.html /opt/bitswan-frame/bitswan-logo.png
 RUN chown -R coder:coder /opt/bitswan-frame
-RUN chown -R coder:coder /home/coder
-
-USER coder
 
 EXPOSE 9999
 
 WORKDIR /home/coder/
-ENTRYPOINT ["/usr/bin/update-entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/entrypoint-root.sh"]

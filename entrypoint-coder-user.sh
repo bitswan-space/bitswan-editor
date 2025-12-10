@@ -1,33 +1,8 @@
 #!/bin/bash
+# This script runs as the coder user and performs user-level operations
+
 EXTENSIONS_DIR="/home/coder/.local/share/code-server/extensions"
-TEMP_EXTENSIONS_DIR="/tmp/extensions"
 EXTENSIONS_VERSION_FILE="/home/coder/.local/share/code-server/installed-extensions.json"
-
-mkdir -p ${EXTENSIONS_DIR}
-mkdir -p ${TEMP_EXTENSIONS_DIR}
-mkdir -p "$(dirname "$EXTENSIONS_VERSION_FILE")"
-
-if [ "$UPDATE_CA_CERTIFICATES" = "true" ]; then
-    echo "Updating CA certificates..."
-    if [ -d /usr/local/share/ca-certificates/custom ]; then
-        # Copy certificates from read-only mount to writable location
-        sudo cp /usr/local/share/ca-certificates/custom/*.crt /usr/local/share/ca-certificates/ 2>/dev/null || true
-        sudo cp /usr/local/share/ca-certificates/custom/*.pem /usr/local/share/ca-certificates/ 2>/dev/null || true
-        
-        # Rename .pem files to .crt (update-ca-certificates requires .crt)
-        for f in /usr/local/share/ca-certificates/*.pem; do
-            [ -f "$f" ] && sudo mv "$f" "${f%.pem}.crt"
-            echo "Renaming .pem files to .crt (update-ca-certificates requires .crt)"
-        done
-        
-        # Update the system CA certificates
-        sudo update-ca-certificates 2>&1 | grep -v "WARNING: ca-certificates.crt does not contain exactly one certificate or CRL"
-        echo "CA certificates updated successfully"
-    else
-        echo "No custom CA certificates found at /usr/local/share/ca-certificates/custom"
-    fi
-fi
-
 
 # Initialize extensions version file if it doesn't exist
 if [ ! -f "$EXTENSIONS_VERSION_FILE" ]; then
@@ -181,29 +156,17 @@ echo "- Skipped (already up-to-date): $SKIPPED_COUNT"
 echo "- Version tracking file: $EXTENSIONS_VERSION_FILE"
 echo ""
 
-# Copy virtual environment
-cp -r /opt/.bitswan /home/coder/workspace
-
 # Set up environment for MSAL
 export ELECTRON_DISABLE_SECURITY_WARNINGS=1
 export ELECTRON_NO_ATTACH_CONSOLE=1
 export VSCODE_DISABLE_CRASH_REPORTER=1
-
-# Ensure MSAL runtime directory is accessible
-if [ -d "/usr/lib/code-server/lib/vscode/extensions/microsoft-authentication" ]; then
-    chmod -R 755 /usr/lib/code-server/lib/vscode/extensions/microsoft-authentication
-fi
-
-# Create symlink to MSAL runtime if it doesn't exist
-if [ ! -L "/usr/lib/code-server/lib/vscode/extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions" ] && [ -d "/usr/lib/node_modules/@azure/msal-node-extensions" ]; then
-    ln -sf /usr/lib/node_modules/@azure/msal-node-extensions /usr/lib/code-server/lib/vscode/extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions
-fi
 
 INTERNAL_CODE_SERVER_PORT="9998"
 # The port the container will expose EXTERNALLY (where OAuth proxy or Caddy listens)
 EXTERNAL_PORT="9999"
 # Caddy port (different when OAuth is enabled to avoid conflict)
 CADDY_PORT="9997"
+
 # Configure git with hostname-based username and fixed email
 git config --global user.name "$HOSTNAME Bitswan user"
 git config --global user.email "$HOSTNAME-bitswan@example.com"
@@ -214,7 +177,6 @@ AOC_URL="${AOC_URL:-}"
 WORKSPACE_NAME="${HOSTNAME%-editor}"
 # Use a different delimiter to avoid issues with special characters in AOC_URL and HOSTNAME
 sed "s|AOC_URL_PLACEHOLDER|${AOC_URL}|g" /opt/bitswan-frame/frame.html | sed "s|WORKSPACE_NAME_PLACEHOLDER|${WORKSPACE_NAME}|g" > /opt/bitswan-frame/index.html
-
 
 if [ "$OAUTH_ENABLED" = "true" ]; then
     CODE_SERVER_AUTH="none"
@@ -232,8 +194,6 @@ cd /home/coder/workspace/workspace
   --auth ${CODE_SERVER_AUTH} \
   /home/coder/workspace/workspace &
 CODE_SERVER_PID=$!
-
-chown -R coder:coder /home/coder
 
 if [ "$OAUTH_ENABLED" = "true" ]; then
   echo "OAuth is enabled. Starting oauth2-proxy and Caddy."
@@ -272,3 +232,4 @@ else
   # Wait for both processes
   wait $CADDY_PID $CODE_SERVER_PID
 fi
+
