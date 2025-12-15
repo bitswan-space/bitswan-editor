@@ -236,6 +236,30 @@ export function logHttpError(
   outputChannel.show(true);
 }
 
+
+function gitBytesCompare(a: string, b: string): number {
+  const ab = Buffer.from(a, "utf8");
+  const bb = Buffer.from(b, "utf8");
+  const n = Math.min(ab.length, bb.length);
+
+  for (let i = 0; i < n; i++) {
+    if (ab[i] !== bb[i]) return ab[i] - bb[i];
+  }
+  return ab.length - bb.length;
+}
+
+// Git sorts tree entries by name, but directories are compared as if they had a trailing "/"
+function gitSortKey(name: string, type: vscode.FileType): string {
+  return type === vscode.FileType.Directory ? `${name}/` : name;
+}
+
+function gitTreeEntrySort(
+  a: [string, vscode.FileType],
+  b: [string, vscode.FileType]
+): number {
+  return gitBytesCompare(gitSortKey(a[0], a[1]), gitSortKey(b[0], b[1]));
+}
+
 /**
  * Calculate git blob hash for a file (SHA1 of "blob <size>\0<content>")
  */
@@ -261,16 +285,9 @@ async function calculateGitTreeHashRecursive(
   const dirEntries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dirPath));
   
   // Process entries in sorted order (git requires sorted entries)
-  const sortedEntries = dirEntries.sort((a, b) => {
-    // Directories come before files, then alphabetical
-    if (a[1] === vscode.FileType.Directory && b[1] !== vscode.FileType.Directory) {
-      return -1;
-    }
-    if (a[1] !== vscode.FileType.Directory && b[1] === vscode.FileType.Directory) {
-      return 1;
-    }
-    return a[0].localeCompare(b[0]);
-  });
+  const sortedEntries = dirEntries
+  .filter(([name]) => name !== ".git")
+  .sort(gitTreeEntrySort);
   
   for (const [name, type] of sortedEntries) {
     // Skip .git directory
