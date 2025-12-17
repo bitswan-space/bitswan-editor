@@ -1,6 +1,3 @@
-FROM --platform=linux/amd64 ghcr.io/astral-sh/uv:latest AS uvbin
-
-# Build stage for the extension
 FROM --platform=linux/amd64 node:18-alpine AS extension_builder
 WORKDIR /build
 COPY Extension/ ./
@@ -9,9 +6,6 @@ RUN npx vsce package --out bitswan-extension.vsix
 
 FROM --platform=linux/amd64 codercom/code-server:4.104.3-ubuntu
 
-# Environment variables (set early for caching)
-ENV VENV_PATH=/opt/.bitswan
-ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python
 ENV VSCODE_AGENT_FOLDER=/home/coder/.vscode-server
 ENV VSCODE_EXTENSIONS_FOLDER=/home/coder/.local/share/code-server/extensions
 ENV CODE_SERVER_EXTENSIONS_DIR=/home/coder/.local/share/code-server/extensions
@@ -31,18 +25,15 @@ RUN ln -snf /usr/share/zoneinfo/$CONTAINER_TIMEZONE /etc/localtime && echo $CONT
 
 # Install system packages (external dependencies - cache early)
 RUN apt-get update && apt-get install -y \
-    jq \
     curl \
     unzip \
     build-essential \
-    python3-dev \
     libffi-dev \
     libssl-dev \
     libsecret-1-dev \
     libsecret-1-0 \
     pkg-config \
-    libgtk-3-dev \
-    libx11-dev \
+    jq \
     libxss1 \
     ca-certificates \
     gnupg \
@@ -57,18 +48,6 @@ RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --de
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list && \
     apt-get update && \
     apt-get install -y caddy
-
-# Install uv and Python (external tools - cache early)
-RUN mkdir -p /opt/uv/python && chmod -R 755 /opt/uv
-COPY --from=uvbin /uv /uvx /bin/
-RUN uv python install 3.10
-RUN chmod -R 755 /opt/uv
-
-# Create virtual environment structure (without dependencies yet)
-RUN uv venv ${VENV_PATH} --python $(uv python find 3.10) && \
-    chown -R coder:coder ${VENV_PATH}
-RUN echo "export PYTHONPATH=/home/coder/workspace/workspace/bitswan_lib:${PYTHONPATH}" >> ${VENV_PATH}/bin/activate
-RUN uv pip install --python ${VENV_PATH}/bin/python --upgrade pip
 
 # Install MSAL node extensions (external dependency - cache early)
 RUN npm config set cache /tmp/.npm && \
@@ -123,10 +102,6 @@ RUN chown -R coder:coder /home/coder
 # ============================================
 # Source code and build steps (copy late)
 # ============================================
-
-# Install Python packages from requirements.txt (source code dependency)
-COPY requirements.txt /opt/requirements.txt
-RUN uv pip install --python ${VENV_PATH}/bin/python -r /opt/requirements.txt
 
 # Copy the built extension from the build stage (source code artifact)
 COPY --from=extension_builder /build/bitswan-extension.vsix /opt/bitswan-extension/
