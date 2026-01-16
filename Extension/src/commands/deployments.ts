@@ -80,6 +80,7 @@ export async function deployCommandAbstract(
             let checksum: string;
             try {
                 const debugDeploymentsDir = path.join(workspaceFolders[0].uri.fsPath, 'workspace', 'debug_deployments');
+                outputChannel.appendLine(`[DEBUG] Deploying to ${folderPath}`);
                 checksum = await calculateGitTreeHash(folderPath, outputChannel);
                 outputChannel.appendLine(`Calculated checksum: ${checksum}`);
 
