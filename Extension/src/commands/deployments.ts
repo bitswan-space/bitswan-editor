@@ -79,8 +79,10 @@ export async function deployCommandAbstract(
             // Calculate git tree hash for the directory
             let checksum: string;
             try {
+                const debugDeploymentsDir = path.join(workspaceFolders[0].uri.fsPath, 'workspace', 'debug_deployments');
                 checksum = await calculateGitTreeHash(folderPath, outputChannel);
                 outputChannel.appendLine(`Calculated checksum: ${checksum}`);
+
             } catch (error: any) {
                 outputChannel.appendLine(`Warning: Failed to calculate git tree hash: ${error.message}`);
                 throw new Error(`Failed to calculate checksum: ${error.message}`);
@@ -141,6 +143,17 @@ export async function deployCommandAbstract(
                     } else {
                         outputChannel.appendLine(`Warning. No bitswan_lib found at ${bitswanLibPath}`);
                     }
+                    
+                    // Save zip to debug_deployments folder before deployment
+                    outputChannel.appendLine(`[DEBUG] saving deployed automation zip to ${debugDeploymentsDir}`);
+                    if (!fs.existsSync(debugDeploymentsDir)) {
+                        fs.mkdirSync(debugDeploymentsDir, { recursive: true });
+                    }
+                    const debugZipPath = path.join(debugDeploymentsDir, `${checksum}.zip`);
+                    const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
+                    fs.writeFileSync(debugZipPath, zipBuffer);
+                    outputChannel.appendLine(`[DEBUG]Saved deployment zip to: ${debugZipPath}`);
+
                     const stream = await zip2stream(zip);
                     form.append('file', stream, {
                         filename: 'deployment.zip',
@@ -155,8 +168,10 @@ export async function deployCommandAbstract(
                     const assetsUploadUrl = urlJoin(details.deployUrl, "automations", "assets", "upload").toString();
                     const uploadResult = await uploadAsset(assetsUploadUrl, form, details.deploySecret);
                     
-                    if (!uploadResult || !uploadResult.checksum) {
+                    if (!uploadResult) {
                         throw new Error("Failed to upload asset");
+                    } else if (!uploadResult.checksum) {
+                        throw new Error("Failed to upload asset: no checksum returned");
                     }
 
                     // Verify the checksum matches
@@ -222,6 +237,8 @@ export async function deployCommandAbstract(
 
                 // Zip the pipeline config folder and add it to the form
                 let zip = await zipDirectory(folderPath, '', JSZip(), outputChannel);
+                
+                
                 const stream = await zip2stream(zip);
                 form.append('file', stream, {
                     filename: 'deployment.zip',
