@@ -66,6 +66,7 @@ export async function deployCommandAbstract(
     }, async (progress, _token) => {
         // Declare deployUrl outside try block so it's accessible in catch block
         let deployUrl: string | undefined;
+        const debugDeploymentsDir = path.join(workspaceFolders[0].uri.fsPath, 'workspace', 'debug_deployments');
         try {
             const form = new FormData();
             // The folder name must be all lowercase and have any characters not allowed in image tags removed
@@ -79,7 +80,6 @@ export async function deployCommandAbstract(
             // Calculate git tree hash for the directory
             let checksum: string;
             try {
-                const debugDeploymentsDir = path.join(workspaceFolders[0].uri.fsPath, 'workspace', 'debug_deployments');
                 outputChannel.appendLine(`[DEBUG] Deploying to ${folderPath}`);
                 checksum = await calculateGitTreeHash(folderPath, outputChannel);
                 outputChannel.appendLine(`Calculated checksum: ${checksum}`);
