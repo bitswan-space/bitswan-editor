@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import FormData from 'form-data';
 import JSZip from 'jszip';
 import urlJoin from 'proper-url-join';
@@ -15,6 +16,33 @@ import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/
 import { sanitizeName } from '../utils/nameUtils';
 import { refreshAutomationsCommand } from './automations';
 import { ensureAutomationImageReady } from '../utils/automationImageBuilder';
+
+/**
+ * Recursively copies all files and directories from srcDir to destDir, preserving the directory structure.
+ * Equivalent to `cp -r srcDir/* destDir/`
+ */
+function copyDirectoryRecursive(srcDir: string, destDir: string): void {
+    if (!fs.existsSync(srcDir)) {
+        return;
+    }
+    
+    fs.mkdirSync(destDir, { recursive: true });
+    const entries = fs.readdirSync(srcDir, { withFileTypes: true });
+    
+    for (const entry of entries) {
+        const srcPath = path.join(srcDir, entry.name);
+        const destPath = path.join(destDir, entry.name);
+        
+        if (entry.isDirectory()) {
+            // Recursively copy subdirectory, preserving structure
+            copyDirectoryRecursive(srcPath, destPath);
+        } else if (entry.isFile()) {
+            // Copy file to corresponding location in destDir
+            const data = fs.readFileSync(srcPath);
+            fs.writeFileSync(destPath, data);
+        }
+    }
+}
 
 export async function deployCommandAbstract(
     context: vscode.ExtensionContext, 
@@ -73,11 +101,8 @@ export async function deployCommandAbstract(
             deployUrl = urlJoin(details.deployUrl, itemSet, normalizedFolderName).toString();
 
             outputChannel.appendLine(messages[itemSet]["url"] + `: ${deployUrl}`);
+            let checksum: string; // calculate checksum after bitswan_lib added to automation source
 
-            progress.report({ increment: 0, message: "Calculating checksum..." });
-
-            // Calculate git tree hash for the directory
-            let checksum: string;
             try {
                 checksum = await calculateGitTreeHash(folderPath, outputChannel);
                 outputChannel.appendLine(`Calculated checksum: ${checksum}`);
@@ -95,16 +120,35 @@ export async function deployCommandAbstract(
                     throw new Error(`Failed to prepare automation image: ${imageError.message || imageError}`);
                 }
 
-                if (imageBuildResult) {
-                    outputChannel.appendLine("Recalculating checksum after image preparation...");
-                    try {
-                        checksum = await calculateGitTreeHash(folderPath, outputChannel);
-                        outputChannel.appendLine(`Recalculated checksum: ${checksum}`);
-                    } catch (error: any) {
-                        outputChannel.appendLine(`Warning: Failed to recalculate git tree hash: ${error.message}`);
-                        throw new Error(`Failed to recalculate checksum after image preparation: ${error.message}`);
+                // Create temporary directory to pack contents before checksum calculation
+                const tmpDirPath = fs.mkdtempSync(path.join(os.tmpdir(), 'bitswan-deploy-'));
+                let tmpDirCreated = true;
+                
+                try {
+                    // Copy folderPath contents to temporary directory (recursively)
+                    outputChannel.appendLine(`Copying ${folderPath} to temporary directory...`);
+                    copyDirectoryRecursive(folderPath, tmpDirPath);
+                    
+                    // Copy bitswanLibPath contents to temporary directory (recursively) if it exists
+                    const workspacePath = path.join(workspaceFolders[0].uri.fsPath, 'workspace');
+                    const bitswanLibPath = path.join(workspacePath, 'bitswan_lib');
+                    if (fs.existsSync(bitswanLibPath)) {
+                        outputChannel.appendLine(`bitswan_lib found at ${bitswanLibPath}`);
+                        outputChannel.appendLine(`Copying bitswan_lib from ${bitswanLibPath} to temporary directory...`);
+                        copyDirectoryRecursive(bitswanLibPath, tmpDirPath);
+                    } else {
+                        outputChannel.appendLine(`Warning. No bitswan_lib found at ${bitswanLibPath}`);
                     }
-                }
+
+                    // Calculate checksum on the temporary directory (which contains what will be in the archive)
+                    progress.report({ increment: 10, message: "Calculating checksum..." });
+                    try {
+                        checksum = await calculateGitTreeHash(tmpDirPath, outputChannel);
+                        outputChannel.appendLine(`Calculated checksum: ${checksum}`);
+                    } catch (error: any) {
+                        outputChannel.appendLine(`Warning: Failed to calculate git tree hash: ${error.message}`);
+                        throw new Error(`Failed to calculate checksum: ${error.message}`);
+                    }
 
                 // For automations, check if asset already exists by looking at the automations list
                 progress.report({ increment: 10, message: "Checking if asset already exists..." });
@@ -128,42 +172,45 @@ export async function deployCommandAbstract(
                     outputChannel.appendLine(`Warning: Failed to check asset existence: ${error.message}, proceeding with upload`);
                 }
 
-                if (!assetExists) {
-                    progress.report({ increment: 20, message: "Packing..." });
+                    if (!assetExists) {
+                        progress.report({ increment: 20, message: "Packing..." });
 
-                    // Zip the pipeline config folder and add it to the form
-                    let zip = await zipDirectory(folderPath, '', JSZip(), outputChannel);
-                    const workspacePath = path.join(workspaceFolders[0].uri.fsPath, 'workspace')
-                    const bitswanLibPath = path.join(workspacePath, 'bitswan_lib')
-                    if (fs.existsSync(bitswanLibPath)) {
-                        zip = await zipDirectory(bitswanLibPath, '', zip, outputChannel);
-                        outputChannel.appendLine(`bitswan_lib found at ${bitswanLibPath}`);
-                    } else {
-                        outputChannel.appendLine(`Warning. No bitswan_lib found at ${bitswanLibPath}`);
+                        // Zip the temporary directory (which contains the flattened contents)
+                        const zip = await zipDirectory(tmpDirPath, '', JSZip(), outputChannel);
+                        const stream = await zip2stream(zip);
+                        form.append('file', stream, {
+                            filename: 'deployment.zip',
+                            contentType: 'application/zip',
+                        });
+                        // Add checksum to form
+                        form.append('checksum', checksum);
+
+                        progress.report({ increment: 50, message: "Uploading asset..." });
+
+                        // Upload asset with pre-calculated checksum
+                        const assetsUploadUrl = urlJoin(details.deployUrl, "automations", "assets", "upload").toString();
+                        const uploadResult = await uploadAsset(assetsUploadUrl, form, details.deploySecret);
+                        
+                        if (!uploadResult || !uploadResult.checksum) {
+                            throw new Error("Failed to upload asset");
+                        }
+
+                        // Verify the checksum matches
+                        if (uploadResult.checksum !== checksum) {
+                            outputChannel.appendLine(`Warning: Server checksum (${uploadResult.checksum}) differs from calculated checksum (${checksum})`);
+                        }
+                        outputChannel.appendLine(`Asset uploaded with checksum: ${checksum}`);
                     }
-                    const stream = await zip2stream(zip);
-                    form.append('file', stream, {
-                        filename: 'deployment.zip',
-                        contentType: 'application/zip',
-                    });
-                    // Add checksum to form
-                    form.append('checksum', checksum);
-
-                    progress.report({ increment: 50, message: "Uploading asset..." });
-
-                    // Upload asset with pre-calculated checksum
-                    const assetsUploadUrl = urlJoin(details.deployUrl, "automations", "assets", "upload").toString();
-                    const uploadResult = await uploadAsset(assetsUploadUrl, form, details.deploySecret);
-                    
-                    if (!uploadResult || !uploadResult.checksum) {
-                        throw new Error("Failed to upload asset");
+                } finally {
+                    // Clean up temporary directory
+                    if (tmpDirCreated && fs.existsSync(tmpDirPath)) {
+                        try {
+                            fs.rmSync(tmpDirPath, { recursive: true, force: true });
+                            outputChannel.appendLine(`Cleaned up temporary directory: ${tmpDirPath}`);
+                        } catch (cleanupError: any) {
+                            outputChannel.appendLine(`Warning: Failed to clean up temporary directory: ${cleanupError.message}`);
+                        }
                     }
-
-                    // Verify the checksum matches
-                    if (uploadResult.checksum !== checksum) {
-                        outputChannel.appendLine(`Warning: Server checksum (${uploadResult.checksum}) differs from calculated checksum (${checksum})`);
-                    }
-                    outputChannel.appendLine(`Asset uploaded with checksum: ${checksum}`);
                 }
 
                 // For automations, use the promotion workflow
