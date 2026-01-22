@@ -5,6 +5,7 @@ import JSZip from "jszip";
 import axios from "axios";
 import urlJoin from "proper-url-join";
 import * as vscode from "vscode";
+import * as toml from "@iarna/toml";
 
 import { sanitizeName } from "./nameUtils";
 import {
@@ -24,6 +25,15 @@ export interface AutomationImageResult {
 
 const IMAGE_FOLDER_NAME = "image";
 
+// Types for config file handling
+type ConfigFormat = "toml" | "ini";
+
+interface ConfigState {
+  format: ConfigFormat;
+  filePath: string;
+  imageValue: string | null;
+}
+
 interface PipelinesDeploymentSectionState {
   pipelinesConfPath: string;
   lines: string[];
@@ -31,6 +41,56 @@ interface PipelinesDeploymentSectionState {
   preLineIndex: number;
   preValue: string | null;
   newline: string;
+}
+
+interface AutomationTomlState {
+  automationTomlPath: string;
+  data: toml.JsonMap;
+  imageValue: string | null;
+}
+
+/**
+ * Detect which config format is available in the automation folder.
+ * Priority: automation.toml > pipelines.conf
+ */
+function detectConfigFormat(automationFolderPath: string): ConfigFormat | null {
+  const tomlPath = path.join(automationFolderPath, "automation.toml");
+  const iniPath = path.join(automationFolderPath, "pipelines.conf");
+
+  if (fs.existsSync(tomlPath)) {
+    return "toml";
+  }
+  if (fs.existsSync(iniPath)) {
+    return "ini";
+  }
+  return null;
+}
+
+/**
+ * Load automation.toml state
+ */
+function loadAutomationTomlState(
+  automationFolderPath: string
+): AutomationTomlState | null {
+  const automationTomlPath = path.join(automationFolderPath, "automation.toml");
+  if (!fs.existsSync(automationTomlPath)) {
+    return null;
+  }
+
+  try {
+    const content = fs.readFileSync(automationTomlPath, "utf-8");
+    const data = toml.parse(content);
+    const deployment = (data.deployment as toml.JsonMap) || {};
+    const imageValue = (deployment.image as string) || null;
+
+    return {
+      automationTomlPath,
+      data,
+      imageValue,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function loadPipelinesDeploymentSection(
@@ -76,9 +136,31 @@ function loadPipelinesDeploymentSection(
   };
 }
 
-function getCurrentPreValue(automationFolderPath: string): string | null {
-  const section = loadPipelinesDeploymentSection(automationFolderPath);
-  return section?.preValue ?? null;
+/**
+ * Get the current image value from either automation.toml or pipelines.conf
+ */
+function getCurrentImageValue(automationFolderPath: string): ConfigState | null {
+  // Try automation.toml first
+  const tomlState = loadAutomationTomlState(automationFolderPath);
+  if (tomlState) {
+    return {
+      format: "toml",
+      filePath: tomlState.automationTomlPath,
+      imageValue: tomlState.imageValue,
+    };
+  }
+
+  // Fall back to pipelines.conf
+  const iniState = loadPipelinesDeploymentSection(automationFolderPath);
+  if (iniState) {
+    return {
+      format: "ini",
+      filePath: iniState.pipelinesConfPath,
+      imageValue: iniState.preValue,
+    };
+  }
+
+  return null;
 }
 
 function extractChecksumFromTag(tag: string): string | null {
@@ -86,7 +168,56 @@ function extractChecksumFromTag(tag: string): string | null {
   return match ? match[1] : null;
 }
 
-async function updatePipelinesPreValue(
+/**
+ * Update automation.toml with new image value
+ */
+async function updateAutomationTomlImageValue(
+  automationFolderPath: string,
+  newImageValue: string,
+  outputChannel: vscode.OutputChannel
+): Promise<void> {
+  const state = loadAutomationTomlState(automationFolderPath);
+
+  if (!state) {
+    // Create new automation.toml
+    const automationTomlPath = path.join(automationFolderPath, "automation.toml");
+    const newData: toml.JsonMap = {
+      deployment: {
+        image: newImageValue,
+      },
+    };
+    fs.writeFileSync(automationTomlPath, toml.stringify(newData), "utf-8");
+    outputChannel.appendLine(
+      `Created automation.toml with image value ${newImageValue}`
+    );
+    return;
+  }
+
+  const { automationTomlPath, data, imageValue } = state;
+
+  if (imageValue === newImageValue) {
+    outputChannel.appendLine(
+      `automation.toml image already points to ${newImageValue}, no update needed`
+    );
+    return;
+  }
+
+  // Update the image value
+  if (!data.deployment) {
+    data.deployment = {};
+  }
+  (data.deployment as toml.JsonMap).image = newImageValue;
+
+  fs.writeFileSync(automationTomlPath, toml.stringify(data), "utf-8");
+  outputChannel.appendLine(
+    `Updated automation.toml image value to ${newImageValue}`
+  );
+}
+
+/**
+ * Update pipelines.conf with new pre value
+ */
+async function updatePipelinesConfPreValue(
   automationFolderPath: string,
   newPreValue: string,
   outputChannel: vscode.OutputChannel
@@ -141,6 +272,33 @@ async function updatePipelinesPreValue(
   } else {
     outputChannel.appendLine(
       `pipelines.conf pre already points to ${newPreValue}, no update needed`
+    );
+  }
+}
+
+/**
+ * Update the image reference in the appropriate config file.
+ * Uses automation.toml if it exists, otherwise pipelines.conf.
+ */
+async function updateImageReference(
+  automationFolderPath: string,
+  newImageValue: string,
+  outputChannel: vscode.OutputChannel
+): Promise<void> {
+  const configFormat = detectConfigFormat(automationFolderPath);
+
+  if (configFormat === "toml") {
+    await updateAutomationTomlImageValue(
+      automationFolderPath,
+      newImageValue,
+      outputChannel
+    );
+  } else {
+    // Default to pipelines.conf (will create if needed)
+    await updatePipelinesConfPreValue(
+      automationFolderPath,
+      newImageValue,
+      outputChannel
     );
   }
 }
@@ -267,26 +425,31 @@ export async function ensureAutomationImageReady(
 
   const checksum = await calculateGitTreeHash(imageFolder, outputChannel);
   const expectedTag = `internal/${normalizedName}:sha${checksum}`;
-  const currentPreValue = getCurrentPreValue(automationFolderPath);
-  const currentPreChecksum = currentPreValue
-    ? extractChecksumFromTag(currentPreValue)
+
+  // Get current image value from either config format
+  const configState = getCurrentImageValue(automationFolderPath);
+  const currentImageValue = configState?.imageValue ?? null;
+  const currentImageChecksum = currentImageValue
+    ? extractChecksumFromTag(currentImageValue)
     : null;
 
-  if (currentPreValue) {
-    const checksumInfo = currentPreChecksum
-      ? ` (checksum ${currentPreChecksum})`
+  if (currentImageValue) {
+    const checksumInfo = currentImageChecksum
+      ? ` (checksum ${currentImageChecksum})`
       : "";
+    const configFile = configState?.format === "toml" ? "automation.toml" : "pipelines.conf";
+    const fieldName = configState?.format === "toml" ? "image" : "pre";
     outputChannel.appendLine(
-      `pipelines.conf pre currently set to ${currentPreValue}${checksumInfo}`
+      `${configFile} ${fieldName} currently set to ${currentImageValue}${checksumInfo}`
     );
   } else {
     outputChannel.appendLine(
-      "pipelines.conf pre entry not found, it will be created if the build succeeds"
+      "No image reference found in config, it will be created if the build succeeds"
     );
   }
 
-  const writePreReference = async () =>
-    updatePipelinesPreValue(automationFolderPath, expectedTag, outputChannel);
+  const writeImageReference = async () =>
+    updateImageReference(automationFolderPath, expectedTag, outputChannel);
 
   const imagesUrl = urlJoin(details.deployUrl, "images").toString();
   let images = await getImages(imagesUrl, details.deploySecret);
@@ -299,7 +462,7 @@ export async function ensureAutomationImageReady(
     outputChannel.appendLine(
       `Image ${expectedTag} already built, skipping rebuild`
     );
-    await writePreReference();
+    await writeImageReference();
     return {
       checksum,
       imageTag: expectedTag,
@@ -332,7 +495,7 @@ export async function ensureAutomationImageReady(
     (!existing.build_status || existing.build_status === "ready")
   ) {
     outputChannel.appendLine(`Image ${expectedTag} built successfully`);
-    await writePreReference();
+    await writeImageReference();
     return {
       checksum,
       imageTag: expectedTag,
@@ -351,11 +514,10 @@ export async function ensureAutomationImageReady(
     throw new Error(`Image ${expectedTag} failed to build`);
   }
 
-  await writePreReference();
+  await writeImageReference();
   return {
     checksum,
     imageTag: expectedTag,
     status: "ready",
   };
 }
-

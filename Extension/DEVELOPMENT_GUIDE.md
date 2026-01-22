@@ -121,17 +121,67 @@ FROM bitswan/pipeline-runtime-environment:2025-17915492359-git-e5c422a #image wi
 RUN pip install -U openai #Further installs for the automations container
 ```
 
-## Configuration with `pipelines.conf`
-Role: holds environment/config for your automation, wiring sources, sinks, deployments, and secrets.
+## Configuration Files
 
-Examples:
+BitSwan supports two configuration formats for automations:
 
-- Deployed automation (typical):
-  ```ini
-  [deployment]
-  pre=internal/<AutomationName> # this is where the Dockerfile gets imported
-  expose=true
-  ```
+### `automation.toml` (Recommended)
+
+The new simplified TOML format for automation deployment configuration. This format is preferred for new automations.
+
+```toml
+[deployment]
+image = "bitswan/pipeline-runtime-environment:latest"  # Docker image (replaces "pre")
+port = 8080  # Application port (default: 8080)
+
+# Exposure options (mutually exclusive - use ONE of the following):
+expose = true                      # Public internet access
+# OR
+expose_to = ["admin", "users"]     # OAuth2 protected, specific Keycloak groups only
+```
+
+**Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `image` | string | Docker image for the automation runtime |
+| `port` | integer | Application port (default: 8080) |
+| `expose` | boolean | Expose publicly to internet |
+| `expose_to` | array | Expose to specific Keycloak groups (OAuth2 protected) |
+
+**Note:** `expose` and `expose_to` are mutually exclusive - use one or the other.
+
+**Key differences from `pipelines.conf`:**
+- Uses TOML syntax instead of INI
+- `image` replaces `pre` for specifying the Docker image
+- Files are mounted to `/app/` instead of `/opt/pipelines`
+- No `[secrets]` section (secrets are managed separately via the Secrets Manager)
+- No `[docker]` section (uses sensible defaults)
+
+### `pipelines.conf` (Legacy)
+
+The original INI format, still fully supported for backward compatibility.
+
+```ini
+[deployment]
+pre=internal/<AutomationName>  # Docker image
+expose=true
+port=8080
+
+[secrets]
+groups = group_name1 group_name2
+```
+
+### Config Priority & Mount Paths
+
+| Config File | Priority | Mount Path |
+|-------------|----------|------------|
+| `automation.toml` | 1 (highest) | `/app/` |
+| `pipelines.conf` | 2 | `/opt/pipelines` |
+
+If both files exist, `automation.toml` takes precedence for deployment settings.
+
+### Secrets
 
 Secrets in `pipelines.conf` reference secret groups backed by the groups you've created in your `secrets` tab.
 
