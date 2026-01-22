@@ -10,7 +10,7 @@ type TemplateInfo = {
     iconSvg: string;
 };
 
-const TEMPLATES_ROOT = '/home/coder/workspace/examples';
+const TEMPLATES_ROOT = '/workspace/examples';
 
 function readTemplateToml(filePath: string): TemplateInfo | null {
     try {

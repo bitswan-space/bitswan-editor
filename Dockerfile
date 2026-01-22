@@ -126,6 +126,10 @@ RUN chown -R coder:coder /opt/bitswan-extension
 RUN chown -R coder:coder /opt/bitswan-frame
 RUN chown -R coder:coder /home/coder
 
+# Create /workspace directory for the new volume mount structure
+RUN mkdir -p /workspace
+RUN chown -R coder:coder /workspace
+
 # ============================================
 # Source code and build steps (copy late)
 # ============================================
@@ -151,5 +155,5 @@ USER coder
 
 EXPOSE 9999
 
-WORKDIR /home/coder/
+WORKDIR /workspace
 ENTRYPOINT ["/usr/bin/update-entrypoint.sh"]

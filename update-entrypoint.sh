@@ -7,6 +7,14 @@ mkdir -p ${EXTENSIONS_DIR}
 mkdir -p ${TEMP_EXTENSIONS_DIR}
 mkdir -p "$(dirname "$EXTENSIONS_VERSION_FILE")"
 
+# Create symlink from /home/coder/workspace to /workspace for backward compatibility
+if [ ! -L /home/coder/workspace ] && [ ! -d /home/coder/workspace ]; then
+    ln -s /workspace /home/coder/workspace
+    echo "Created symlink: /home/coder/workspace -> /workspace"
+elif [ -d /home/coder/workspace ] && [ ! -L /home/coder/workspace ]; then
+    echo "WARNING: /home/coder/workspace exists as a directory. Migration may be needed."
+fi
+
 if [ "$UPDATE_CA_CERTIFICATES" = "true" ]; then
     echo "Updating CA certificates..."
     if [ -d /usr/local/share/ca-certificates/custom ]; then
@@ -182,7 +190,7 @@ echo "- Version tracking file: $EXTENSIONS_VERSION_FILE"
 echo ""
 
 # Copy virtual environment
-cp -r /opt/.bitswan /home/coder/workspace
+cp -r /opt/.bitswan /workspace
 
 # Set up environment for MSAL
 export ELECTRON_DISABLE_SECURITY_WARNINGS=1
@@ -226,11 +234,11 @@ fi
 
 # Start code-server on internal port
 echo "Starting code-server on internal port ${INTERNAL_CODE_SERVER_PORT}..."
-cd /home/coder/workspace/workspace
+cd /workspace/workspace
 /usr/bin/entrypoint.sh \
   --bind-addr "127.0.0.1:${INTERNAL_CODE_SERVER_PORT}" \
   --auth ${CODE_SERVER_AUTH} \
-  /home/coder/workspace/workspace &
+  /workspace/workspace &
 CODE_SERVER_PID=$!
 
 chown -R coder:coder /home/coder
