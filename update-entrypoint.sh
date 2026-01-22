@@ -165,19 +165,97 @@ install_or_update_extension_local "ms-python.vscode-pylance" "$PYLANCE_EXTENSION
 install_or_update_extension_local "ms-python.python" "$PYTHON_EXTENSION_VERSION" "/opt/extensions/python.vsix"
 install_or_update_extension_local "ms-toolsai.jupyter" "$JUPYTER_EXTENSION_VERSION" "/opt/extensions/jupyter.vsix"
 
-# Install locally built BitSwan extension
-echo "Installing locally built BitSwan extension..."
-LOCAL_EXTENSION_PATH="/opt/bitswan-extension/bitswan-extension.vsix"
-if [ -f "$LOCAL_EXTENSION_PATH" ]; then
-    # Extract version from the built extension
-    EXTENSION_VERSION=$(unzip -p "$LOCAL_EXTENSION_PATH" extension/package.json | jq -r .version)
-    if [ -n "$EXTENSION_VERSION" ] && [ "$EXTENSION_VERSION" != "null" ]; then
-        install_or_update_extension_local "libertyacesltd.bitswan" "$EXTENSION_VERSION" "$LOCAL_EXTENSION_PATH"
+# Auto-detect dev mode if extension source is available in workspace
+# This allows automatic dev mode when the bitswan-editor repo is mounted
+DEV_MODE_AUTO_DETECT_PATH="/workspace/workspace/AOC/bitswan-editor/Extension"
+if [ "$BITSWAN_DEV_MODE" != "true" ] && [ -z "$BITSWAN_EXTENSION_DEV_DIR" ]; then
+    if [ -f "$DEV_MODE_AUTO_DETECT_PATH/package.json" ]; then
+        # Verify this is actually the bitswan extension
+        DETECTED_EXT_NAME=$(jq -r .name "$DEV_MODE_AUTO_DETECT_PATH/package.json" 2>/dev/null)
+        if [ "$DETECTED_EXT_NAME" = "bitswan" ]; then
+            echo "========================================"
+            echo "AUTO-DETECTED DEV MODE: Found extension source at $DEV_MODE_AUTO_DETECT_PATH"
+            echo "========================================"
+            export BITSWAN_DEV_MODE="true"
+            export BITSWAN_EXTENSION_DEV_DIR="$DEV_MODE_AUTO_DETECT_PATH"
+        fi
+    fi
+fi
+
+# Install locally built BitSwan extension (or set up dev mode)
+if [ "$BITSWAN_DEV_MODE" = "true" ] && [ -n "$BITSWAN_EXTENSION_DEV_DIR" ] && [ -d "$BITSWAN_EXTENSION_DEV_DIR" ]; then
+    echo "========================================"
+    echo "DEV MODE: Setting up extension development environment"
+    echo "========================================"
+
+    # Extract extension info from the dev directory
+    DEV_PACKAGE_JSON="$BITSWAN_EXTENSION_DEV_DIR/package.json"
+    if [ -f "$DEV_PACKAGE_JSON" ]; then
+        DEV_EXT_NAME=$(jq -r .name "$DEV_PACKAGE_JSON")
+        DEV_EXT_PUBLISHER=$(jq -r .publisher "$DEV_PACKAGE_JSON")
+        DEV_EXT_VERSION=$(jq -r .version "$DEV_PACKAGE_JSON")
+        DEV_EXT_ID="${DEV_EXT_PUBLISHER,,}.${DEV_EXT_NAME}-${DEV_EXT_VERSION}"
+
+        echo "Extension: ${DEV_EXT_PUBLISHER}.${DEV_EXT_NAME} v${DEV_EXT_VERSION}"
+
+        # Remove any existing installed version of the extension
+        echo "Removing existing installed extension versions..."
+        rm -rf "${EXTENSIONS_DIR}/${DEV_EXT_PUBLISHER,,}.${DEV_EXT_NAME}"* 2>/dev/null || true
+
+        # Create symlink to the dev extension directory
+        # The extension directory needs to be named correctly for VS Code to recognize it
+        DEV_EXT_SYMLINK="${EXTENSIONS_DIR}/${DEV_EXT_ID}"
+
+        echo "Creating symlink: $DEV_EXT_SYMLINK -> $BITSWAN_EXTENSION_DEV_DIR"
+        ln -sf "$BITSWAN_EXTENSION_DEV_DIR" "$DEV_EXT_SYMLINK"
+
+        # Install dependencies if node_modules doesn't exist or package-lock.json is newer
+        if [ ! -d "$BITSWAN_EXTENSION_DEV_DIR/node_modules" ] || [ "$BITSWAN_EXTENSION_DEV_DIR/package.json" -nt "$BITSWAN_EXTENSION_DEV_DIR/node_modules" ]; then
+            echo "Installing extension dependencies..."
+            (cd "$BITSWAN_EXTENSION_DEV_DIR" && npm install)
+        fi
+
+        # Build the extension if out directory doesn't exist
+        if [ ! -d "$BITSWAN_EXTENSION_DEV_DIR/out" ]; then
+            echo "Building extension..."
+            (cd "$BITSWAN_EXTENSION_DEV_DIR" && npm run compile 2>/dev/null || npm run build 2>/dev/null || true)
+        fi
+
+        # Start the watch process in background
+        echo "Starting extension watch process in background..."
+        (cd "$BITSWAN_EXTENSION_DEV_DIR" && npm run watch 2>&1 | while read line; do echo "[ext-watch] $line"; done) &
+        WATCH_PID=$!
+        echo "Extension watch PID: $WATCH_PID"
+
+        echo "DEV MODE: Extension development environment ready!"
+        echo "To reload extension changes: run 'Developer: Reload Window' in code-server"
+        echo "========================================"
     else
-        echo "Failed to extract version from locally built extension"
+        echo "DEV MODE ERROR: package.json not found in $BITSWAN_EXTENSION_DEV_DIR"
+        echo "Falling back to pre-built extension..."
+        # Fall back to normal installation
+        LOCAL_EXTENSION_PATH="/opt/bitswan-extension/bitswan-extension.vsix"
+        if [ -f "$LOCAL_EXTENSION_PATH" ]; then
+            EXTENSION_VERSION=$(unzip -p "$LOCAL_EXTENSION_PATH" extension/package.json | jq -r .version)
+            if [ -n "$EXTENSION_VERSION" ] && [ "$EXTENSION_VERSION" != "null" ]; then
+                install_or_update_extension_local "libertyacesltd.bitswan" "$EXTENSION_VERSION" "$LOCAL_EXTENSION_PATH"
+            fi
+        fi
     fi
 else
-    echo "Locally built BitSwan extension not found at $LOCAL_EXTENSION_PATH"
+    echo "Installing locally built BitSwan extension..."
+    LOCAL_EXTENSION_PATH="/opt/bitswan-extension/bitswan-extension.vsix"
+    if [ -f "$LOCAL_EXTENSION_PATH" ]; then
+        # Extract version from the built extension
+        EXTENSION_VERSION=$(unzip -p "$LOCAL_EXTENSION_PATH" extension/package.json | jq -r .version)
+        if [ -n "$EXTENSION_VERSION" ] && [ "$EXTENSION_VERSION" != "null" ]; then
+            install_or_update_extension_local "libertyacesltd.bitswan" "$EXTENSION_VERSION" "$LOCAL_EXTENSION_PATH"
+        else
+            echo "Failed to extract version from locally built extension"
+        fi
+    else
+        echo "Locally built BitSwan extension not found at $LOCAL_EXTENSION_PATH"
+    fi
 fi
 
 # Extension installation summary
