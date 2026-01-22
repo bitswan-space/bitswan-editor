@@ -4,7 +4,7 @@ COPY Extension/ ./
 RUN npm install
 RUN npx vsce package --out bitswan-extension.vsix
 
-FROM --platform=linux/amd64 codercom/code-server:4.104.3-ubuntu
+FROM --platform=linux/amd64 codercom/code-server:4.108.1-ubuntu
 
 ENV VSCODE_AGENT_FOLDER=/home/coder/.vscode-server
 ENV VSCODE_EXTENSIONS_FOLDER=/home/coder/.local/share/code-server/extensions
@@ -38,7 +38,21 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     gnupg \
     lsb-release \
-    tmux
+    libevent-dev \
+    libncurses-dev \
+    bison \
+    autoconf \
+    automake \
+    git
+
+# Build and install tmux from git for latest features
+RUN git clone https://github.com/tmux/tmux.git /tmp/tmux && \
+    cd /tmp/tmux && \
+    sh autogen.sh && \
+    ./configure && \
+    make && \
+    make install && \
+    rm -rf /tmp/tmux
 RUN (type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
 	&& sudo mkdir -p -m 755 /etc/apt/keyrings \
 	&& out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \

@@ -71,7 +71,7 @@ start_session() {
         "run-shell \"echo \\\"\$(date '+%Y-%m-%d %H:%M:%S') DETACHED #{client_name} #{client_tty}\\\" >> $session_dir/clients.log\""
 
     # Start script recording inside the session, then launch claude
-    tmux send-keys -t "$SESSION_NAME" "script --flush --timing=$timing_file $session_file -c $CLAUDE_BIN" Enter
+    tmux send-keys -t "$SESSION_NAME" "script --flush --timing=$timing_file $session_file -c '$CLAUDE_BIN --dangerously-skip-permissions'" Enter
 
     echo "Started new mob session with claude in $work_dir"
     echo "Recording to: $session_file"
