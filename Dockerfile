@@ -1,8 +1,8 @@
 FROM --platform=linux/amd64 node:18-alpine AS extension_builder
 WORKDIR /build
 COPY Extension/ ./
-RUN npm install
-RUN npx vsce package --out bitswan-extension.vsix
+RUN npm install && chmod +x node_modules/.bin/*
+RUN npm exec vsce -- package --out bitswan-extension.vsix
 
 FROM --platform=linux/amd64 codercom/code-server:4.108.1-ubuntu
 
