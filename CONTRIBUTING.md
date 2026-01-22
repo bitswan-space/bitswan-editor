@@ -91,7 +91,10 @@ To reload extension changes: run 'Developer: Reload Window' in code-server
 
 After making changes to the extension source:
 1. The watch process automatically recompiles TypeScript
-2. Run "Developer: Reload Window" in code-server to load the changes
+2. Run "Developer: Reload Window" in code-server (Command Palette → "Developer: Reload Window")
+3. Refresh your web browser to see the changes
+
+Note: Both steps 2 and 3 are required - reloading the window updates the extension host, and refreshing the browser ensures the UI reflects the changes.
 
 ### Disabling Dev Mode
 
