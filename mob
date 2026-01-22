@@ -1,0 +1,188 @@
+#!/bin/bash
+set -e
+
+MOB_DIR="${MOB_DIR:-$HOME/mob-recordings}"
+SESSION_NAME="mob"
+CLAUDE_BIN="$HOME/.local/bin/claude"
+
+ensure_claude() {
+    if [[ ! -x "$CLAUDE_BIN" ]]; then
+        echo "Claude CLI not found. Installing..."
+        curl -fsSL https://claude.ai/install.sh | bash
+        if [[ ! -x "$CLAUDE_BIN" ]]; then
+            echo "Error: Claude installation failed."
+            exit 1
+        fi
+        echo "Claude CLI installed successfully."
+    else
+        echo "Checking for Claude CLI updates..."
+        "$CLAUDE_BIN" update 2>/dev/null || true
+    fi
+}
+
+usage() {
+    cat <<EOF
+mob - Multiplayer mob programming with shared terminal sessions
+
+Usage: mob [command]
+
+Commands:
+  (none)      Start a new session or join existing one
+  watch       Join as read-only observer
+  end         End the mob session
+  replay      Replay a recording (optionally specify date)
+  list        List available recordings
+  status      Show current mob session status
+
+Examples:
+  mob                        # Start or join mob session
+  mob watch                  # Join as observer
+  mob replay                 # Replay today's recording
+  mob replay 2026-01-21      # Replay a specific day
+EOF
+}
+
+ensure_session_dir() {
+    local date_dir="$MOB_DIR/$(date +%F)"
+    mkdir -p "$date_dir"
+    echo "$date_dir"
+}
+
+start_session() {
+    # Ensure claude is installed and up-to-date before starting
+    ensure_claude
+
+    local session_dir
+    session_dir=$(ensure_session_dir)
+    local timestamp
+    timestamp=$(date +%H%M%S)
+    local timing_file="$session_dir/timing-$timestamp.log"
+    local session_file="$session_dir/session-$timestamp.log"
+    local work_dir
+    work_dir=$(pwd)
+
+    # Create tmux session with recording, starting in current directory
+    tmux new-session -d -s "$SESSION_NAME" -x 200 -y 50 -c "$work_dir"
+
+    # Add client attach/detach logging hooks
+    tmux set-hook -t "$SESSION_NAME" client-attached \
+        "run-shell \"echo \\\"\$(date '+%Y-%m-%d %H:%M:%S') ATTACHED #{client_name} #{client_tty}\\\" >> $session_dir/clients.log\""
+    tmux set-hook -t "$SESSION_NAME" client-detached \
+        "run-shell \"echo \\\"\$(date '+%Y-%m-%d %H:%M:%S') DETACHED #{client_name} #{client_tty}\\\" >> $session_dir/clients.log\""
+
+    # Start script recording inside the session, then launch claude
+    tmux send-keys -t "$SESSION_NAME" "script --flush --timing=$timing_file $session_file -c $CLAUDE_BIN" Enter
+
+    echo "Started new mob session with claude in $work_dir"
+    echo "Recording to: $session_file"
+    echo ""
+    sleep 1
+}
+
+cmd_mob() {
+    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+        echo "Joining mob session..."
+        tmux attach -t "$SESSION_NAME"
+    else
+        start_session
+        echo "Ctrl-b d to detach without ending session"
+        tmux attach -t "$SESSION_NAME"
+    fi
+}
+
+cmd_watch() {
+    if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+        echo "No mob session running. Run 'mob' to start one."
+        exit 1
+    fi
+    echo "Joining mob session (read-only)..."
+    tmux attach -r -t "$SESSION_NAME"
+}
+
+cmd_end() {
+    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+        tmux kill-session -t "$SESSION_NAME"
+        echo "Mob session ended."
+    else
+        echo "No mob session running."
+    fi
+}
+
+cmd_replay() {
+    local date_arg="${1:-$(date +%F)}"
+    local session_dir="$MOB_DIR/$date_arg"
+
+    if [[ ! -d "$session_dir" ]]; then
+        echo "No recordings found for $date_arg"
+        echo "Use 'mob list' to see available recordings."
+        exit 1
+    fi
+
+    # Find the most recent recording for that day
+    local timing_file
+    timing_file=$(ls -t "$session_dir"/timing-*.log 2>/dev/null | head -1)
+    local session_file
+    session_file=$(ls -t "$session_dir"/session-*.log 2>/dev/null | head -1)
+
+    if [[ -z "$timing_file" || -z "$session_file" ]]; then
+        echo "No complete recordings found in $session_dir"
+        exit 1
+    fi
+
+    echo "Replaying: $session_file"
+    echo "Press Ctrl-C to stop playback."
+    echo ""
+    scriptreplay --timing="$timing_file" "$session_file"
+}
+
+cmd_list() {
+    if [[ ! -d "$MOB_DIR" ]]; then
+        echo "No recordings directory found."
+        exit 0
+    fi
+
+    echo "Available recordings in $MOB_DIR:"
+    echo ""
+    for dir in "$MOB_DIR"/*/; do
+        if [[ -d "$dir" ]]; then
+            local date_name
+            date_name=$(basename "$dir")
+            local count
+            count=$(ls "$dir"/session-*.log 2>/dev/null | wc -l)
+            if [[ $count -gt 0 ]]; then
+                echo "  $date_name ($count recording(s))"
+            fi
+        fi
+    done
+}
+
+cmd_status() {
+    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+        echo "Mob session '$SESSION_NAME' is RUNNING"
+        echo ""
+        echo "Connected clients:"
+        tmux list-clients -t "$SESSION_NAME" 2>/dev/null || echo "  (none currently attached)"
+    else
+        echo "No mob session running."
+    fi
+}
+
+# Parse arguments
+case "${1:-}" in
+    watch)  cmd_watch ;;
+    end)    cmd_end ;;
+    replay) shift; cmd_replay "$@" ;;
+    list)   cmd_list ;;
+    status) cmd_status ;;
+    -h|--help|help)
+        usage
+        ;;
+    "")
+        cmd_mob
+        ;;
+    *)
+        echo "Unknown command: $1"
+        echo "Run 'mob --help' for usage."
+        exit 1
+        ;;
+esac
