@@ -209,14 +209,27 @@ if [ "$BITSWAN_DEV_MODE" = "true" ] && [ -n "$BITSWAN_EXTENSION_DEV_DIR" ] && [ 
         echo "Creating symlink: $DEV_EXT_SYMLINK -> $BITSWAN_EXTENSION_DEV_DIR"
         ln -sf "$BITSWAN_EXTENSION_DEV_DIR" "$DEV_EXT_SYMLINK"
 
-        # Install dependencies if node_modules doesn't exist or package-lock.json is newer
+        # Install dependencies if node_modules doesn't exist or package.json is newer
         if [ ! -d "$BITSWAN_EXTENSION_DEV_DIR/node_modules" ] || [ "$BITSWAN_EXTENSION_DEV_DIR/package.json" -nt "$BITSWAN_EXTENSION_DEV_DIR/node_modules" ]; then
             echo "Installing extension dependencies..."
             (cd "$BITSWAN_EXTENSION_DEV_DIR" && npm install)
         fi
 
-        # Build the extension if out directory doesn't exist
+        # Fix permissions on binaries (npm doesn't always set executable bit)
+        if [ -d "$BITSWAN_EXTENSION_DEV_DIR/node_modules/.bin" ]; then
+            chmod +x "$BITSWAN_EXTENSION_DEV_DIR/node_modules/.bin/"* 2>/dev/null || true
+        fi
+
+        # Build the extension if out directory doesn't exist or source is newer
+        NEEDS_BUILD=false
         if [ ! -d "$BITSWAN_EXTENSION_DEV_DIR/out" ]; then
+            NEEDS_BUILD=true
+        elif [ -n "$(find "$BITSWAN_EXTENSION_DEV_DIR/src" -newer "$BITSWAN_EXTENSION_DEV_DIR/out" -name '*.ts' 2>/dev/null | head -1)" ]; then
+            echo "Source files are newer than compiled output..."
+            NEEDS_BUILD=true
+        fi
+
+        if [ "$NEEDS_BUILD" = "true" ]; then
             echo "Building extension..."
             (cd "$BITSWAN_EXTENSION_DEV_DIR" && npm run compile 2>/dev/null || npm run build 2>/dev/null || true)
         fi
