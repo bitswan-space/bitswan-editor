@@ -208,7 +208,11 @@ async function updateAutomationTomlImageValue(
   }
   (data.deployment as toml.JsonMap).image = newImageValue;
 
-  fs.writeFileSync(automationTomlPath, toml.stringify(data), "utf-8");
+  // Stringify and remove underscores from numbers (TOML 1.0 feature not supported by Python's toml library)
+  let tomlContent = toml.stringify(data);
+  tomlContent = tomlContent.replace(/(\d)_(\d)/g, '$1$2');
+
+  fs.writeFileSync(automationTomlPath, tomlContent, "utf-8");
   outputChannel.appendLine(
     `Updated automation.toml image value to ${newImageValue}`
   );
