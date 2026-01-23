@@ -131,7 +131,6 @@ The new simplified TOML format for automation deployment configuration. This for
 
 ```toml
 [deployment]
-image = "bitswan/pipeline-runtime-environment:latest"  # Docker image (replaces "pre")
 port = 8080  # Application port (default: 8080)
 
 # Exposure options (mutually exclusive - use ONE of the following):
@@ -149,10 +148,60 @@ production = ["prod-secrets", "prod-db"]   # Secret groups for production stage
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `image` | string | Docker image for the automation runtime |
+| `image` | string | Docker image for the automation runtime (optional if using `image/` directory) |
 | `port` | integer | Application port (default: 8080) |
 | `expose` | boolean | Expose publicly to internet |
 | `expose_to` | array | Expose to specific Keycloak groups (OAuth2 protected) |
+
+### Custom Image with `image/` Directory
+
+Instead of specifying the `image` attribute directly, you can create an `image/` directory containing a `Dockerfile`. The image will be automatically built and used for your automation.
+
+**Project structure:**
+```
+automation/
+  automation.toml         # deployment config (no image attribute needed)
+  app/
+    main.py               # your application code
+  image/
+    Dockerfile            # custom Dockerfile
+    requirements.txt      # dependencies (optional)
+    entrypoint.sh         # entrypoint script (optional)
+```
+
+**Example `automation.toml` (no image attribute):**
+```toml
+[deployment]
+port = 8000
+expose = true
+```
+
+**Example `image/Dockerfile`:**
+```dockerfile
+FROM python:3.12-slim
+
+WORKDIR /deps
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+WORKDIR /app
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+```
+
+**How it works:**
+1. When you deploy, the extension detects the `image/` directory
+2. A custom image is built from the Dockerfile
+3. The `image` attribute in `automation.toml` is automatically set to the built image tag
+4. Your automation source code is mounted to `/app/` at runtime
+
+**Tips:**
+- Install dependencies during image build for faster startup (they persist across restarts)
+- Use an entrypoint script to set up symlinks or run build steps at container start
+- See `examples/ReactApp` and `examples/FastAPIApp` in the bitswan repository for complete examples
 
 **Secrets Options:**
 
