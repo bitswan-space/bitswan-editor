@@ -349,10 +349,10 @@ export function openAutomationTemplates(context: vscode.ExtensionContext, busine
                 groupDir = path.join(TEMPLATES_ROOT, groupId);
             }
 
-            // Prompt for group name
+            // Prompt for group name prefix
             const nameInput = await vscode.window.showInputBox({
                 title: 'New Automation Group Name',
-                prompt: `Enter a name for your automation group (will create ${group.automations.length} automations)`,
+                prompt: `Enter a prefix for your automations (will create: ${group.automations.map(a => `{prefix}-${a}`).join(', ')})`,
                 placeHolder: 'my-app',
                 validateInput: (value) => {
                     const sanitized = sanitizeName(value || '');
@@ -362,29 +362,34 @@ export function openAutomationTemplates(context: vscode.ExtensionContext, busine
             });
             if (!nameInput) return; // cancelled
 
-            const groupFolderName = sanitizeName(nameInput);
-            const groupTargetDir = path.join(businessProcessPath, groupFolderName);
+            const prefix = sanitizeName(nameInput);
 
-            try {
-                if (fs.existsSync(groupTargetDir)) {
-                    vscode.window.showErrorMessage(`A folder named "${groupFolderName}" already exists in this Business Process.`);
+            // Check that none of the target directories already exist
+            const targetDirs: { name: string; src: string; dest: string }[] = [];
+            for (const automationName of group.automations) {
+                const folderName = `${prefix}-${automationName}`;
+                const destDir = path.join(businessProcessPath, folderName);
+                if (fs.existsSync(destDir)) {
+                    vscode.window.showErrorMessage(`A folder named "${folderName}" already exists in this Business Process.`);
                     return;
                 }
+                targetDirs.push({
+                    name: folderName,
+                    src: path.join(groupDir, automationName),
+                    dest: destDir
+                });
+            }
 
-                // Create group directory
-                fs.mkdirSync(groupTargetDir, { recursive: true });
-
+            try {
                 // Copy each automation in the group
-                for (const automationName of group.automations) {
-                    const srcDir = path.join(groupDir, automationName);
-                    const destDir = path.join(groupTargetDir, automationName);
-                    copyDirectory(srcDir, destDir, () => true);
+                for (const { src, dest } of targetDirs) {
+                    copyDirectory(src, dest, () => true);
                 }
 
                 // Refresh sidebar
                 await vscode.commands.executeCommand('bitswan.refreshBusinessProcesses');
 
-                vscode.window.showInformationMessage(`Created automation group "${groupFolderName}" with ${group.automations.length} automations.`);
+                vscode.window.showInformationMessage(`Created ${targetDirs.length} automations: ${targetDirs.map(t => t.name).join(', ')}`);
                 panel.dispose();
             } catch (err) {
                 vscode.window.showErrorMessage(`Failed to create automation group: ${String(err)}`);
