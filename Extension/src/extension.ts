@@ -550,9 +550,11 @@ export function activate(context: vscode.ExtensionContext) {
             })(context, automationsProvider, automationItem);
         });
     
-    let deleteAutomationCommand = vscode.commands.registerCommand('bitswan.deleteAutomation', 
+    let deleteAutomationCommand = vscode.commands.registerCommand('bitswan.deleteAutomation',
         async (item: AutomationItem | StageItem) => {
             const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
+            // Only require confirmation prompt for production deployments
+            const requirePrompt = !(item instanceof StageItem) || item.stage === 'production';
             return itemCommands.makeItemCommand({
                 title: `Deleting Automation ${automationItem.name}`,
                 initialProgress: 'Sending request to GitOps...',
@@ -562,7 +564,7 @@ export function activate(context: vscode.ExtensionContext) {
                 successMessage: `Automation ${automationItem.name} deleted successfully`,
                 errorMessage: `Failed to delete automation ${automationItem.name}:`,
                 errorLogPrefix: 'Automation Delete Error:',
-                prompt: true
+                prompt: requirePrompt
             })(context, automationsProvider, automationItem);
         });
 
