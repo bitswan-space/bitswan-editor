@@ -53,18 +53,19 @@ export class AutomationSourceItem extends vscode.TreeItem {
 }
 
 /**
- * Tree item representing a stage (dev/staging/production) under an automation source
+ * Tree item representing a stage (live-dev/dev/staging/production) under an automation source
  */
 export class StageItem extends vscode.TreeItem {
     constructor(
-        public readonly stage: 'dev' | 'staging' | 'production',
+        public readonly stage: 'live-dev' | 'dev' | 'staging' | 'production',
         public readonly automationSourceName: string,
         public readonly automation: AutomationItem | null, // null if stage not deployed
         public readonly deploymentId: string, // The actual deployment_id (e.g., "my-automation-dev")
         public readonly checksum: string | null = null,
         public readonly sourceUri?: vscode.Uri // Filesystem path for the automation source
     ) {
-        const stageDisplayName = stage.charAt(0).toUpperCase() + stage.slice(1);
+        // Display name: "Live Dev" for live-dev, capitalized for others
+        const stageDisplayName = stage === 'live-dev' ? 'Live Dev' : stage.charAt(0).toUpperCase() + stage.slice(1);
         super(stageDisplayName, vscode.TreeItemCollapsibleState.None);
         
         if (sourceUri) {
@@ -415,15 +416,16 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         console.log(`[DEBUG] Sanitized sourceName: "${sanitizedSourceName}"`);
         
         // Map stages to their deployment IDs
-        const stageDeploymentIds = {
+        const stageDeploymentIds: Record<'live-dev' | 'dev' | 'staging' | 'production', string> = {
+            'live-dev': `${sanitizedSourceName}-live-dev`,
             dev: `${sanitizedSourceName}-dev`,
             staging: `${sanitizedSourceName}-staging`,
             production: sanitizedSourceName // Production uses base name without suffix
         };
-        
-        // Find automations for each stage
+
+        // Find automations for each stage (live-dev first for easy access during development)
         const stages: StageItem[] = [];
-        const stagesList: Array<'dev' | 'staging' | 'production'> = ['dev', 'staging', 'production'];
+        const stagesList: Array<'live-dev' | 'dev' | 'staging' | 'production'> = ['live-dev', 'dev', 'staging', 'production'];
         
         for (const stage of stagesList) {
             const deploymentId = stageDeploymentIds[stage];

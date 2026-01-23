@@ -5,6 +5,7 @@ import * as os from 'os';
 import FormData from 'form-data';
 import JSZip from 'jszip';
 import urlJoin from 'proper-url-join';
+import axios from 'axios';
 
 import { FolderItem } from '../views/sources_view';
 import { activateDeployment, deploy, zip2stream, zipDirectory, uploadAsset, promoteAutomation, calculateGitTreeHash, getImages, getAutomations } from '../lib';
@@ -352,9 +353,9 @@ export async function deployFromNotebookToolbarCommand(
 }
 
 export async function deployCommand(
-    context: vscode.ExtensionContext, 
-    treeDataProvider: AutomationSourcesViewProvider, 
-    folderItem: FolderItem, 
+    context: vscode.ExtensionContext,
+    treeDataProvider: AutomationSourcesViewProvider,
+    folderItem: FolderItem,
     itemSet: string,
     businessProcessesProvider?: UnifiedBusinessProcessesViewProvider,
     unifiedImagesProvider?: UnifiedImagesViewProvider,
@@ -362,4 +363,116 @@ export async function deployCommand(
 ) {
     var item : string = folderItem.resourceUri.fsPath;
     deployCommandAbstract(context, item, itemSet, treeDataProvider, businessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider);
+}
+
+/**
+ * Start a live dev server for an automation.
+ * This deploys the automation with stage="live-dev" which:
+ * - Mounts source code directly from the workspace for live editing
+ * - Runs with auto-reload enabled (hot module replacement for frontend, uvicorn --reload for backend)
+ */
+export async function startLiveDevServerCommand(
+    context: vscode.ExtensionContext,
+    folderPath: string,
+    businessProcessesProvider?: UnifiedBusinessProcessesViewProvider
+) {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders || workspaceFolders.length === 0) {
+        vscode.window.showErrorMessage('No workspace folder found');
+        return;
+    }
+
+    const details = await getDeployDetails(context);
+    if (!details) {
+        vscode.window.showErrorMessage('No deploy details configured');
+        return;
+    }
+
+    const folderName = path.basename(folderPath);
+    const normalizedFolderName = sanitizeName(folderName);
+
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: `Starting live dev server for ${folderName}`,
+        cancellable: false
+    }, async (progress) => {
+        try {
+            progress.report({ increment: 10, message: "Preparing automation..." });
+
+            // Build image if needed
+            const imageResult = await ensureAutomationImageReady(details, folderPath, outputChannel);
+            // imageResult is null if no image folder exists, which is fine
+
+            progress.report({ increment: 30, message: "Calculating checksum..." });
+
+            // Calculate checksum
+            const checksum = await calculateGitTreeHash(folderPath);
+
+            // Check if asset exists, upload if not
+            progress.report({ increment: 40, message: "Checking asset..." });
+            const assetsUrl = urlJoin(details.deployUrl, "automations", "assets").toString();
+            try {
+                const response = await axios.get(assetsUrl, {
+                    headers: { 'Authorization': `Bearer ${details.deploySecret}` }
+                });
+                const assets = response.data;
+                const assetExists = assets.some((asset: any) => asset.checksum === checksum);
+
+                if (!assetExists) {
+                    progress.report({ increment: 50, message: "Uploading asset..." });
+
+                    // Create temp directory and copy source
+                    const tmpDirPath = fs.mkdtempSync(path.join(os.tmpdir(), 'bitswan-live-dev-'));
+                    copyDirectoryRecursive(folderPath, tmpDirPath);
+
+                    // Zip and upload
+                    const zip = await zipDirectory(tmpDirPath, '', JSZip(), outputChannel);
+                    const stream = await zip2stream(zip);
+
+                    // Create form data for upload
+                    const form = new FormData();
+                    form.append('file', stream, {
+                        filename: 'deployment.zip',
+                        contentType: 'application/zip',
+                    });
+                    form.append('checksum', checksum);
+
+                    const uploadUrl = urlJoin(details.deployUrl, "automations", "assets", "upload").toString();
+                    await uploadAsset(uploadUrl, form, details.deploySecret);
+
+                    // Cleanup temp directory
+                    fs.rmSync(tmpDirPath, { recursive: true, force: true });
+                }
+            } catch (error: any) {
+                outputChannel.appendLine(`Warning: Could not check/upload asset: ${error.message}`);
+            }
+
+            progress.report({ increment: 70, message: "Starting live dev server..." });
+
+            // Get relative path for source mounting
+            const relativePath = path.relative(workspaceFolders[0].uri.fsPath, folderPath);
+
+            // Deploy to live-dev stage
+            const liveDevDeploymentId = `${normalizedFolderName}-live-dev`;
+            const deployUrl = urlJoin(details.deployUrl, "automations", liveDevDeploymentId, "deploy").toString();
+            const success = await promoteAutomation(deployUrl, details.deploySecret, checksum, 'live-dev', relativePath);
+
+            if (success) {
+                progress.report({ increment: 100, message: "Live dev server started!" });
+                vscode.window.showInformationMessage(
+                    `Live dev server started for ${folderName}. Changes to source files will auto-reload.`
+                );
+
+                // Refresh the view
+                if (businessProcessesProvider) {
+                    await refreshAutomationsCommand(context, businessProcessesProvider);
+                }
+            } else {
+                throw new Error('Failed to start live dev server');
+            }
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`Failed to start live dev server: ${error.message}`);
+            outputChannel.appendLine(`Live dev server error: ${error.message}`);
+        }
+    });
 }

@@ -132,6 +132,11 @@
         "icon": "$(cloud-upload)"
       },
       {
+        "command": "bitswan.startLiveDevServer",
+        "title": "Start Live Dev Server",
+        "icon": "$(debug-start)"
+      },
+      {
         "command": "bitswan.startBitswanKernel",
         "title": "Start Bitswan Kernel",
         "icon": "$(play)"
@@ -430,7 +435,12 @@
         },
         {
           "command": "bitswan.openExternalUrl",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,(dev|staging|production),deployed,active,.*,urlStatus:url/",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,(live-dev|dev|staging|production),deployed,active,.*,urlStatus:url/",
+          "group": "inline@1"
+        },
+        {
+          "command": "bitswan.startLiveDevServer",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,live-dev,notDeployed/",
           "group": "inline@1"
         },
         {

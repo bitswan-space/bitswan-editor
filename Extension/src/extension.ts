@@ -187,13 +187,31 @@ export function activate(context: vscode.ExtensionContext) {
     })();
 
     // Register commands using the new command modules
-    let deployCommand = vscode.commands.registerCommand('bitswan.deployAutomation', 
+    let deployCommand = vscode.commands.registerCommand('bitswan.deployAutomation',
         async (item: FolderItem | AutomationSourceItem) => {
             // Convert AutomationSourceItem to FolderItem if needed
-            const folderItem = item instanceof AutomationSourceItem 
+            const folderItem = item instanceof AutomationSourceItem
                 ? new FolderItem(item.name, item.resourceUri)
                 : item;
             return deploymentCommands.deployCommand(context, automationSourcesProvider, folderItem, "automations", unifiedBusinessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider);
+        });
+
+    let startLiveDevServerCommand = vscode.commands.registerCommand('bitswan.startLiveDevServer',
+        async (item: FolderItem | AutomationSourceItem | StageItem) => {
+            let folderPath: string;
+            if (item instanceof StageItem) {
+                // StageItem has sourceUri which points to the automation source directory
+                if (!item.sourceUri) {
+                    vscode.window.showErrorMessage('Cannot determine source path for this stage');
+                    return;
+                }
+                folderPath = item.sourceUri.fsPath;
+            } else if (item instanceof AutomationSourceItem) {
+                folderPath = item.resourceUri.fsPath;
+            } else {
+                folderPath = item.resourceUri.fsPath;
+            }
+            return deploymentCommands.startLiveDevServerCommand(context, folderPath, unifiedBusinessProcessesProvider);
         });
 
     let buildImageFromToolbarCommand = vscode.commands.registerCommand('bitswan.buildImageFromToolbar', 
@@ -635,6 +653,7 @@ export function activate(context: vscode.ExtensionContext) {
     
     // Register all commands
     context.subscriptions.push(deployCommand);
+    context.subscriptions.push(startLiveDevServerCommand);
     context.subscriptions.push(deployFromToolbarCommand);
     context.subscriptions.push(startKernelCommand);
     context.subscriptions.push(stopKernelCommand);
