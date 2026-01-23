@@ -584,8 +584,8 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                     
                     const fullPath = path.join(dirPath, entry.name);
                     
-                    // Check if this directory contains pipelines.conf (automation source marker)
-                    if (fs.existsSync(path.join(fullPath, 'pipelines.conf'))) {
+                    // Check if this directory contains automation.toml or pipelines.conf (automation source marker)
+                    if (fs.existsSync(path.join(fullPath, 'automation.toml')) || fs.existsSync(path.join(fullPath, 'pipelines.conf'))) {
                         const relativePath = path.relative(vscode.workspace.workspaceFolders![0].uri.fsPath, fullPath);
                         sources.push(new AutomationSourceItem(
                             relativePath,
@@ -619,8 +619,8 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                     return;
                 }
 
-                // Check if current directory has pipelines.conf
-                if (fs.existsSync(path.join(dirPath, 'pipelines.conf'))) {
+                // Check if current directory has automation.toml or pipelines.conf
+                if (fs.existsSync(path.join(dirPath, 'automation.toml')) || fs.existsSync(path.join(dirPath, 'pipelines.conf'))) {
                     // Only add if it's not the workspace root
                     if (dirPath !== rootPath) {
                         const relativePath = path.relative(rootPath, dirPath);
