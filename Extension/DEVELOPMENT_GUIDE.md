@@ -138,6 +138,11 @@ port = 8080  # Application port (default: 8080)
 expose = true                      # Public internet access
 # OR
 expose_to = ["admin", "users"]     # OAuth2 protected, specific Keycloak groups only
+
+[secrets]
+dev = ["dev-secrets", "dev-db"]           # Secret groups for dev stage
+staging = ["staging-secrets"]              # Secret groups for staging stage
+production = ["prod-secrets", "prod-db"]   # Secret groups for production stage
 ```
 
 **Options:**
@@ -149,13 +154,21 @@ expose_to = ["admin", "users"]     # OAuth2 protected, specific Keycloak groups 
 | `expose` | boolean | Expose publicly to internet |
 | `expose_to` | array | Expose to specific Keycloak groups (OAuth2 protected) |
 
+**Secrets Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `dev` | array | Secret groups for dev stage deployments |
+| `staging` | array | Secret groups for staging stage deployments |
+| `production` | array | Secret groups for production stage deployments |
+
 **Note:** `expose` and `expose_to` are mutually exclusive - use one or the other.
 
 **Key differences from `pipelines.conf`:**
 - Uses TOML syntax instead of INI
 - `image` replaces `pre` for specifying the Docker image
 - Files are mounted to `/app/` instead of `/opt/pipelines`
-- No `[secrets]` section (secrets are managed separately via the Secrets Manager)
+- Stage-specific secrets only (no general `groups` fallback like in pipelines.conf)
 - No `[docker]` section (uses sensible defaults)
 
 ### `pipelines.conf` (Legacy)
