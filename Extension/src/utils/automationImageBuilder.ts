@@ -102,6 +102,7 @@ export interface AutomationDeployConfig {
   port: number;
   mountPath: string;
   secretGroups?: string[];
+  ignore?: string[];
 }
 
 /**
@@ -136,6 +137,7 @@ export function getAutomationDeployConfig(automationFolderPath: string): Automat
     const deployment = (tomlState.data.deployment as toml.JsonMap) || {};
     const secrets = (tomlState.data.secrets as toml.JsonMap) || {};
     const liveDevSecrets = parseStringOrArray(secrets["live-dev"]);
+    const ignorePatterns = parseStringOrArray(deployment.ignore);
 
     return {
       image: (deployment.image as string) || defaults.image,
@@ -143,6 +145,7 @@ export function getAutomationDeployConfig(automationFolderPath: string): Automat
       port: (deployment.port as number) ?? defaults.port,
       mountPath: "/app/", // TOML format always uses /app/
       secretGroups: liveDevSecrets,
+      ignore: ignorePatterns,
     };
   }
 
@@ -449,7 +452,7 @@ async function startImageBuild(
 ): Promise<void> {
   const imageDir = path.join(automationFolderPath, IMAGE_FOLDER_NAME);
   let zip = await zipDirectory(imageDir, "", new JSZip(), outputChannel);
-  const stream = await zip2stream(zip);
+  const stream = zip2stream(zip);
 
   const form = new FormData();
   form.append("file", stream, {
@@ -490,7 +493,7 @@ export async function ensureAutomationImageReady(
   const automationName = path.basename(automationFolderPath);
   const normalizedName = sanitizeName(automationName);
 
-  const checksum = await calculateGitTreeHash(imageFolder, outputChannel);
+  const checksum = calculateGitTreeHash(imageFolder, outputChannel);
   const expectedTag = `internal/${normalizedName}:sha${checksum}`;
 
   // Get current image value from either config format
