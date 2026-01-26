@@ -739,18 +739,41 @@ export const uploadAsset = async (assetsUploadUrl: string, form: FormData, secre
   }
 }
 
+export interface AutomationConfigParams {
+  image?: string;
+  expose?: boolean;
+  port?: number;
+  mountPath?: string;
+}
+
 export const promoteAutomation = async (
   deployUrl: string,
   secret: string,
   checksum: string,
   stage: string,
-  relativePath?: string
+  relativePath?: string,
+  automationConfig?: AutomationConfigParams
 ) => {
   const form = new FormData();
   form.append('checksum', checksum);
   form.append('stage', stage);
   if (relativePath) {
     form.append('relative_path', relativePath);
+  }
+  // Send automation config for live-dev (so server doesn't need to read from filesystem)
+  if (automationConfig) {
+    if (automationConfig.image) {
+      form.append('image', automationConfig.image);
+    }
+    if (automationConfig.expose !== undefined) {
+      form.append('expose', automationConfig.expose.toString());
+    }
+    if (automationConfig.port !== undefined) {
+      form.append('port', automationConfig.port.toString());
+    }
+    if (automationConfig.mountPath) {
+      form.append('mount_path', automationConfig.mountPath);
+    }
   }
 
   const response = await axios.post(deployUrl, form, {

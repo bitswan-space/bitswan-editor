@@ -93,6 +93,51 @@ function loadAutomationTomlState(
   }
 }
 
+/**
+ * Automation config values needed for deployment
+ */
+export interface AutomationDeployConfig {
+  image: string;
+  expose: boolean;
+  port: number;
+  mountPath: string;
+}
+
+/**
+ * Read automation config from automation.toml or pipelines.conf.
+ * Returns config values needed for deployment.
+ */
+export function getAutomationDeployConfig(automationFolderPath: string): AutomationDeployConfig {
+  // Default values
+  const defaults: AutomationDeployConfig = {
+    image: "bitswan/pipeline-runtime-environment:latest",
+    expose: false,
+    port: 8080,
+    mountPath: "/opt/pipelines",
+  };
+
+  // Try automation.toml first
+  const tomlState = loadAutomationTomlState(automationFolderPath);
+  if (tomlState) {
+    const deployment = (tomlState.data.deployment as toml.JsonMap) || {};
+    return {
+      image: (deployment.image as string) || defaults.image,
+      expose: (deployment.expose as boolean) ?? defaults.expose,
+      port: (deployment.port as number) ?? defaults.port,
+      mountPath: "/app/", // TOML format always uses /app/
+    };
+  }
+
+  // Fall back to pipelines.conf
+  const pipelinesPath = path.join(automationFolderPath, "pipelines.conf");
+  if (fs.existsSync(pipelinesPath)) {
+    // For INI format, just return defaults with /opt/pipelines mount path
+    return defaults;
+  }
+
+  return defaults;
+}
+
 function loadPipelinesDeploymentSection(
   automationFolderPath: string
 ): PipelinesDeploymentSectionState | null {
