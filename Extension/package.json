@@ -369,6 +369,11 @@
           "group": "inline"
         },
         {
+          "command": "bitswan.startLiveDevServer",
+          "when": "view == bitswan-unified-business-processes && viewItem == automationSource",
+          "group": "inline@2"
+        },
+        {
           "command": "bitswan.jumpToSource",
           "when": "view == bitswan-unified-business-processes && viewItem == automationSource",
           "group": "inline@6"
