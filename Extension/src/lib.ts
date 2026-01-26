@@ -2,12 +2,44 @@ import axios, { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'ax
 
 import FormData from 'form-data';
 import JSZip from 'jszip';
+import archiver from 'archiver';
+import { minimatch } from 'minimatch';
 import { JupyterServerRequestResponse } from "./types";
-import { Readable } from 'stream';
+import { Readable, PassThrough } from 'stream';
 import path from 'path';
 import vscode from 'vscode';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+
+/**
+ * Check if a path should be ignored based on glob patterns.
+ * @param relativePath - The relative path to check (e.g., "node_modules" or "src/file.ts")
+ * @param ignorePatterns - Array of glob patterns to match against
+ * @returns true if the path should be ignored
+ */
+export function shouldIgnore(relativePath: string, ignorePatterns?: string[]): boolean {
+  if (!ignorePatterns || ignorePatterns.length === 0) {
+    return false;
+  }
+
+  // Normalize path separators for cross-platform compatibility
+  const normalizedPath = relativePath.replace(/\\/g, '/');
+
+  for (const pattern of ignorePatterns) {
+    // Match against the full path
+    if (minimatch(normalizedPath, pattern, { dot: true })) {
+      return true;
+    }
+    // Also match if any path segment matches (for patterns like "node_modules")
+    const segments = normalizedPath.split('/');
+    for (const segment of segments) {
+      if (minimatch(segment, pattern, { dot: true })) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 // Set up axios interceptors to log all GitOps network calls
 let interceptorsInitialized = false;
@@ -275,80 +307,105 @@ async function calculateGitBlobHash(filePath: string): Promise<string> {
  * Calculate git tree hash for a directory.
  * Implements git's tree object format directly without spawning git processes.
  * Tree format: "tree <size>\0<entries>" where each entry is "<mode> <name>\0<20-byte-sha1>"
+ * Uses synchronous fs operations to avoid VS Code API hangs.
  */
-async function calculateGitTreeHashRecursive(
+function calculateGitTreeHashRecursive(
   dirPath: string,
-  outputChannel?: vscode.OutputChannel
-): Promise<string> {
+  outputChannel?: vscode.OutputChannel,
+  relativePath: string = '',
+  ignorePatterns?: string[]
+): string {
   const entries: Array<{ mode: string; name: string; hash: string }> = [];
-  
-  const dirEntries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dirPath));
-  
-  // Process entries in sorted order (git requires sorted entries)
+
+  // Use synchronous fs.readdirSync instead of vscode.workspace.fs which can hang
+  const dirEntries = fs.readdirSync(dirPath, { withFileTypes: true });
+
+  // Convert to format compatible with sorting, filter .git and ignored patterns
   const sortedEntries = dirEntries
-  .filter(([name]) => name !== ".git")
-  .sort(gitTreeEntrySort);
-  
-  for (const [name, type] of sortedEntries) {
-    // Skip .git directory
-    if (name === '.git') {
-      continue;
-    }
-    
-    const fullPath = path.join(dirPath, name);
-    
-    if (type === vscode.FileType.Directory) {
-      // Recursively calculate tree hash for subdirectory
-      const treeHash = await calculateGitTreeHashRecursive(fullPath, outputChannel);
+    .filter(entry => {
+      if (entry.name === '.git') {
+        return false;
+      }
+      const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+      if (shouldIgnore(entryRelativePath, ignorePatterns)) {
+        if (outputChannel) {
+          outputChannel.appendLine(`Ignoring: ${entryRelativePath}`);
+        }
+        return false;
+      }
+      return true;
+    })
+    .map(entry => ({
+      name: entry.name,
+      isDirectory: entry.isDirectory(),
+      isFile: entry.isFile()
+    }))
+    .sort((a, b) => {
+      // Git sorts directories with trailing slash, using byte order (not locale)
+      const aName = a.isDirectory ? a.name + '/' : a.name;
+      const bName = b.isDirectory ? b.name + '/' : b.name;
+      // Use simple comparison for ASCII byte order like git does
+      if (aName < bName) return -1;
+      if (aName > bName) return 1;
+      return 0;
+    });
+
+  for (const entry of sortedEntries) {
+    const fullPath = path.join(dirPath, entry.name);
+    const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+
+    if (entry.isDirectory) {
+      const treeHash = calculateGitTreeHashRecursive(fullPath, outputChannel, entryRelativePath, ignorePatterns);
       entries.push({
-        mode: '040000', // Directory mode
-        name: name,
+        mode: '040000',
+        name: entry.name,
         hash: treeHash
       });
-    } else if (type === vscode.FileType.File) {
-      // Calculate blob hash for file
-      // Check if file is executable (simplified: check if it has execute permission)
-      // In practice, git uses 100644 for regular files and 100755 for executables
-      // For simplicity, we'll use 100644 (regular file) unless we can detect executable
-      let mode = '100644';
-      try {
-        const stats = fs.statSync(fullPath);
-        // Check if file is executable (Unix: any execute bit set)
-        if (stats.mode & 0o111) {
-          mode = '100755';
-        }
-      } catch {
-        // If we can't stat, default to regular file
+      if (outputChannel) {
+        outputChannel.appendLine(`CHECKSUM DIR:  ${entryRelativePath}/ -> ${treeHash}`);
       }
-      
-      const blobHash = await calculateGitBlobHash(fullPath);
+    } else if (entry.isFile) {
+      // Always use 100644 mode - zip extraction doesn't preserve executable bits reliably
+      const blobHash = calculateGitBlobHashSync(fullPath);
       entries.push({
-        mode: mode,
-        name: name,
+        mode: '100644',
+        name: entry.name,
         hash: blobHash
       });
+      if (outputChannel) {
+        outputChannel.appendLine(`CHECKSUM FILE: ${entryRelativePath} -> 100644 ${blobHash}`);
+      }
     }
   }
-  
-  // Build tree object: "tree <size>\0<entries>"
+
+  // Build tree object
   const entryBuffers: Buffer[] = [];
   for (const entry of entries) {
-    // Each entry: "<mode> <name>\0<20-byte-sha1>"
     const hashBuffer = Buffer.from(entry.hash, 'hex');
     const entryStr = `${entry.mode} ${entry.name}\0`;
     entryBuffers.push(Buffer.from(entryStr, 'utf8'));
     entryBuffers.push(hashBuffer);
   }
-  
+
   const treeContent = Buffer.concat(entryBuffers);
-  const treeSize = treeContent.length;
-  const treeHeader = Buffer.from(`tree ${treeSize}\0`);
+  const treeHeader = Buffer.from(`tree ${treeContent.length}\0`);
   const treeObject = Buffer.concat([treeHeader, treeContent]);
-  
-  // Calculate SHA1 hash of tree object
-  const treeHash = crypto.createHash('sha1').update(treeObject).digest('hex');
-  
-  return treeHash;
+
+  const finalHash = crypto.createHash('sha1').update(treeObject).digest('hex');
+  if (outputChannel && relativePath === '') {
+    outputChannel.appendLine(`=== CLIENT CHECKSUM CALCULATION END: ${finalHash} ===`);
+  }
+  return finalHash;
+}
+
+/**
+ * Synchronous version of blob hash calculation
+ */
+function calculateGitBlobHashSync(filePath: string): string {
+  const content = fs.readFileSync(filePath);
+  const header = Buffer.from(`blob ${content.length}\0`);
+  const blob = Buffer.concat([header, content]);
+  return crypto.createHash('sha1').update(blob).digest('hex');
 }
 
 /**
@@ -356,17 +413,24 @@ async function calculateGitTreeHashRecursive(
  * This implementation directly calculates the hash without spawning git processes,
  * making it much more efficient.
  */
-export const calculateGitTreeHash = async (
+export const calculateGitTreeHash = (
   dirPath: string,
-  outputChannel?: vscode.OutputChannel
-): Promise<string> => {
+  outputChannel?: vscode.OutputChannel,
+  ignorePatterns?: string[]
+): string => {
   try {
-    const treeHash = await calculateGitTreeHashRecursive(dirPath, outputChannel);
-    
+    if (outputChannel) {
+      outputChannel.appendLine(`=== CLIENT CHECKSUM CALCULATION START for ${dirPath} ===`);
+      if (ignorePatterns && ignorePatterns.length > 0) {
+        outputChannel.appendLine(`Ignoring patterns: ${ignorePatterns.join(', ')}`);
+      }
+    }
+    const treeHash = calculateGitTreeHashRecursive(dirPath, outputChannel, '', ignorePatterns);
+
     if (outputChannel) {
       outputChannel.appendLine(`Calculated git tree hash: ${treeHash}`);
     }
-    
+
     return treeHash;
   } catch (error: any) {
     if (outputChannel) {
@@ -375,6 +439,122 @@ export const calculateGitTreeHash = async (
     throw new Error(`Failed to calculate git tree hash: ${error.message}`);
   }
 };
+
+/**
+ * Calculate git tree hash for merged directories without copying files.
+ * Later directories override earlier ones (like bitswan_lib overriding automation files).
+ */
+export const calculateMergedGitTreeHash = (
+  dirPaths: string[],
+  outputChannel?: vscode.OutputChannel,
+  ignorePatterns?: string[]
+): string => {
+  if (outputChannel) {
+    outputChannel.appendLine(`=== CLIENT MERGED CHECKSUM CALCULATION START for ${dirPaths.length} directories ===`);
+    for (const dp of dirPaths) {
+      outputChannel.appendLine(`  - ${dp}`);
+    }
+    if (ignorePatterns && ignorePatterns.length > 0) {
+      outputChannel.appendLine(`Ignoring patterns: ${ignorePatterns.join(', ')}`);
+    }
+  }
+  const treeHash = calculateMergedGitTreeHashRecursive(dirPaths, '', outputChannel, ignorePatterns);
+  if (outputChannel) {
+    outputChannel.appendLine(`Calculated merged git tree hash: ${treeHash}`);
+  }
+  return treeHash;
+};
+
+function calculateMergedGitTreeHashRecursive(
+  dirPaths: string[],
+  relativePath: string,
+  outputChannel?: vscode.OutputChannel,
+  ignorePatterns?: string[]
+): string {
+  // Build a map of name -> {sourcePath, isDirectory}, with later directories overwriting earlier ones
+  const entryMap = new Map<string, { sourcePath: string; isDirectory: boolean }>();
+
+  for (const dirPath of dirPaths) {
+    const fullDirPath = relativePath ? path.join(dirPath, relativePath) : dirPath;
+
+    // Use synchronous fs to avoid VS Code API hangs
+    if (!fs.existsSync(fullDirPath)) {
+      continue;
+    }
+    const stat = fs.statSync(fullDirPath);
+    if (!stat.isDirectory()) {
+      continue;
+    }
+
+    const dirEntries = fs.readdirSync(fullDirPath, { withFileTypes: true });
+
+    for (const entry of dirEntries) {
+      if (entry.name === '.git') {
+        continue;
+      }
+      const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+      if (shouldIgnore(entryRelativePath, ignorePatterns)) {
+        if (outputChannel) {
+          outputChannel.appendLine(`Ignoring: ${entryRelativePath}`);
+        }
+        continue;
+      }
+      entryMap.set(entry.name, {
+        sourcePath: path.join(fullDirPath, entry.name),
+        isDirectory: entry.isDirectory()
+      });
+    }
+  }
+
+  // Sort entries using git's sorting rules
+  const sortedEntries = Array.from(entryMap.entries())
+    .map(([name, entry]) => ({ name, ...entry }))
+    .sort((a, b) => {
+      const aName = a.isDirectory ? a.name + '/' : a.name;
+      const bName = b.isDirectory ? b.name + '/' : b.name;
+      return aName.localeCompare(bName);
+    });
+
+  const entries: Array<{ mode: string; name: string; hash: string }> = [];
+
+  for (const entry of sortedEntries) {
+    const childRelativePath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+
+    if (entry.isDirectory) {
+      const treeHash = calculateMergedGitTreeHashRecursive(dirPaths, childRelativePath, outputChannel, ignorePatterns);
+      entries.push({ mode: '040000', name: entry.name, hash: treeHash });
+      if (outputChannel) {
+        outputChannel.appendLine(`CHECKSUM DIR:  ${childRelativePath}/ -> ${treeHash}`);
+      }
+    } else {
+      // Always use 100644 mode - zip extraction doesn't preserve executable bits reliably
+      const blobHash = calculateGitBlobHashSync(entry.sourcePath);
+      entries.push({ mode: '100644', name: entry.name, hash: blobHash });
+      if (outputChannel) {
+        outputChannel.appendLine(`CHECKSUM FILE: ${childRelativePath} -> 100644 ${blobHash}`);
+      }
+    }
+  }
+
+  // Build tree object
+  const entryBuffers: Buffer[] = [];
+  for (const entry of entries) {
+    const hashBuffer = Buffer.from(entry.hash, 'hex');
+    const entryStr = `${entry.mode} ${entry.name}\0`;
+    entryBuffers.push(Buffer.from(entryStr, 'utf8'));
+    entryBuffers.push(hashBuffer);
+  }
+
+  const treeContent = Buffer.concat(entryBuffers);
+  const treeHeader = Buffer.from(`tree ${treeContent.length}\0`);
+  const treeObject = Buffer.concat([treeHeader, treeContent]);
+
+  const finalHash = crypto.createHash('sha1').update(treeObject).digest('hex');
+  if (outputChannel && relativePath === '') {
+    outputChannel.appendLine(`=== CLIENT MERGED CHECKSUM CALCULATION END: ${finalHash} ===`);
+  }
+  return finalHash;
+}
 
 export const zipDirectory = async (dirPath: string, relativePath: string = '', zipFile: JSZip = new JSZip(), outputChannel: vscode.OutputChannel) => {
 
@@ -395,16 +575,170 @@ export const zipDirectory = async (dirPath: string, relativePath: string = '', z
   return zipFile;
 };
 
+/**
+ * Create a zip from multiple directories without copying files.
+ * Later directories in the array override files from earlier directories.
+ * This streams files directly from source, avoiding temp directory creation.
+ * Uses synchronous fs operations to avoid VS Code API hangs.
+ */
+export const zipMergedDirectories = (
+  dirPaths: string[],
+  outputChannel: vscode.OutputChannel
+): JSZip => {
+  const zipFile = new JSZip();
+  zipMergedDirectoriesRecursive(dirPaths, '', zipFile, outputChannel);
+  return zipFile;
+};
 
-export const zip2stream = async (zipFile: JSZip) => {
-  const stream = new Readable();
+function zipMergedDirectoriesRecursive(
+  dirPaths: string[],
+  relativePath: string,
+  zipFile: JSZip,
+  outputChannel: vscode.OutputChannel
+): void {
+  // Build a map of name -> sourcePath, with later directories overwriting earlier ones
+  const fileMap = new Map<string, { sourcePath: string; isDirectory: boolean }>();
 
-  stream.push(await zipFile.generateAsync({ type: 'nodebuffer' }));
-  stream.push(null);
+  for (const dirPath of dirPaths) {
+    const fullDirPath = relativePath ? path.join(dirPath, relativePath) : dirPath;
 
-  return stream;
+    // Use synchronous fs to avoid VS Code API hangs
+    if (!fs.existsSync(fullDirPath)) {
+      continue;
+    }
+    const stat = fs.statSync(fullDirPath);
+    if (!stat.isDirectory()) {
+      continue;
+    }
 
+    const entries = fs.readdirSync(fullDirPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (entry.name === '.git') {
+        continue;
+      }
+      fileMap.set(entry.name, {
+        sourcePath: path.join(fullDirPath, entry.name),
+        isDirectory: entry.isDirectory()
+      });
+    }
+  }
+
+  // Process all entries
+  for (const [name, entry] of fileMap) {
+    const zipPath = relativePath ? path.join(relativePath, name) : name;
+
+    if (entry.isDirectory) {
+      // Recursively process subdirectory from all source paths
+      zipMergedDirectoriesRecursive(dirPaths, zipPath, zipFile, outputChannel);
+    } else {
+      // Use a stream for lazy file reading - files are only read when zip is generated
+      outputChannel.appendLine(`Zipping: ${zipPath}`);
+      zipFile.file(zipPath, fs.createReadStream(entry.sourcePath));
+    }
+  }
 }
+
+
+export const zip2stream = (zipFile: JSZip): NodeJS.ReadableStream => {
+  // Use generateNodeStream for true streaming - generates zip on-the-fly
+  // instead of buffering the entire zip in memory
+  return zipFile.generateNodeStream({ type: 'nodebuffer', streamFiles: true });
+}
+
+/**
+ * Create a true streaming zip from multiple directories using archiver.
+ * Files are discovered and compressed as the stream is consumed, not beforehand.
+ * Later directories in the array override files from earlier directories.
+ * Returns a readable stream that can be piped directly to upload.
+ */
+export const createStreamingZip = (
+  dirPaths: string[],
+  outputChannel: vscode.OutputChannel,
+  ignorePatterns?: string[]
+): NodeJS.ReadableStream => {
+  const archive = archiver('zip', {
+    zlib: { level: 6 } // Compression level
+  });
+
+  // Handle archive errors
+  archive.on('error', (err) => {
+    outputChannel.appendLine(`Archive error: ${err.message}`);
+    throw err;
+  });
+
+  archive.on('warning', (err) => {
+    if (err.code === 'ENOENT') {
+      outputChannel.appendLine(`Archive warning: ${err.message}`);
+    } else {
+      throw err;
+    }
+  });
+
+  // Log when entries are added (this happens as stream is consumed)
+  archive.on('entry', (entry) => {
+    outputChannel.appendLine(`Streaming: ${entry.name}`);
+  });
+
+  if (ignorePatterns && ignorePatterns.length > 0) {
+    outputChannel.appendLine(`Ignoring patterns: ${ignorePatterns.join(', ')}`);
+  }
+
+  // Build file map with later directories overriding earlier ones
+  const addFilesFromMergedDirs = (relativePath: string = '') => {
+    const fileMap = new Map<string, { sourcePath: string; isDirectory: boolean }>();
+
+    for (const dirPath of dirPaths) {
+      const fullDirPath = relativePath ? path.join(dirPath, relativePath) : dirPath;
+
+      if (!fs.existsSync(fullDirPath)) {
+        continue;
+      }
+      const stat = fs.statSync(fullDirPath);
+      if (!stat.isDirectory()) {
+        continue;
+      }
+
+      const entries = fs.readdirSync(fullDirPath, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (entry.name === '.git') {
+          continue;
+        }
+        const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+        if (shouldIgnore(entryRelativePath, ignorePatterns)) {
+          outputChannel.appendLine(`Ignoring: ${entryRelativePath}`);
+          continue;
+        }
+        fileMap.set(entry.name, {
+          sourcePath: path.join(fullDirPath, entry.name),
+          isDirectory: entry.isDirectory()
+        });
+      }
+    }
+
+    // Process all entries
+    for (const [name, entry] of fileMap) {
+      const zipPath = relativePath ? path.join(relativePath, name) : name;
+
+      if (entry.isDirectory) {
+        // Recursively process subdirectory
+        addFilesFromMergedDirs(zipPath);
+      } else {
+        // Add file to archive - archiver streams file content when needed
+        archive.file(entry.sourcePath, { name: zipPath });
+      }
+    }
+  };
+
+  // Start adding files (this queues them for streaming)
+  addFilesFromMergedDirs();
+
+  // Finalize the archive - stream will complete when all files are processed
+  archive.finalize();
+
+  return archive;
+};
 
 
 export const deploy = async (
@@ -727,9 +1061,40 @@ export const heartbeatJupyterServer = async (
 export const uploadAsset = async (assetsUploadUrl: string, form: FormData, secret: string) => {
   const response = await axios.post(assetsUploadUrl, form, {
     headers: {
-      'Content-Type': 'multipart/form-data',
+      ...form.getHeaders(),
       'Authorization': `Bearer ${secret}`
     },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+  });
+
+  if (response.status === 200) {
+    return response.data;
+  } else {
+    throw new Error(`Failed to upload asset: ${response.status}`);
+  }
+}
+
+/**
+ * Upload asset using streaming endpoint.
+ * Sends raw zip data with checksum in X-Checksum header.
+ * This endpoint supports chunked transfer encoding for true streaming.
+ */
+export const uploadAssetStream = async (
+  uploadUrl: string,
+  stream: NodeJS.ReadableStream,
+  checksum: string,
+  secret: string
+) => {
+  const response = await axios.post(uploadUrl, stream, {
+    headers: {
+      'Content-Type': 'application/zip',
+      'X-Checksum': checksum,
+      'Authorization': `Bearer ${secret}`,
+      'Transfer-Encoding': 'chunked',
+    },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
   });
 
   if (response.status === 200) {
