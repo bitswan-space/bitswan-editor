@@ -397,65 +397,23 @@ export async function startLiveDevServerCommand(
         cancellable: false
     }, async (progress) => {
         try {
-            progress.report({ increment: 10, message: "Preparing automation..." });
+            progress.report({ increment: 20, message: "Preparing automation image..." });
 
             // Build image if needed
             const imageResult = await ensureAutomationImageReady(details, folderPath, outputChannel);
             // imageResult is null if no image folder exists, which is fine
 
-            progress.report({ increment: 30, message: "Calculating checksum..." });
-
-            // Calculate checksum
-            const checksum = await calculateGitTreeHash(folderPath);
-
-            // Check if asset exists, upload if not
-            progress.report({ increment: 40, message: "Checking asset..." });
-            const assetsUrl = urlJoin(details.deployUrl, "automations", "assets").toString();
-            try {
-                const response = await axios.get(assetsUrl, {
-                    headers: { 'Authorization': `Bearer ${details.deploySecret}` }
-                });
-                const assets = response.data;
-                const assetExists = assets.some((asset: any) => asset.checksum === checksum);
-
-                if (!assetExists) {
-                    progress.report({ increment: 50, message: "Uploading asset..." });
-
-                    // Create temp directory and copy source
-                    const tmpDirPath = fs.mkdtempSync(path.join(os.tmpdir(), 'bitswan-live-dev-'));
-                    copyDirectoryRecursive(folderPath, tmpDirPath);
-
-                    // Zip and upload
-                    const zip = await zipDirectory(tmpDirPath, '', JSZip(), outputChannel);
-                    const stream = await zip2stream(zip);
-
-                    // Create form data for upload
-                    const form = new FormData();
-                    form.append('file', stream, {
-                        filename: 'deployment.zip',
-                        contentType: 'application/zip',
-                    });
-                    form.append('checksum', checksum);
-
-                    const uploadUrl = urlJoin(details.deployUrl, "automations", "assets", "upload").toString();
-                    await uploadAsset(uploadUrl, form, details.deploySecret);
-
-                    // Cleanup temp directory
-                    fs.rmSync(tmpDirPath, { recursive: true, force: true });
-                }
-            } catch (error: any) {
-                outputChannel.appendLine(`Warning: Could not check/upload asset: ${error.message}`);
-            }
-
-            progress.report({ increment: 70, message: "Starting live dev server..." });
+            progress.report({ increment: 60, message: "Starting live dev server..." });
 
             // Get relative path for source mounting
             const relativePath = path.relative(workspaceFolders[0].uri.fsPath, folderPath);
 
             // Deploy to live-dev stage
+            // For live-dev, we use a placeholder checksum since the source is mounted directly
+            // and changes are reflected immediately without redeployment
             const liveDevDeploymentId = `${normalizedFolderName}-live-dev`;
             const deployUrl = urlJoin(details.deployUrl, "automations", liveDevDeploymentId, "deploy").toString();
-            const success = await promoteAutomation(deployUrl, details.deploySecret, checksum, 'live-dev', relativePath);
+            const success = await promoteAutomation(deployUrl, details.deploySecret, 'live-dev', 'live-dev', relativePath);
 
             if (success) {
                 progress.report({ increment: 100, message: "Live dev server started!" });
