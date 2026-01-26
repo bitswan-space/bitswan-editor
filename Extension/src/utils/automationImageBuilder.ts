@@ -101,12 +101,26 @@ export interface AutomationDeployConfig {
   expose: boolean;
   port: number;
   mountPath: string;
+  secretGroups?: string[];
 }
 
 /**
  * Read automation config from automation.toml or pipelines.conf.
  * Returns config values needed for deployment.
  */
+/**
+ * Parse a TOML value that can be either a string or array of strings.
+ */
+function parseStringOrArray(value: unknown): string[] | undefined {
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (Array.isArray(value)) {
+    return value.filter((v): v is string => typeof v === "string");
+  }
+  return undefined;
+}
+
 export function getAutomationDeployConfig(automationFolderPath: string): AutomationDeployConfig {
   // Default values
   const defaults: AutomationDeployConfig = {
@@ -120,11 +134,15 @@ export function getAutomationDeployConfig(automationFolderPath: string): Automat
   const tomlState = loadAutomationTomlState(automationFolderPath);
   if (tomlState) {
     const deployment = (tomlState.data.deployment as toml.JsonMap) || {};
+    const secrets = (tomlState.data.secrets as toml.JsonMap) || {};
+    const liveDevSecrets = parseStringOrArray(secrets["live-dev"]);
+
     return {
       image: (deployment.image as string) || defaults.image,
       expose: (deployment.expose as boolean) ?? defaults.expose,
       port: (deployment.port as number) ?? defaults.port,
       mountPath: "/app/", // TOML format always uses /app/
+      secretGroups: liveDevSecrets,
     };
   }
 

@@ -744,6 +744,7 @@ export interface AutomationConfigParams {
   expose?: boolean;
   port?: number;
   mountPath?: string;
+  secretGroups?: string[];
 }
 
 export const promoteAutomation = async (
@@ -773,6 +774,9 @@ export const promoteAutomation = async (
     }
     if (automationConfig.mountPath) {
       form.append('mount_path', automationConfig.mountPath);
+    }
+    if (automationConfig.secretGroups && automationConfig.secretGroups.length > 0) {
+      form.append('secret_groups', automationConfig.secretGroups.join(','));
     }
   }
 
