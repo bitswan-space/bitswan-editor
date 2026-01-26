@@ -320,10 +320,22 @@ function calculateGitTreeHashRecursive(
   // Use synchronous fs.readdirSync instead of vscode.workspace.fs which can hang
   const dirEntries = fs.readdirSync(dirPath, { withFileTypes: true });
 
-  // Convert to format compatible with sorting, filter .git and ignored patterns
+  // Convert to format compatible with sorting, filter .git, symlinks, and ignored patterns
   const sortedEntries = dirEntries
     .filter(entry => {
       if (entry.name === '.git') {
+        return false;
+      }
+      // Skip symlinks - they should not be included in deployments
+      if (entry.isSymbolicLink()) {
+        const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+        if (outputChannel) {
+          outputChannel.appendLine(`Skipping symlink: ${entryRelativePath}`);
+        }
+        return false;
+      }
+      // Only include regular files and directories
+      if (!entry.isFile() && !entry.isDirectory()) {
         return false;
       }
       const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
@@ -492,6 +504,18 @@ function calculateMergedGitTreeHashRecursive(
       if (entry.name === '.git') {
         continue;
       }
+      // Skip symlinks - they should not be included in deployments
+      if (entry.isSymbolicLink()) {
+        const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+        if (outputChannel) {
+          outputChannel.appendLine(`Skipping symlink: ${entryRelativePath}`);
+        }
+        continue;
+      }
+      // Only include regular files and directories
+      if (!entry.isFile() && !entry.isDirectory()) {
+        continue;
+      }
       const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
       if (shouldIgnore(entryRelativePath, ignorePatterns)) {
         if (outputChannel) {
@@ -506,13 +530,16 @@ function calculateMergedGitTreeHashRecursive(
     }
   }
 
-  // Sort entries using git's sorting rules
+  // Sort entries using git's sorting rules (byte order, not locale)
   const sortedEntries = Array.from(entryMap.entries())
     .map(([name, entry]) => ({ name, ...entry }))
     .sort((a, b) => {
       const aName = a.isDirectory ? a.name + '/' : a.name;
       const bName = b.isDirectory ? b.name + '/' : b.name;
-      return aName.localeCompare(bName);
+      // Use simple comparison for ASCII byte order like git does
+      if (aName < bName) return -1;
+      if (aName > bName) return 1;
+      return 0;
     });
 
   const entries: Array<{ mode: string; name: string; hash: string }> = [];
@@ -617,6 +644,15 @@ function zipMergedDirectoriesRecursive(
       if (entry.name === '.git') {
         continue;
       }
+      // Skip symlinks - they should not be included in deployments
+      if (entry.isSymbolicLink()) {
+        outputChannel.appendLine(`Skipping symlink: ${relativePath ? `${relativePath}/${entry.name}` : entry.name}`);
+        continue;
+      }
+      // Only include regular files and directories
+      if (!entry.isFile() && !entry.isDirectory()) {
+        continue;
+      }
       fileMap.set(entry.name, {
         sourcePath: path.join(fullDirPath, entry.name),
         isDirectory: entry.isDirectory()
@@ -705,9 +741,19 @@ export const createStreamingZip = (
         if (entry.name === '.git') {
           continue;
         }
+        // Skip symlinks - they should not be included in deployments
+        // (checksum calculation also skips them since isFile() returns false for symlinks)
+        if (entry.isSymbolicLink()) {
+          outputChannel.appendLine(`Skipping symlink: ${relativePath ? `${relativePath}/${entry.name}` : entry.name}`);
+          continue;
+        }
         const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
         if (shouldIgnore(entryRelativePath, ignorePatterns)) {
           outputChannel.appendLine(`Ignoring: ${entryRelativePath}`);
+          continue;
+        }
+        // Only include regular files and directories
+        if (!entry.isFile() && !entry.isDirectory()) {
           continue;
         }
         fileMap.set(entry.name, {
