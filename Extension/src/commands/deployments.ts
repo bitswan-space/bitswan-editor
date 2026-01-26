@@ -16,7 +16,7 @@ import { UnifiedBusinessProcessesViewProvider } from '../views/unified_business_
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
 import { sanitizeName } from '../utils/nameUtils';
 import { refreshAutomationsCommand } from './automations';
-import { ensureAutomationImageReady } from '../utils/automationImageBuilder';
+import { ensureAutomationImageReady, getAutomationDeployConfig } from '../utils/automationImageBuilder';
 
 /**
  * Recursively copies all files and directories from srcDir to destDir, preserving the directory structure.
@@ -403,17 +403,28 @@ export async function startLiveDevServerCommand(
             const imageResult = await ensureAutomationImageReady(details, folderPath, outputChannel);
             // imageResult is null if no image folder exists, which is fine
 
-            progress.report({ increment: 60, message: "Starting live dev server..." });
+            progress.report({ increment: 50, message: "Reading automation config..." });
 
             // Get relative path for source mounting
             const relativePath = path.relative(workspaceFolders[0].uri.fsPath, folderPath);
+
+            // Read automation config to send to server (so server doesn't need filesystem access)
+            const automationConfig = getAutomationDeployConfig(folderPath);
+            outputChannel.appendLine(`Live-dev config: image=${automationConfig.image}, expose=${automationConfig.expose}, port=${automationConfig.port}, mountPath=${automationConfig.mountPath}`);
+
+            progress.report({ increment: 70, message: "Starting live dev server..." });
 
             // Deploy to live-dev stage
             // For live-dev, we use a placeholder checksum since the source is mounted directly
             // and changes are reflected immediately without redeployment
             const liveDevDeploymentId = `${normalizedFolderName}-live-dev`;
             const deployUrl = urlJoin(details.deployUrl, "automations", liveDevDeploymentId, "deploy").toString();
-            const success = await promoteAutomation(deployUrl, details.deploySecret, 'live-dev', 'live-dev', relativePath);
+            const success = await promoteAutomation(deployUrl, details.deploySecret, 'live-dev', 'live-dev', relativePath, {
+                image: automationConfig.image,
+                expose: automationConfig.expose,
+                port: automationConfig.port,
+                mountPath: automationConfig.mountPath,
+            });
 
             if (success) {
                 progress.report({ increment: 100, message: "Live dev server started!" });
