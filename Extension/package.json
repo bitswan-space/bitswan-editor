@@ -296,6 +296,11 @@
         "icon": "$(book)"
       },
       {
+        "command": "bitswan.createBusinessProcess",
+        "title": "Create Business Process",
+        "icon": "$(new-folder)"
+      },
+      {
         "command": "bitswan.openAutomationTemplates",
         "title": "Create Automation",
         "icon": "$(add)"
@@ -654,6 +659,11 @@
           "command": "bitswan.openDevelopmentGuide",
           "when": "view == bitswan-unified-business-processes",
           "group": "navigation@2"
+        },
+        {
+          "command": "bitswan.createBusinessProcess",
+          "when": "view == bitswan-unified-business-processes",
+          "group": "navigation@3"
         },
         {
           "command": "bitswan.createSecretGroup",
