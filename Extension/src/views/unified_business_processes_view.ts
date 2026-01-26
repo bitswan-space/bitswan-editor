@@ -53,6 +53,24 @@ export class AutomationSourceItem extends vscode.TreeItem {
 }
 
 /**
+ * Tree item representing a subfolder containing automation sources (but not a business process)
+ */
+export class SubfolderItem extends vscode.TreeItem {
+    constructor(
+        public readonly name: string,
+        public readonly resourceUri: vscode.Uri,
+        public readonly automationSources: AutomationSourceItem[]
+    ) {
+        // Extract just the folder name from the path
+        const displayName = name.split('/').pop() || name;
+        super(displayName, vscode.TreeItemCollapsibleState.Collapsed);
+        this.tooltip = `${this.name} (${automationSources.length} automation${automationSources.length === 1 ? '' : 's'})`;
+        this.contextValue = 'subfolder';
+        this.iconPath = new vscode.ThemeIcon('folder-library');
+    }
+}
+
+/**
  * Tree item representing a stage (live-dev/dev/staging/production) under an automation source
  */
 export class StageItem extends vscode.TreeItem {
@@ -183,6 +201,7 @@ export class CreateAutomationItem extends vscode.TreeItem {
 type UnifiedTreeItem =
     | BusinessProcessItem
     | AutomationSourceItem
+    | SubfolderItem
     | AutomationItem
     | OtherAutomationsItem
     | CreateAutomationItem
@@ -279,6 +298,12 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             return element.images;
         }
 
+        if (element instanceof SubfolderItem) {
+            // Show automation sources within this subfolder
+            console.log(`[DEBUG] getChildren - SubfolderItem: "${element.name}"`);
+            return element.automationSources;
+        }
+
         if (element instanceof OtherAutomationsItem) {
             // Show automation sources not belonging to any business process
             console.log(`[DEBUG] getChildren - OtherAutomationsItem`);
@@ -316,24 +341,54 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         return businessProcesses;
     }
 
-    private getAutomationSourcesForBusinessProcess(businessProcessName: string): AutomationSourceItem[] {
+    private getAutomationSourcesForBusinessProcess(businessProcessName: string): (AutomationSourceItem | SubfolderItem)[] {
         if (!vscode.workspace.workspaceFolders) {
             return [];
         }
 
         const workspacePath = vscode.workspace.workspaceFolders[0].uri.fsPath;
         const businessProcessPath = path.join(workspacePath, businessProcessName);
-        
+
         console.log(`[DEBUG] getAutomationSourcesForBusinessProcess called for business process: "${businessProcessName}"`);
         console.log(`[DEBUG] Business process path: "${businessProcessPath}"`);
-        
-        const sources = this.getAutomationSourcesInDirectory(businessProcessPath, businessProcessName);
-        console.log(`[DEBUG] Found ${sources.length} automation sources for business process "${businessProcessName}": ${sources.map(s => s.name).join(', ')}`);
-        
-        return sources;
+
+        // Get all automation sources recursively within this business process
+        const allSources = this.getAutomationSourcesInDirectoryRecursive(businessProcessPath, businessProcessName);
+
+        // Group by immediate subfolder
+        const result: (AutomationSourceItem | SubfolderItem)[] = [];
+        const subfolderMap = new Map<string, AutomationSourceItem[]>();
+
+        for (const source of allSources) {
+            // Get the path relative to the business process
+            const relativeToBusinessProcess = path.relative(businessProcessPath, source.resourceUri.fsPath);
+            const pathParts = relativeToBusinessProcess.split(path.sep);
+
+            if (pathParts.length > 1) {
+                // This automation is in a subfolder - group it by immediate parent
+                const immediateSubfolder = pathParts[0];
+                if (!subfolderMap.has(immediateSubfolder)) {
+                    subfolderMap.set(immediateSubfolder, []);
+                }
+                subfolderMap.get(immediateSubfolder)!.push(source);
+            } else {
+                // Direct child of business process - add directly
+                result.push(source);
+            }
+        }
+
+        // Create SubfolderItems for grouped automations
+        for (const [subfolderName, sources] of subfolderMap) {
+            const subfolderUri = vscode.Uri.file(path.join(businessProcessPath, subfolderName));
+            result.push(new SubfolderItem(subfolderName, subfolderUri, sources));
+        }
+
+        console.log(`[DEBUG] Found ${result.length} items for business process "${businessProcessName}"`);
+
+        return result;
     }
 
-    private getOtherAutomationSources(): (AutomationSourceItem | AutomationItem)[] {
+    private getOtherAutomationSources(): (AutomationSourceItem | SubfolderItem | AutomationItem)[] {
         if (!vscode.workspace.workspaceFolders) {
             return [];
         }
@@ -341,18 +396,40 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         const workspacePath = vscode.workspace.workspaceFolders[0].uri.fsPath;
         const allAutomationSources = this.getAllAutomationSources(workspacePath);
         const businessProcessSources = this.getAllBusinessProcessSources(workspacePath);
-        
+
         // Find automation sources that don't belong to any business process
-        const otherSources = allAutomationSources.filter(source => 
-            !businessProcessSources.some(bpSource => 
+        const otherSources = allAutomationSources.filter(source =>
+            !businessProcessSources.some(bpSource =>
                 source.resourceUri.fsPath.startsWith(bpSource.resourceUri.fsPath)
             )
         );
 
-        const result: (AutomationSourceItem | AutomationItem)[] = otherSources.map(source => new AutomationSourceItem(
-            source.name,
-            source.resourceUri
-        ));
+        // Group automation sources by their parent folder
+        const result: (AutomationSourceItem | SubfolderItem | AutomationItem)[] = [];
+        const subfolderMap = new Map<string, AutomationSourceItem[]>();
+
+        for (const source of otherSources) {
+            const automationSourceItem = new AutomationSourceItem(source.name, source.resourceUri);
+            const pathParts = source.name.split('/');
+
+            if (pathParts.length > 1) {
+                // This automation is in a subfolder - group it
+                const parentPath = pathParts.slice(0, -1).join('/');
+                if (!subfolderMap.has(parentPath)) {
+                    subfolderMap.set(parentPath, []);
+                }
+                subfolderMap.get(parentPath)!.push(automationSourceItem);
+            } else {
+                // Top-level automation source - add directly
+                result.push(automationSourceItem);
+            }
+        }
+
+        // Create SubfolderItems for grouped automations
+        for (const [subfolderPath, sources] of subfolderMap) {
+            const subfolderUri = vscode.Uri.file(path.join(workspacePath, subfolderPath));
+            result.push(new SubfolderItem(subfolderPath, subfolderUri, sources));
+        }
 
         // Add orphaned automations (automations that don't belong to any automation source)
         const automations = this.context.globalState.get<any[]>('automations', []);
@@ -604,6 +681,50 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         return sources;
     }
 
+    private getAutomationSourcesInDirectoryRecursive(dirPath: string, businessProcessName: string): AutomationSourceItem[] {
+        const sources: AutomationSourceItem[] = [];
+
+        const findAutomationSources = (currentPath: string): void => {
+            try {
+                const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+
+                // Skip if directory contains .bitswan-ignore
+                if (entries.some(entry => entry.isFile() && entry.name === '.bitswan-ignore')) {
+                    return;
+                }
+
+                for (const entry of entries) {
+                    if (entry.isDirectory()) {
+                        // Skip templates directory
+                        if (entry.name === 'templates') {
+                            continue;
+                        }
+
+                        const fullPath = path.join(currentPath, entry.name);
+
+                        // Check if this directory contains automation.toml or pipelines.conf
+                        if (fs.existsSync(path.join(fullPath, 'automation.toml')) || fs.existsSync(path.join(fullPath, 'pipelines.conf'))) {
+                            const relativePath = path.relative(vscode.workspace.workspaceFolders![0].uri.fsPath, fullPath);
+                            sources.push(new AutomationSourceItem(
+                                relativePath,
+                                vscode.Uri.file(fullPath),
+                                businessProcessName
+                            ));
+                        } else {
+                            // Not an automation source, recurse into it
+                            findAutomationSources(fullPath);
+                        }
+                    }
+                }
+            } catch (error) {
+                // Skip directories that can't be read
+            }
+        };
+
+        findAutomationSources(dirPath);
+        return sources;
+    }
+
     private getAllAutomationSources(rootPath: string): FolderItem[] {
         const sources: FolderItem[] = [];
 
@@ -654,7 +775,8 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         const processDirs = this.findDirectoriesWithProcessToml(rootPath);
 
         for (const processDir of processDirs) {
-            const processSources = this.getAutomationSourcesInDirectory(processDir, '');
+            // Use recursive search to find all automation sources within business processes
+            const processSources = this.getAutomationSourcesInDirectoryRecursive(processDir, '');
             sources.push(...processSources);
         }
 
