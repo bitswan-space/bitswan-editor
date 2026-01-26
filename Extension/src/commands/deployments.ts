@@ -410,7 +410,7 @@ export async function startLiveDevServerCommand(
 
             // Read automation config to send to server (so server doesn't need filesystem access)
             const automationConfig = getAutomationDeployConfig(folderPath);
-            outputChannel.appendLine(`Live-dev config: image=${automationConfig.image}, expose=${automationConfig.expose}, port=${automationConfig.port}, mountPath=${automationConfig.mountPath}`);
+            outputChannel.appendLine(`Live-dev config: image=${automationConfig.image}, expose=${automationConfig.expose}, port=${automationConfig.port}, mountPath=${automationConfig.mountPath}, secretGroups=${automationConfig.secretGroups?.join(',') || 'none'}`);
 
             progress.report({ increment: 70, message: "Starting live dev server..." });
 
@@ -424,6 +424,7 @@ export async function startLiveDevServerCommand(
                 expose: automationConfig.expose,
                 port: automationConfig.port,
                 mountPath: automationConfig.mountPath,
+                secretGroups: automationConfig.secretGroups,
             });
 
             if (success) {
