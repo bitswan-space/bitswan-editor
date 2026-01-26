@@ -470,6 +470,29 @@ export function activate(context: vscode.ExtensionContext) {
     let openDevelopmentGuideCommand = vscode.commands.registerCommand('bitswan.openDevelopmentGuide',
         async () => businessProcessCommands.openDevelopmentGuideCommand(context));
 
+    let promoteToDevCommand = vscode.commands.registerCommand('bitswan.promoteToDev',
+        async (item: StageItem | any) => {
+            if (!item || (typeof item !== 'object')) {
+                vscode.window.showErrorMessage('Invalid item selected for promotion');
+                return;
+            }
+            // Check if it looks like a StageItem with sourceUri
+            if (!('stage' in item) || !('sourceUri' in item) || !item.sourceUri) {
+                vscode.window.showErrorMessage('Cannot promote: source path not available');
+                return;
+            }
+            // Use the deploy flow to calculate fresh checksum from current source files
+            return deploymentCommands.deployCommandAbstract(
+                context,
+                item.sourceUri.fsPath,
+                'automations',
+                null,
+                unifiedBusinessProcessesProvider,
+                unifiedImagesProvider,
+                orphanedImagesProvider
+            );
+        });
+
     let promoteToStagingCommand = vscode.commands.registerCommand('bitswan.promoteToStaging',
         async (item: StageItem | any) => {
             if (!item || (typeof item !== 'object')) {
@@ -696,6 +719,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(openProcessReadmeCommand);
     context.subscriptions.push(openAutomationTemplatesCommand);
     context.subscriptions.push(openDevelopmentGuideCommand);
+    context.subscriptions.push(promoteToDevCommand);
     context.subscriptions.push(promoteToStagingCommand);
     context.subscriptions.push(promoteToProductionCommand);
     context.subscriptions.push(openPromotionManagerCommand);

@@ -12,7 +12,7 @@ import { AutomationsViewProvider } from '../views/automations_view';
 export async function promoteStageCommand(
     context: vscode.ExtensionContext,
     item: StageItem,
-    targetStage: 'staging' | 'production',
+    targetStage: 'dev' | 'staging' | 'production',
     provider: UnifiedBusinessProcessesViewProvider
 ) {
     if (!item) {
