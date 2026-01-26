@@ -437,6 +437,27 @@ class SecretsEditorProvider {
             gap: 4px;
             align-items: center;
         }
+        .toggle-visibility {
+            background: transparent;
+            border: 1px solid var(--panel-border);
+            padding: 6px;
+            min-width: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 4px;
+            color: var(--muted);
+        }
+        .toggle-visibility:hover {
+            background: var(--vscode-list-hoverBackground, rgba(255,255,255,0.1));
+            color: var(--text);
+        }
+        .toggle-visibility svg {
+            width: 16px;
+            height: 16px;
+            fill: currentColor;
+        }
         input[type="text"],
         input[type="password"] {
             flex: 1;
@@ -504,6 +525,10 @@ class SecretsEditorProvider {
             display: flex;
             gap: 6px;
             margin-top: 6px;
+            align-items: center;
+        }
+        .inline-edit .value-input-container {
+            flex: 1;
         }
         .placeholder {
             padding: 24px 0;
@@ -520,6 +545,10 @@ class SecretsEditorProvider {
             <input type="text" name="key" placeholder="SECRET_NAME" autocomplete="off" />
             <div class="value-input-container">
                 <input type="password" name="value" placeholder="Secret value" autocomplete="new-password" />
+                <button type="button" class="toggle-visibility icon-button" title="Toggle visibility">
+                    <svg class="eye-open" viewBox="0 0 24 24"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                    <svg class="eye-closed" style="display:none" viewBox="0 0 24 24"><path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
+                </button>
                 <button type="button" id="generate-secret" class="icon-button" title="Generate random secret">🎲</button>
             </div>
             <button type="submit">Add Secret</button>
@@ -544,13 +573,43 @@ class SecretsEditorProvider {
                 return secret;
             }
 
+            function updateToggleIcon(btn, isVisible) {
+                if (!btn) return;
+                const eyeOpen = btn.querySelector('.eye-open');
+                const eyeClosed = btn.querySelector('.eye-closed');
+                if (eyeOpen && eyeClosed) {
+                    eyeOpen.style.display = isVisible ? 'none' : 'block';
+                    eyeClosed.style.display = isVisible ? 'block' : 'none';
+                }
+            }
+
+            function toggleVisibility(btn) {
+                const container = btn.closest('.value-input-container');
+                const input = container ? container.querySelector('input[name="value"]') : null;
+                if (input) {
+                    const isPassword = input.type === 'password';
+                    input.type = isPassword ? 'text' : 'password';
+                    updateToggleIcon(btn, isPassword);
+                }
+            }
+
+            const formToggleBtn = secretForm.querySelector('.toggle-visibility');
+            if (formToggleBtn) {
+                formToggleBtn.addEventListener('click', function() {
+                    toggleVisibility(this);
+                });
+            }
+
             generateSecretBtn.addEventListener('click', () => {
                 const valueInput = secretForm.querySelector('input[name="value"]');
+                const toggleBtn = secretForm.querySelector('.toggle-visibility');
                 if (valueInput) {
                     valueInput.value = generateRandomSecret();
                     valueInput.type = 'text';
+                    updateToggleIcon(toggleBtn, true);
                     setTimeout(() => {
                         valueInput.type = 'password';
+                        updateToggleIcon(toggleBtn, false);
                     }, 1000);
                 }
             });
@@ -694,11 +753,26 @@ class SecretsEditorProvider {
                         form.className = 'inline-edit';
                         form.dataset.key = key;
 
+                        const inputContainer = document.createElement('div');
+                        inputContainer.className = 'value-input-container';
+
                         const input = document.createElement('input');
                         input.type = 'password';
                         input.name = 'value';
                         input.placeholder = 'Enter new value';
                         input.autocomplete = 'new-password';
+
+                        const toggleBtn = document.createElement('button');
+                        toggleBtn.type = 'button';
+                        toggleBtn.className = 'toggle-visibility icon-button';
+                        toggleBtn.title = 'Toggle visibility';
+                        toggleBtn.innerHTML = '<svg class="eye-open" viewBox="0 0 24 24"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg><svg class="eye-closed" style="display:none" viewBox="0 0 24 24"><path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>';
+                        toggleBtn.addEventListener('click', function() {
+                            toggleVisibility(this);
+                        });
+
+                        inputContainer.appendChild(input);
+                        inputContainer.appendChild(toggleBtn);
 
                         const saveBtn = document.createElement('button');
                         saveBtn.type = 'submit';
@@ -710,7 +784,7 @@ class SecretsEditorProvider {
                         cancelBtn.className = 'secondary';
                         cancelBtn.textContent = 'Cancel';
 
-                        form.appendChild(input);
+                        form.appendChild(inputContainer);
                         form.appendChild(saveBtn);
                         form.appendChild(cancelBtn);
                         secretsList.appendChild(form);
