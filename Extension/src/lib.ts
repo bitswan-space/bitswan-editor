@@ -1156,6 +1156,8 @@ export interface AutomationConfigParams {
   port?: number;
   mountPath?: string;
   secretGroups?: string[];
+  automationId?: string;
+  auth?: boolean;
 }
 
 export const promoteAutomation = async (
@@ -1188,6 +1190,12 @@ export const promoteAutomation = async (
     }
     if (automationConfig.secretGroups && automationConfig.secretGroups.length > 0) {
       form.append('secret_groups', automationConfig.secretGroups.join(','));
+    }
+    if (automationConfig.automationId) {
+      form.append('automation_id', automationConfig.automationId);
+    }
+    if (automationConfig.auth !== undefined) {
+      form.append('auth', automationConfig.auth.toString());
     }
   }
 
