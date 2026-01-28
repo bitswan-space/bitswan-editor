@@ -95,7 +95,7 @@ version_compare() {
     fi
     
     # Check if v1 is newer than v2
-    if printf '%s\n%s\n' "$v1" "$v2" | sort -V -C; then
+    if printf '%s\n%s\n' "$v2" "$v1" | sort -V -C; then
         return 0  # v1 >= v2
     else
         return 1  # v1 < v2, need to update

@@ -1,6 +1,10 @@
 FROM --platform=linux/amd64 node:18-alpine AS extension_builder
 WORKDIR /build
 COPY Extension/ ./
+RUN apk add --no-cache jq && \
+    BUILD_VERSION="1.0.$(date +%Y%m%d%H%M%S)" && \
+    jq --arg v "$BUILD_VERSION" '.version = $v' package.json > package.json.tmp && \
+    mv package.json.tmp package.json
 RUN npm install && chmod +x node_modules/.bin/*
 RUN npm exec vsce -- package --out bitswan-extension.vsix
 
