@@ -103,6 +103,8 @@ export interface AutomationDeployConfig {
   mountPath: string;
   secretGroups?: string[];
   ignore?: string[];
+  automationId?: string;
+  auth?: boolean;
 }
 
 /**
@@ -146,6 +148,8 @@ export function getAutomationDeployConfig(automationFolderPath: string): Automat
       mountPath: "/app/", // TOML format always uses /app/
       secretGroups: liveDevSecrets,
       ignore: ignorePatterns,
+      automationId: deployment.id as string | undefined,
+      auth: deployment.auth as boolean | undefined,
     };
   }
 
