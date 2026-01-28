@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
+import * as toml from '@iarna/toml';
 import { sanitizeName } from '../utils/nameUtils';
 
 type TemplateInfo = {
@@ -384,6 +386,7 @@ export function openAutomationTemplates(context: vscode.ExtensionContext, busine
                 // Copy each automation in the group
                 for (const { src, dest } of targetDirs) {
                     copyDirectory(src, dest, () => true);
+                    ensureAutomationId(dest);
                 }
 
                 // Refresh sidebar
@@ -449,6 +452,9 @@ export function openAutomationTemplates(context: vscode.ExtensionContext, busine
             // Recursively copy template excluding template.toml
             copyDirectory(templateDir, targetDir, (p) => path.basename(p) !== 'template.toml');
 
+            // Ensure automation.toml has an id field
+            ensureAutomationId(targetDir);
+
             // Refresh sidebar
             await vscode.commands.executeCommand('bitswan.refreshBusinessProcesses');
 
@@ -496,6 +502,41 @@ function copyDirectory(src: string, dest: string, includePredicate: (fullPath: s
             const data = fs.readFileSync(srcPath);
             fs.writeFileSync(destPath, data);
         }
+    }
+}
+
+/**
+ * Ensures the automation.toml file in the target directory has an `id` field.
+ * If the file exists, it adds the `id` to the [deployment] section if missing.
+ * If the file doesn't exist, it creates one with just the `id` field.
+ */
+function ensureAutomationId(targetDir: string): void {
+    const automationTomlPath = path.join(targetDir, 'automation.toml');
+
+    try {
+        if (fs.existsSync(automationTomlPath)) {
+            const content = fs.readFileSync(automationTomlPath, 'utf-8');
+            const data = toml.parse(content) as Record<string, unknown>;
+
+            if (!data.deployment) {
+                data.deployment = {};
+            }
+
+            const deployment = data.deployment as Record<string, unknown>;
+            if (!deployment.id) {
+                deployment.id = randomUUID();
+                fs.writeFileSync(automationTomlPath, toml.stringify(data as toml.JsonMap), 'utf-8');
+            }
+        } else {
+            const newData: toml.JsonMap = {
+                deployment: {
+                    id: randomUUID()
+                }
+            };
+            fs.writeFileSync(automationTomlPath, toml.stringify(newData), 'utf-8');
+        }
+    } catch (error) {
+        vscode.window.showErrorMessage(`Error ensuring automation id: ${error}`);
     }
 }
 
