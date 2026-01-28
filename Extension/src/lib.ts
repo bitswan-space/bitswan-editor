@@ -114,10 +114,16 @@ function initializeGitOpsLogging() {
                             gitopsOutputChannel.appendLine(config.data.substring(0, 1000) + (config.data.length > 1000 ? '...' : ''));
                         }
                     } else if (typeof config.data === 'object' && config.data !== null) {
-                        try {
-                            gitopsOutputChannel.appendLine(JSON.stringify(config.data, null, 2));
-                        } catch (e) {
-                            gitopsOutputChannel.appendLine(`[Unable to serialize request body: ${e}]`);
+                        // Check if data is a stream (Readable stream, Archiver, etc.)
+                        if (config.data instanceof Readable || typeof config.data.pipe === 'function') {
+                            const contentType = config.headers?.['Content-Type'] || 'unknown';
+                            gitopsOutputChannel.appendLine(`[Stream: ${contentType}]`);
+                        } else {
+                            try {
+                                gitopsOutputChannel.appendLine(JSON.stringify(config.data, null, 2));
+                            } catch (e) {
+                                gitopsOutputChannel.appendLine(`[Unable to serialize request body: ${e}]`);
+                            }
                         }
                     } else {
                         gitopsOutputChannel.appendLine(String(config.data));
