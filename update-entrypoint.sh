@@ -21,8 +21,26 @@ if [ -d /workspace/.ssh ] && [ "$(ls -A /workspace/.ssh 2>/dev/null)" ]; then
     mkdir -p /home/coder/.ssh
     chmod 700 /home/coder/.ssh
 
-    # Copy all files from /workspace/.ssh to /home/coder/.ssh
-    cp -f /workspace/.ssh/* /home/coder/.ssh/ 2>/dev/null || true
+    # Copy files from /workspace/.ssh to /home/coder/.ssh
+    # Handle known_hosts specially by merging instead of overwriting
+    for file in /workspace/.ssh/*; do
+        if [ -f "$file" ]; then
+            filename=$(basename "$file")
+            destfile="/home/coder/.ssh/$filename"
+
+            if [ "$filename" = "known_hosts" ]; then
+                # Merge known_hosts: combine entries and remove duplicates
+                if [ -f "$destfile" ]; then
+                    cat "$file" "$destfile" | sort -u > "$destfile.tmp"
+                    mv "$destfile.tmp" "$destfile"
+                else
+                    cp -f "$file" "$destfile"
+                fi
+            else
+                cp -f "$file" "$destfile"
+            fi
+        fi
+    done
 
     # Set correct permissions for SSH files
     # Private keys (no extension or id_*) should be 600
@@ -32,10 +50,7 @@ if [ -d /workspace/.ssh ] && [ "$(ls -A /workspace/.ssh 2>/dev/null)" ]; then
         if [ -f "$file" ]; then
             filename=$(basename "$file")
             case "$filename" in
-                *.pub)
-                    chmod 644 "$file"
-                    ;;
-                known_hosts)
+                *.pub|known_hosts)
                     chmod 644 "$file"
                     ;;
                 *)
