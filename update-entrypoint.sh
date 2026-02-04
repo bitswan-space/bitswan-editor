@@ -15,6 +15,42 @@ elif [ -d /home/coder/workspace ] && [ ! -L /home/coder/workspace ]; then
     echo "WARNING: /home/coder/workspace exists as a directory. Migration may be needed."
 fi
 
+# Copy SSH keys from /workspace/.ssh to /home/coder/.ssh with correct permissions
+if [ -d /workspace/.ssh ] && [ "$(ls -A /workspace/.ssh 2>/dev/null)" ]; then
+    echo "Setting up SSH keys..."
+    mkdir -p /home/coder/.ssh
+    chmod 700 /home/coder/.ssh
+
+    # Copy all files from /workspace/.ssh to /home/coder/.ssh
+    cp -f /workspace/.ssh/* /home/coder/.ssh/ 2>/dev/null || true
+
+    # Set correct permissions for SSH files
+    # Private keys (no extension or id_*) should be 600
+    # Public keys (*.pub) should be 644
+    # Config file should be 600
+    for file in /home/coder/.ssh/*; do
+        if [ -f "$file" ]; then
+            filename=$(basename "$file")
+            case "$filename" in
+                *.pub)
+                    chmod 644 "$file"
+                    ;;
+                known_hosts)
+                    chmod 644 "$file"
+                    ;;
+                *)
+                    chmod 600 "$file"
+                    ;;
+            esac
+        fi
+    done
+
+    chown -R coder:coder /home/coder/.ssh
+    echo "SSH keys configured successfully"
+else
+    echo "No SSH keys found at /workspace/.ssh, skipping SSH setup"
+fi
+
 if [ "$UPDATE_CA_CERTIFICATES" = "true" ]; then
     echo "Updating CA certificates..."
     if [ -d /usr/local/share/ca-certificates/custom ]; then
