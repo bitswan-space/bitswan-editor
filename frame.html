@@ -128,6 +128,16 @@
     </div>
     
     <script>
+        // Redirect HTTP to HTTPS (HTTP breaks extensions like the promotion manager)
+        if (window.location.protocol === 'http:' &&
+            window.location.hostname !== 'localhost' &&
+            window.location.hostname !== '127.0.0.1') {
+            window.location.replace(
+                'https://' + window.location.host + window.location.pathname +
+                window.location.search + window.location.hash
+            );
+        }
+
         // Set AOC_URL from environment
         window.AOC_URL = 'AOC_URL_PLACEHOLDER';
         
