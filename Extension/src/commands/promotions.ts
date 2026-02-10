@@ -155,20 +155,23 @@ export async function openPromotionManagerCommand(
         return histories;
     };
 
+    // Track last-fetched histories so refreshes don't flash loading spinners
+    let lastHistories: { dev: any[] | null; staging: any[] | null; production: any[] | null } = {
+        dev: null, staging: null, production: null
+    };
+
     // Function to update the webview content
     const updateWebview = async () => {
         const stageData = getStageData();
 
-        // Render immediately with loading spinners for history sections
+        // Show loading spinners only when we have no prior data
         panel.webview.html = getPromotionManagerHtml(
-            panel.webview, details, deploymentIds, stageData,
-            { dev: null, staging: null, production: null },
-            context
+            panel.webview, details, deploymentIds, stageData, lastHistories, context
         );
 
         // Fetch all histories in parallel, then re-render with data
-        const histories = await fetchHistories(stageData);
-        panel.webview.html = getPromotionManagerHtml(panel.webview, details, deploymentIds, stageData, histories, context);
+        lastHistories = await fetchHistories(stageData);
+        panel.webview.html = getPromotionManagerHtml(panel.webview, details, deploymentIds, stageData, lastHistories, context);
     };
 
     // Initial load — page appears instantly with loading spinners
