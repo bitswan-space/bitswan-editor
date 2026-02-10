@@ -118,28 +118,25 @@ export async function openPromotionManagerCommand(
         production: sanitizedSourceName
     };
 
-    // Function to update the webview content
-    const updateWebview = async () => {
-        // Get automations for all stages
+    const getStageData = () => {
         const automations = context.globalState.get<any[]>('automations', []);
-        
-        const stageData = {
+        return {
             dev: automations.find(a => (a.deployment_id || a.deploymentId) === deploymentIds.dev),
             staging: automations.find(a => (a.deployment_id || a.deploymentId) === deploymentIds.staging),
             production: automations.find(a => {
                 const id = a.deployment_id || a.deploymentId;
-                return id === deploymentIds.production || 
+                return id === deploymentIds.production ||
                        (id === sanitizedSourceName && (a.stage === '' || a.stage === 'production' || !a.stage));
             })
         };
+    };
 
-        // Fetch history for each deployed stage
-        const histories: { dev: any[]; staging: any[]; production: any[] } = {
-            dev: [],
-            staging: [],
-            production: []
+    const fetchHistories = async (stageData: { dev: any; staging: any; production: any }) => {
+        const histories: { dev: any[] | null; staging: any[] | null; production: any[] | null } = {
+            dev: null, staging: null, production: null
         };
-        for (const [stage, deploymentId] of Object.entries(deploymentIds)) {
+
+        const fetchPromises = Object.entries(deploymentIds).map(async ([stage, deploymentId]) => {
             const stageDataItem = stageData[stage as keyof typeof stageData];
             if (stageDataItem) {
                 try {
@@ -149,14 +146,32 @@ export async function openPromotionManagerCommand(
                 } catch (error) {
                     histories[stage as keyof typeof histories] = [];
                 }
+            } else {
+                histories[stage as keyof typeof histories] = [];
             }
-        }
+        });
 
-        // Generate HTML content
+        await Promise.all(fetchPromises);
+        return histories;
+    };
+
+    // Function to update the webview content
+    const updateWebview = async () => {
+        const stageData = getStageData();
+
+        // Render immediately with loading spinners for history sections
+        panel.webview.html = getPromotionManagerHtml(
+            panel.webview, details, deploymentIds, stageData,
+            { dev: null, staging: null, production: null },
+            context
+        );
+
+        // Fetch all histories in parallel, then re-render with data
+        const histories = await fetchHistories(stageData);
         panel.webview.html = getPromotionManagerHtml(panel.webview, details, deploymentIds, stageData, histories, context);
     };
 
-    // Initial load
+    // Initial load — page appears instantly with loading spinners
     await updateWebview();
 
     // Set up auto-refresh when automations change (same interval as sidebar)
@@ -337,7 +352,7 @@ function getPromotionManagerHtml(
     details: { deployUrl: string; deploySecret: string },
     deploymentIds: { dev: string; staging: string; production: string },
     stageData: { dev: any; staging: any; production: any },
-    histories: { dev: any[]; staging: any[]; production: any[] },
+    histories: { dev: any[] | null; staging: any[] | null; production: any[] | null },
     context: vscode.ExtensionContext
 ): string {
     const webviewUri = (path: string) => {
@@ -494,6 +509,26 @@ function getPromotionManagerHtml(
         .copy-checksum-button:hover {
             background-color: var(--vscode-button-secondaryHoverBackground);
         }
+        .loading-spinner {
+            display: flex;
+            align-items: center;
+            padding: 16px 0;
+            color: var(--vscode-descriptionForeground);
+            font-size: 13px;
+        }
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid var(--vscode-panel-border);
+            border-top-color: var(--vscode-button-background);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -520,7 +555,7 @@ function getPromotionManagerHtml(
                     <span class="info-label">Active:</span>
                     <span class="info-value">${stageData.dev.active ? 'Yes' : 'No'}</span>
                 </div>
-                ${histories.dev && histories.dev.length > 0 && histories.dev[0].checksum ? `
+                ${histories.dev !== null && histories.dev.length > 0 && histories.dev[0].checksum ? `
                     <div class="info-row">
                         <span class="info-label">Current Checksum:</span>
                         <div class="info-value checksum-row">
@@ -533,7 +568,12 @@ function getPromotionManagerHtml(
             ${stageData.dev.automationUrl ? `<button class="button button-secondary" onclick="openExternalUrl('${stageData.dev.automationUrl}')">Open External URL</button>` : ''}
             <button class="button button-primary" onclick="promote('dev', 'staging')">Promote to Staging</button>
             <button class="button button-secondary" onclick="showLogs('${deploymentIds.dev}')">Show Logs</button>
-            ${histories.dev && histories.dev.length > 0 ? `
+            ${histories.dev === null ? `
+                <div class="history-section">
+                    <div class="history-title">Deployment History</div>
+                    <div class="loading-spinner"><div class="spinner"></div>Loading history...</div>
+                </div>
+            ` : histories.dev.length > 0 ? `
                 <div class="history-section">
                     <div class="history-title">Deployment History</div>
                     ${histories.dev.map((item, index) => {
@@ -541,7 +581,7 @@ function getPromotionManagerHtml(
                         const date = item.date || 'Unknown date';
                         const message = item.message || 'No message';
                         const checksumDisplay = item.checksum || 'N/A';
-                        const rollbackButton = index > 0 
+                        const rollbackButton = index > 0
                             ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); rollback('${checksum}', 'dev')">Rollback</button>`
                             : '<span style="margin-left: 10px; color: var(--vscode-descriptionForeground); font-size: 11px;">Current</span>';
                         return `<div class="history-item" onclick="rollback('${checksum}', 'dev')">
@@ -579,7 +619,7 @@ function getPromotionManagerHtml(
                     <span class="info-label">Active:</span>
                     <span class="info-value">${stageData.staging.active ? 'Yes' : 'No'}</span>
                 </div>
-                ${histories.staging && histories.staging.length > 0 && histories.staging[0].checksum ? `
+                ${histories.staging !== null && histories.staging.length > 0 && histories.staging[0].checksum ? `
                     <div class="info-row">
                         <span class="info-label">Current Checksum:</span>
                         <div class="info-value checksum-row">
@@ -592,7 +632,12 @@ function getPromotionManagerHtml(
             ${stageData.staging.automationUrl ? `<button class="button button-secondary" onclick="openExternalUrl('${stageData.staging.automationUrl}')">Open External URL</button>` : ''}
             <button class="button button-primary" onclick="promote('staging', 'production')">Promote to Production</button>
             <button class="button button-secondary" onclick="showLogs('${deploymentIds.staging}')">Show Logs</button>
-            ${histories.staging && histories.staging.length > 0 ? `
+            ${histories.staging === null ? `
+                <div class="history-section">
+                    <div class="history-title">Deployment History</div>
+                    <div class="loading-spinner"><div class="spinner"></div>Loading history...</div>
+                </div>
+            ` : histories.staging.length > 0 ? `
                 <div class="history-section">
                     <div class="history-title">Deployment History</div>
                     ${histories.staging.map((item, index) => {
@@ -600,7 +645,7 @@ function getPromotionManagerHtml(
                         const date = item.date || 'Unknown date';
                         const message = item.message || 'No message';
                         const checksumDisplay = item.checksum || 'N/A';
-                        const rollbackButton = index > 0 
+                        const rollbackButton = index > 0
                             ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); rollback('${checksum}', 'staging')">Rollback</button>`
                             : '<span style="margin-left: 10px; color: var(--vscode-descriptionForeground); font-size: 11px;">Current</span>';
                         return `<div class="history-item" onclick="rollback('${checksum}', 'staging')">
@@ -638,7 +683,7 @@ function getPromotionManagerHtml(
                     <span class="info-label">Active:</span>
                     <span class="info-value">${stageData.production.active ? 'Yes' : 'No'}</span>
                 </div>
-                ${histories.production && histories.production.length > 0 && histories.production[0].checksum ? `
+                ${histories.production !== null && histories.production.length > 0 && histories.production[0].checksum ? `
                     <div class="info-row">
                         <span class="info-label">Current Checksum:</span>
                         <div class="info-value checksum-row">
@@ -650,7 +695,12 @@ function getPromotionManagerHtml(
             </div>
             ${stageData.production.automationUrl ? `<button class="button button-secondary" onclick="openExternalUrl('${stageData.production.automationUrl}')">Open External URL</button>` : ''}
             <button class="button button-secondary" onclick="showLogs('${deploymentIds.production}')">Show Logs</button>
-            ${histories.production && histories.production.length > 0 ? `
+            ${histories.production === null ? `
+                <div class="history-section">
+                    <div class="history-title">Deployment History</div>
+                    <div class="loading-spinner"><div class="spinner"></div>Loading history...</div>
+                </div>
+            ` : histories.production.length > 0 ? `
                 <div class="history-section">
                     <div class="history-title">Deployment History</div>
                     ${histories.production.map((item, index) => {
@@ -658,7 +708,7 @@ function getPromotionManagerHtml(
                         const date = item.date || 'Unknown date';
                         const message = item.message || 'No message';
                         const checksumDisplay = item.checksum || 'N/A';
-                        const rollbackButton = index > 0 
+                        const rollbackButton = index > 0
                             ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); rollback('${checksum}', 'production')">Rollback</button>`
                             : '<span style="margin-left: 10px; color: var(--vscode-descriptionForeground); font-size: 11px;">Current</span>';
                         return `<div class="history-item" onclick="rollback('${checksum}', 'production')">
