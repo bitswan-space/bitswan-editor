@@ -44,9 +44,21 @@ export function shouldIgnore(relativePath: string, ignorePatterns?: string[]): b
 // Set up axios interceptors to log all GitOps network calls
 let interceptorsInitialized = false;
 let gitopsOutputChannel: vscode.OutputChannel | undefined;
+let gitopsPollingOutputChannel: vscode.OutputChannel | undefined;
 
-export function setGitOpsOutputChannel(channel: vscode.OutputChannel) {
+// Polling endpoints that generate high-frequency noise
+const POLLING_URL_PATTERNS = [/\/automations\/?$/, /\/images\/?$/];
+
+function getChannelForUrl(url: string | undefined): vscode.OutputChannel | undefined {
+    if (url && gitopsPollingOutputChannel && POLLING_URL_PATTERNS.some(p => p.test(url))) {
+        return gitopsPollingOutputChannel;
+    }
+    return gitopsOutputChannel;
+}
+
+export function setGitOpsOutputChannel(channel: vscode.OutputChannel, pollingChannel?: vscode.OutputChannel) {
     gitopsOutputChannel = channel;
+    gitopsPollingOutputChannel = pollingChannel;
     if (!interceptorsInitialized) {
         initializeGitOpsLogging();
     }
@@ -60,18 +72,19 @@ function initializeGitOpsLogging() {
     // Request interceptor - log outgoing requests
     axios.interceptors.request.use(
         (config: InternalAxiosRequestConfig) => {
-            if (gitopsOutputChannel) {
+            const ch = getChannelForUrl(config.url);
+            if (ch) {
                 const timestamp = new Date().toISOString();
-                gitopsOutputChannel.appendLine('='.repeat(80));
-                gitopsOutputChannel.appendLine(`[${timestamp}] REQUEST`);
-                gitopsOutputChannel.appendLine('='.repeat(80));
-                gitopsOutputChannel.appendLine(`Method: ${config.method?.toUpperCase() || 'UNKNOWN'}`);
-                gitopsOutputChannel.appendLine(`URL: ${config.url || 'N/A'}`);
-                gitopsOutputChannel.appendLine(`Base URL: ${config.baseURL || 'N/A'}`);
-                gitopsOutputChannel.appendLine(`Full URL: ${config.baseURL ? config.baseURL + config.url : config.url || 'N/A'}`);
-                
+                ch.appendLine('='.repeat(80));
+                ch.appendLine(`[${timestamp}] REQUEST`);
+                ch.appendLine('='.repeat(80));
+                ch.appendLine(`Method: ${config.method?.toUpperCase() || 'UNKNOWN'}`);
+                ch.appendLine(`URL: ${config.url || 'N/A'}`);
+                ch.appendLine(`Base URL: ${config.baseURL || 'N/A'}`);
+                ch.appendLine(`Full URL: ${config.baseURL ? config.baseURL + config.url : config.url || 'N/A'}`);
+
                 if (config.headers) {
-                    gitopsOutputChannel.appendLine('Headers:');
+                    ch.appendLine('Headers:');
                     // Mask the Authorization token for security
                     const headersToLog: any = { ...config.headers };
                     if (headersToLog.Authorization) {
@@ -80,57 +93,57 @@ function initializeGitOpsLogging() {
                             headersToLog.Authorization = `Bearer ${authHeader.substring(7, 15)}...`;
                         }
                     }
-                    gitopsOutputChannel.appendLine(JSON.stringify(headersToLog, null, 2));
+                    ch.appendLine(JSON.stringify(headersToLog, null, 2));
                 }
-                
+
                 if (config.params) {
-                    gitopsOutputChannel.appendLine('Query Parameters:');
-                    gitopsOutputChannel.appendLine(JSON.stringify(config.params, null, 2));
+                    ch.appendLine('Query Parameters:');
+                    ch.appendLine(JSON.stringify(config.params, null, 2));
                 }
-                
+
                 if (config.data) {
-                    gitopsOutputChannel.appendLine('Request Body:');
+                    ch.appendLine('Request Body:');
                     // Handle FormData specially (form-data package)
                     if (config.data && typeof config.data === 'object' && 'getHeaders' in config.data) {
-                        gitopsOutputChannel.appendLine('[FormData - multipart/form-data]');
+                        ch.appendLine('[FormData - multipart/form-data]');
                         // Try to get form data headers if possible
                         try {
                             const formData = config.data as any;
                             if (typeof formData.getHeaders === 'function') {
-                                gitopsOutputChannel.appendLine('FormData Headers:');
-                                gitopsOutputChannel.appendLine(JSON.stringify(formData.getHeaders(), null, 2));
+                                ch.appendLine('FormData Headers:');
+                                ch.appendLine(JSON.stringify(formData.getHeaders(), null, 2));
                             }
                             // Note: FormData stream content cannot be easily logged without consuming it
-                            gitopsOutputChannel.appendLine('[FormData content is a stream and cannot be logged]');
+                            ch.appendLine('[FormData content is a stream and cannot be logged]');
                         } catch (e) {
-                            gitopsOutputChannel.appendLine(`[Error accessing FormData: ${e}]`);
+                            ch.appendLine(`[Error accessing FormData: ${e}]`);
                         }
                     } else if (typeof config.data === 'string') {
                         // Try to parse as JSON if possible
                         try {
                             const parsed = JSON.parse(config.data);
-                            gitopsOutputChannel.appendLine(JSON.stringify(parsed, null, 2));
+                            ch.appendLine(JSON.stringify(parsed, null, 2));
                         } catch {
-                            gitopsOutputChannel.appendLine(config.data.substring(0, 1000) + (config.data.length > 1000 ? '...' : ''));
+                            ch.appendLine(config.data.substring(0, 1000) + (config.data.length > 1000 ? '...' : ''));
                         }
                     } else if (typeof config.data === 'object' && config.data !== null) {
                         // Check if data is a stream (Readable stream, Archiver, etc.)
                         if (config.data instanceof Readable || typeof config.data.pipe === 'function') {
                             const contentType = config.headers?.['Content-Type'] || 'unknown';
-                            gitopsOutputChannel.appendLine(`[Stream: ${contentType}]`);
+                            ch.appendLine(`[Stream: ${contentType}]`);
                         } else {
                             try {
-                                gitopsOutputChannel.appendLine(JSON.stringify(config.data, null, 2));
+                                ch.appendLine(JSON.stringify(config.data, null, 2));
                             } catch (e) {
-                                gitopsOutputChannel.appendLine(`[Unable to serialize request body: ${e}]`);
+                                ch.appendLine(`[Unable to serialize request body: ${e}]`);
                             }
                         }
                     } else {
-                        gitopsOutputChannel.appendLine(String(config.data));
+                        ch.appendLine(String(config.data));
                     }
                 }
-                
-                gitopsOutputChannel.appendLine('');
+
+                ch.appendLine('');
             }
             return config;
         },
@@ -147,90 +160,92 @@ function initializeGitOpsLogging() {
     // Response interceptor - log incoming responses
     axios.interceptors.response.use(
         (response: AxiosResponse) => {
-            if (gitopsOutputChannel) {
+            const ch = getChannelForUrl(response.config?.url);
+            if (ch) {
                 const timestamp = new Date().toISOString();
-                gitopsOutputChannel.appendLine('='.repeat(80));
-                gitopsOutputChannel.appendLine(`[${timestamp}] RESPONSE`);
-                gitopsOutputChannel.appendLine('='.repeat(80));
-                gitopsOutputChannel.appendLine(`Status: ${response.status} ${response.statusText || ''}`);
-                gitopsOutputChannel.appendLine(`URL: ${response.config?.url || 'N/A'}`);
-                gitopsOutputChannel.appendLine(`Full URL: ${response.config?.baseURL ? response.config.baseURL + response.config.url : response.config?.url || 'N/A'}`);
-                
+                ch.appendLine('='.repeat(80));
+                ch.appendLine(`[${timestamp}] RESPONSE`);
+                ch.appendLine('='.repeat(80));
+                ch.appendLine(`Status: ${response.status} ${response.statusText || ''}`);
+                ch.appendLine(`URL: ${response.config?.url || 'N/A'}`);
+                ch.appendLine(`Full URL: ${response.config?.baseURL ? response.config.baseURL + response.config.url : response.config?.url || 'N/A'}`);
+
                 if (response.headers) {
-                    gitopsOutputChannel.appendLine('Response Headers:');
-                    gitopsOutputChannel.appendLine(JSON.stringify(response.headers, null, 2));
+                    ch.appendLine('Response Headers:');
+                    ch.appendLine(JSON.stringify(response.headers, null, 2));
                 }
-                
-                gitopsOutputChannel.appendLine('Response Data:');
+
+                ch.appendLine('Response Data:');
                 try {
                     // Try to format as JSON if it's an object/array
                     if (typeof response.data === 'object' && response.data !== null) {
-                        gitopsOutputChannel.appendLine(JSON.stringify(response.data, null, 2));
+                        ch.appendLine(JSON.stringify(response.data, null, 2));
                     } else if (typeof response.data === 'string') {
                         // Try to parse as JSON
                         try {
                             const parsed = JSON.parse(response.data);
-                            gitopsOutputChannel.appendLine(JSON.stringify(parsed, null, 2));
+                            ch.appendLine(JSON.stringify(parsed, null, 2));
                         } catch {
-                            gitopsOutputChannel.appendLine(response.data);
+                            ch.appendLine(response.data);
                         }
                     } else {
-                        gitopsOutputChannel.appendLine(String(response.data));
+                        ch.appendLine(String(response.data));
                     }
                 } catch (e) {
-                    gitopsOutputChannel.appendLine('[Unable to serialize response data]');
+                    ch.appendLine('[Unable to serialize response data]');
                 }
-                
-                gitopsOutputChannel.appendLine('');
+
+                ch.appendLine('');
             }
             return response;
         },
         (error: AxiosError) => {
-            if (gitopsOutputChannel) {
+            const ch = getChannelForUrl(error.config?.url) || gitopsOutputChannel;
+            if (ch) {
                 const timestamp = new Date().toISOString();
-                gitopsOutputChannel.appendLine('='.repeat(80));
-                gitopsOutputChannel.appendLine(`[${timestamp}] RESPONSE ERROR`);
-                gitopsOutputChannel.appendLine('='.repeat(80));
-                
+                ch.appendLine('='.repeat(80));
+                ch.appendLine(`[${timestamp}] RESPONSE ERROR`);
+                ch.appendLine('='.repeat(80));
+
                 if (error.config) {
-                    gitopsOutputChannel.appendLine(`Method: ${error.config.method?.toUpperCase() || 'UNKNOWN'}`);
-                    gitopsOutputChannel.appendLine(`URL: ${error.config.url || 'N/A'}`);
-                    gitopsOutputChannel.appendLine(`Full URL: ${error.config.baseURL ? error.config.baseURL + error.config.url : error.config.url || 'N/A'}`);
+                    ch.appendLine(`Method: ${error.config.method?.toUpperCase() || 'UNKNOWN'}`);
+                    ch.appendLine(`URL: ${error.config.url || 'N/A'}`);
+                    ch.appendLine(`Full URL: ${error.config.baseURL ? error.config.baseURL + error.config.url : error.config.url || 'N/A'}`);
                 }
-                
+
                 if (error.response) {
-                    gitopsOutputChannel.appendLine(`Status: ${error.response.status} ${error.response.statusText || ''}`);
-                    
+                    ch.appendLine(`Status: ${error.response.status} ${error.response.statusText || ''}`);
+
                     if (error.response.headers) {
-                        gitopsOutputChannel.appendLine('Response Headers:');
-                        gitopsOutputChannel.appendLine(JSON.stringify(error.response.headers, null, 2));
+                        ch.appendLine('Response Headers:');
+                        ch.appendLine(JSON.stringify(error.response.headers, null, 2));
                     }
-                    
-                    gitopsOutputChannel.appendLine('Error Response Data:');
+
+                    ch.appendLine('Error Response Data:');
                     try {
                         if (typeof error.response.data === 'object' && error.response.data !== null) {
-                            gitopsOutputChannel.appendLine(JSON.stringify(error.response.data, null, 2));
+                            ch.appendLine(JSON.stringify(error.response.data, null, 2));
                         } else if (typeof error.response.data === 'string') {
                             try {
                                 const parsed = JSON.parse(error.response.data);
-                                gitopsOutputChannel.appendLine(JSON.stringify(parsed, null, 2));
+                                ch.appendLine(JSON.stringify(parsed, null, 2));
                             } catch {
-                                gitopsOutputChannel.appendLine(error.response.data);
+                                ch.appendLine(error.response.data);
                             }
                         } else {
-                            gitopsOutputChannel.appendLine(String(error.response.data));
+                            ch.appendLine(String(error.response.data));
                         }
                     } catch (e) {
-                        gitopsOutputChannel.appendLine('[Unable to serialize error response data]');
+                        ch.appendLine('[Unable to serialize error response data]');
                     }
                 } else if (error.request) {
-                    gitopsOutputChannel.appendLine('No response received from server');
-                    gitopsOutputChannel.appendLine(`Request: ${JSON.stringify(error.request, null, 2)}`);
+                    ch.appendLine('No response received from server');
+                    ch.appendLine(`Request: ${JSON.stringify(error.request, null, 2)}`);
                 } else {
-                    gitopsOutputChannel.appendLine(`Error: ${error.message || 'Unknown error'}`);
+                    ch.appendLine(`Error: ${error.message || 'Unknown error'}`);
                 }
-                
-                gitopsOutputChannel.appendLine('');
+
+                ch.appendLine('');
             }
             return Promise.reject(error);
         }
