@@ -34,8 +34,9 @@ import * as filesystemCommands from './commands/filesystem';
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
 
-// GitOps network logging channel
+// GitOps network logging channels
 export let gitopsOutputChannel: vscode.OutputChannel;
+export let gitopsPollingOutputChannel: vscode.OutputChannel;
 
 // Map to track output channels
 export const outputChannelsMap = new Map<string, vscode.OutputChannel>();
@@ -69,11 +70,12 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.executeCommand('setContext', 'bitswan.kernelRunning', false);
     outputChannel.show(true); // true forces the output channel to take focus
 
-    // Create GitOps network logging channel
+    // Create GitOps network logging channels
     gitopsOutputChannel = vscode.window.createOutputChannel('BitSwan Gitops');
-    
+    gitopsPollingOutputChannel = vscode.window.createOutputChannel('BitSwan Gitops Polling');
+
     // Initialize GitOps network logging interceptors
-    setGitOpsOutputChannel(gitopsOutputChannel);
+    setGitOpsOutputChannel(gitopsOutputChannel, gitopsPollingOutputChannel);
 
     outputChannel.appendLine('=====================================');
     outputChannel.appendLine('BitSwan Extension Activation Start');
