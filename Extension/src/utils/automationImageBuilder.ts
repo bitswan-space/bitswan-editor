@@ -105,6 +105,7 @@ export interface AutomationDeployConfig {
   ignore?: string[];
   automationId?: string;
   auth?: boolean;
+  services?: Record<string, { enabled: boolean }>;
 }
 
 /**
@@ -141,6 +142,17 @@ export function getAutomationDeployConfig(automationFolderPath: string): Automat
     const liveDevSecrets = parseStringOrArray(secrets["live-dev"]);
     const ignorePatterns = parseStringOrArray(deployment.ignore);
 
+    // Parse [services.*] sections
+    const servicesSection = tomlState.data.services as toml.JsonMap | undefined;
+    let services: Record<string, { enabled: boolean }> | undefined;
+    if (servicesSection) {
+      services = {};
+      for (const [svcName, svcConf] of Object.entries(servicesSection)) {
+        const conf = svcConf as toml.JsonMap | undefined;
+        services[svcName] = { enabled: (conf?.enabled as boolean) ?? true };
+      }
+    }
+
     return {
       image: (deployment.image as string) || defaults.image,
       expose: (deployment.expose as boolean) ?? defaults.expose,
@@ -150,6 +162,7 @@ export function getAutomationDeployConfig(automationFolderPath: string): Automat
       ignore: ignorePatterns,
       automationId: deployment.id as string | undefined,
       auth: deployment.auth as boolean | undefined,
+      services,
     };
   }
 

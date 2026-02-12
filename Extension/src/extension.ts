@@ -25,7 +25,8 @@ import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from './views/u
 import { UnifiedBusinessProcessesViewProvider } from './views/unified_business_processes_view';
 import { openAutomationTemplates } from './views/templates_gallery';
 import { SecretsTreeViewProvider, SecretsEditorPanel, SecretGroupItem } from './views/secrets_view';
-import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation, deleteImage, setGitOpsOutputChannel } from './lib';
+import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation, deleteImage, setGitOpsOutputChannel, getServiceStatus } from './lib';
+import { getDeployDetails } from './deploy_details';
 import { Jupyter } from '@vscode/jupyter-extension';
 import { getJupyterServers } from './commands/jupyter-server';
 import { startBitswanKernel, stopBitswanKernel, checkAndUpdateKernelStatus, updateKernelStatusContext } from './commands/kernel';
@@ -681,6 +682,86 @@ export function activate(context: vscode.ExtensionContext) {
         });
  
     
+    // Helper to map automation stage to service realm
+    const serviceStageFor = (stage: string): string => {
+        if (stage === 'live-dev') { return 'dev'; }
+        return stage;
+    };
+
+    let openCouchDBAdminCommand = vscode.commands.registerCommand('bitswan.openCouchDBAdmin',
+        async (item: StageItem) => {
+            const details = await getDeployDetails(context);
+            if (!details) { return; }
+            const svcStage = serviceStageFor(item.stage);
+            try {
+                const status = await getServiceStatus(details.deployUrl, details.deploySecret, 'couchdb', svcStage, true);
+                const adminUi = status?.connection_info?.admin_ui;
+                if (!adminUi) {
+                    vscode.window.showWarningMessage(`CouchDB is not enabled or has no admin UI for stage "${item.stage}"`);
+                    return;
+                }
+                await vscode.env.openExternal(vscode.Uri.parse(adminUi));
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`Failed to get CouchDB status: ${err.message || err}`);
+            }
+        });
+
+    let openKafkaUICommand = vscode.commands.registerCommand('bitswan.openKafkaUI',
+        async (item: StageItem) => {
+            const details = await getDeployDetails(context);
+            if (!details) { return; }
+            const svcStage = serviceStageFor(item.stage);
+            try {
+                const status = await getServiceStatus(details.deployUrl, details.deploySecret, 'kafka', svcStage, true);
+                const uiUrl = status?.connection_info?.ui_url;
+                if (!uiUrl) {
+                    vscode.window.showWarningMessage(`Kafka UI is not enabled or has no URL for stage "${item.stage}"`);
+                    return;
+                }
+                await vscode.env.openExternal(vscode.Uri.parse(uiUrl));
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`Failed to get Kafka status: ${err.message || err}`);
+            }
+        });
+
+    let copyCouchDBPasswordCommand = vscode.commands.registerCommand('bitswan.copyCouchDBPassword',
+        async (item: StageItem) => {
+            const details = await getDeployDetails(context);
+            if (!details) { return; }
+            const svcStage = serviceStageFor(item.stage);
+            try {
+                const status = await getServiceStatus(details.deployUrl, details.deploySecret, 'couchdb', svcStage, true);
+                const password = status?.connection_info?.password;
+                if (!password) {
+                    vscode.window.showWarningMessage(`CouchDB is not enabled for stage "${item.stage}"`);
+                    return;
+                }
+                await vscode.env.clipboard.writeText(password);
+                vscode.window.showInformationMessage('CouchDB admin password copied to clipboard');
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`Failed to get CouchDB status: ${err.message || err}`);
+            }
+        });
+
+    let copyKafkaPasswordCommand = vscode.commands.registerCommand('bitswan.copyKafkaPassword',
+        async (item: StageItem) => {
+            const details = await getDeployDetails(context);
+            if (!details) { return; }
+            const svcStage = serviceStageFor(item.stage);
+            try {
+                const status = await getServiceStatus(details.deployUrl, details.deploySecret, 'kafka', svcStage, true);
+                const password = status?.connection_info?.admin_password;
+                if (!password) {
+                    vscode.window.showWarningMessage(`Kafka is not enabled for stage "${item.stage}"`);
+                    return;
+                }
+                await vscode.env.clipboard.writeText(password);
+                vscode.window.showInformationMessage('Kafka admin password copied to clipboard');
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`Failed to get Kafka status: ${err.message || err}`);
+            }
+        });
+
     // Register all commands
     context.subscriptions.push(deployCommand);
     context.subscriptions.push(startLiveDevServerCommand);
@@ -729,6 +810,10 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(promoteToStagingCommand);
     context.subscriptions.push(promoteToProductionCommand);
     context.subscriptions.push(openPromotionManagerCommand);
+    context.subscriptions.push(openCouchDBAdminCommand);
+    context.subscriptions.push(openKafkaUICommand);
+    context.subscriptions.push(copyCouchDBPasswordCommand);
+    context.subscriptions.push(copyKafkaPasswordCommand);
 
     // Refresh the tree views when files change in the workspace
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');

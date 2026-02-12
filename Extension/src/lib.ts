@@ -1179,6 +1179,7 @@ export interface AutomationConfigParams {
   secretGroups?: string[];
   automationId?: string;
   auth?: boolean;
+  services?: Record<string, { enabled: boolean }>;
 }
 
 export const promoteAutomation = async (
@@ -1218,6 +1219,9 @@ export const promoteAutomation = async (
     if (automationConfig.auth !== undefined) {
       form.append('auth', automationConfig.auth.toString());
     }
+    if (automationConfig.services) {
+      form.append('services', JSON.stringify(automationConfig.services));
+    }
   }
 
   const response = await axios.post(deployUrl, form, {
@@ -1251,6 +1255,33 @@ export const getAutomationHistory = async (
     throw new Error(`Failed to get automation history: ${response.status}`);
   }
 }
+
+export const getServiceStatus = async (
+  baseUrl: string,
+  secret: string,
+  serviceType: string,
+  stage: string,
+  showPasswords: boolean = false,
+) => {
+  const response = await axios.get(
+    `${baseUrl}/services/${serviceType}/status`,
+    {
+      params: {
+        stage,
+        show_passwords: showPasswords,
+      },
+      headers: {
+        Authorization: `Bearer ${secret}`,
+      },
+    }
+  );
+
+  if (response.status === 200) {
+    return response.data;
+  } else {
+    throw new Error(`Failed to get ${serviceType} status: ${response.status}`);
+  }
+};
 
 export const listAssets = async (assetsUrl: string, secret: string) => {
   const response = await axios.get(assetsUrl, {
