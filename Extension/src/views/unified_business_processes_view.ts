@@ -56,17 +56,33 @@ export class AutomationSourceItem extends vscode.TreeItem {
  * Tree item representing a subfolder containing automation sources (but not a business process)
  */
 export class SubfolderItem extends vscode.TreeItem {
+    public readonly children: (AutomationSourceItem | SubfolderItem)[];
+
     constructor(
         public readonly name: string,
         public readonly resourceUri: vscode.Uri,
-        public readonly automationSources: AutomationSourceItem[]
+        children: (AutomationSourceItem | SubfolderItem)[]
     ) {
         // Extract just the folder name from the path
         const displayName = name.split('/').pop() || name;
         super(displayName, vscode.TreeItemCollapsibleState.Collapsed);
-        this.tooltip = `${this.name} (${automationSources.length} automation${automationSources.length === 1 ? '' : 's'})`;
+        this.children = children;
+        const automationCount = SubfolderItem.countAutomations(children);
+        this.tooltip = `${this.name} (${automationCount} automation${automationCount === 1 ? '' : 's'})`;
         this.contextValue = 'subfolder';
         this.iconPath = new vscode.ThemeIcon('folder-library');
+    }
+
+    private static countAutomations(children: (AutomationSourceItem | SubfolderItem)[]): number {
+        let count = 0;
+        for (const child of children) {
+            if (child instanceof SubfolderItem) {
+                count += SubfolderItem.countAutomations(child.children);
+            } else {
+                count++;
+            }
+        }
+        return count;
     }
 }
 
@@ -299,9 +315,9 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         }
 
         if (element instanceof SubfolderItem) {
-            // Show automation sources within this subfolder
+            // Show nested subfolders and automation sources within this subfolder
             console.log(`[DEBUG] getChildren - SubfolderItem: "${element.name}"`);
-            return element.automationSources;
+            return element.children;
         }
 
         if (element instanceof OtherAutomationsItem) {
@@ -355,33 +371,8 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         // Get all automation sources recursively within this business process
         const allSources = this.getAutomationSourcesInDirectoryRecursive(businessProcessPath, businessProcessName);
 
-        // Group by immediate subfolder
-        const result: (AutomationSourceItem | SubfolderItem)[] = [];
-        const subfolderMap = new Map<string, AutomationSourceItem[]>();
-
-        for (const source of allSources) {
-            // Get the path relative to the business process
-            const relativeToBusinessProcess = path.relative(businessProcessPath, source.resourceUri.fsPath);
-            const pathParts = relativeToBusinessProcess.split(path.sep);
-
-            if (pathParts.length > 1) {
-                // This automation is in a subfolder - group it by immediate parent
-                const immediateSubfolder = pathParts[0];
-                if (!subfolderMap.has(immediateSubfolder)) {
-                    subfolderMap.set(immediateSubfolder, []);
-                }
-                subfolderMap.get(immediateSubfolder)!.push(source);
-            } else {
-                // Direct child of business process - add directly
-                result.push(source);
-            }
-        }
-
-        // Create SubfolderItems for grouped automations
-        for (const [subfolderName, sources] of subfolderMap) {
-            const subfolderUri = vscode.Uri.file(path.join(businessProcessPath, subfolderName));
-            result.push(new SubfolderItem(subfolderName, subfolderUri, sources));
-        }
+        // Build a nested tree structure from relative paths
+        const result = this.buildSubfolderTree(allSources, businessProcessPath);
 
         console.log(`[DEBUG] Found ${result.length} items for business process "${businessProcessName}"`);
 
@@ -404,32 +395,10 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             )
         );
 
-        // Group automation sources by their parent folder
-        const result: (AutomationSourceItem | SubfolderItem | AutomationItem)[] = [];
-        const subfolderMap = new Map<string, AutomationSourceItem[]>();
-
-        for (const source of otherSources) {
-            const automationSourceItem = new AutomationSourceItem(source.name, source.resourceUri);
-            const pathParts = source.name.split('/');
-
-            if (pathParts.length > 1) {
-                // This automation is in a subfolder - group it
-                const parentPath = pathParts.slice(0, -1).join('/');
-                if (!subfolderMap.has(parentPath)) {
-                    subfolderMap.set(parentPath, []);
-                }
-                subfolderMap.get(parentPath)!.push(automationSourceItem);
-            } else {
-                // Top-level automation source - add directly
-                result.push(automationSourceItem);
-            }
-        }
-
-        // Create SubfolderItems for grouped automations
-        for (const [subfolderPath, sources] of subfolderMap) {
-            const subfolderUri = vscode.Uri.file(path.join(workspacePath, subfolderPath));
-            result.push(new SubfolderItem(subfolderPath, subfolderUri, sources));
-        }
+        // Build nested tree structure for automation sources
+        const sourceItems = otherSources.map(source => new AutomationSourceItem(source.name, source.resourceUri));
+        const treeItems = this.buildSubfolderTree(sourceItems, workspacePath);
+        const result: (AutomationSourceItem | SubfolderItem | AutomationItem)[] = [...treeItems];
 
         // Add orphaned automations (automations that don't belong to any automation source)
         const automations = this.context.globalState.get<any[]>('automations', []);
@@ -781,6 +750,61 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         }
 
         return sources;
+    }
+
+    /**
+     * Build a nested subfolder tree from a flat list of automation sources.
+     * Sources at the root level are returned directly; sources nested in subdirectories
+     * are grouped into nested SubfolderItem hierarchies.
+     */
+    private buildSubfolderTree(sources: AutomationSourceItem[], basePath: string): (AutomationSourceItem | SubfolderItem)[] {
+        // Intermediate tree node for building the hierarchy
+        interface TreeNode {
+            automations: AutomationSourceItem[];
+            children: Map<string, TreeNode>;
+        }
+
+        const root: TreeNode = { automations: [], children: new Map() };
+
+        for (const source of sources) {
+            const relativePath = path.relative(basePath, source.resourceUri.fsPath);
+            const parts = relativePath.split(path.sep);
+
+            if (parts.length <= 1) {
+                // Direct child — no subfolder nesting needed
+                root.automations.push(source);
+            } else {
+                // Walk/create intermediate folder nodes for each path segment except the last (the automation itself)
+                let node = root;
+                for (let i = 0; i < parts.length - 1; i++) {
+                    if (!node.children.has(parts[i])) {
+                        node.children.set(parts[i], { automations: [], children: new Map() });
+                    }
+                    node = node.children.get(parts[i])!;
+                }
+                node.automations.push(source);
+            }
+        }
+
+        // Convert the tree into SubfolderItem / AutomationSourceItem arrays
+        const buildItems = (node: TreeNode, currentPath: string): (AutomationSourceItem | SubfolderItem)[] => {
+            const items: (AutomationSourceItem | SubfolderItem)[] = [];
+
+            // Add direct automation sources
+            items.push(...node.automations);
+
+            // Add subfolder children
+            for (const [folderName, childNode] of node.children) {
+                const folderPath = path.join(currentPath, folderName);
+                const childItems = buildItems(childNode, folderPath);
+                const subfolderUri = vscode.Uri.file(folderPath);
+                items.push(new SubfolderItem(folderName, subfolderUri, childItems));
+            }
+
+            return items;
+        };
+
+        return buildItems(root, basePath);
     }
 
     private getAutomationSourceFileEntries(dirPath: string): AutomationSourceFileItem[] {

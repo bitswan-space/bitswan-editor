@@ -414,6 +414,7 @@ export async function startLiveDevServerCommand(
                 secretGroups: automationConfig.secretGroups,
                 automationId: automationConfig.automationId,
                 auth: automationConfig.auth,
+                services: automationConfig.services,
             });
 
             if (success) {

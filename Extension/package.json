@@ -354,6 +354,26 @@
         "command": "bitswan.openAutomationTerminal",
         "title": "Open in Terminal",
         "icon": "$(terminal)"
+      },
+      {
+        "command": "bitswan.openCouchDBAdmin",
+        "title": "Open CouchDB Admin",
+        "icon": "$(database)"
+      },
+      {
+        "command": "bitswan.openKafkaUI",
+        "title": "Open Kafka UI",
+        "icon": "$(server-environment)"
+      },
+      {
+        "command": "bitswan.copyCouchDBPassword",
+        "title": "Copy CouchDB Password",
+        "icon": "$(key)"
+      },
+      {
+        "command": "bitswan.copyKafkaPassword",
+        "title": "Copy Kafka Password",
+        "icon": "$(key)"
       }
     ],
     "menus": {
@@ -487,6 +507,26 @@
           "command": "bitswan.deactivateAutomation",
           "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,active,/",
           "group": "inline@3"
+        },
+        {
+          "command": "bitswan.openCouchDBAdmin",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed/",
+          "group": "services@1"
+        },
+        {
+          "command": "bitswan.openKafkaUI",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed/",
+          "group": "services@2"
+        },
+        {
+          "command": "bitswan.copyCouchDBPassword",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed/",
+          "group": "services@3"
+        },
+        {
+          "command": "bitswan.copyKafkaPassword",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed/",
+          "group": "services@4"
         },
         {
           "command": "bitswan.createAutomationFile",
