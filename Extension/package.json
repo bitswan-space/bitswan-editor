@@ -510,22 +510,22 @@
         },
         {
           "command": "bitswan.openCouchDBAdmin",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed/",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:couchdb/",
           "group": "services@1"
         },
         {
           "command": "bitswan.openKafkaUI",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed/",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:kafka/",
           "group": "services@2"
         },
         {
           "command": "bitswan.copyCouchDBPassword",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed/",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:couchdb/",
           "group": "services@3"
         },
         {
           "command": "bitswan.copyKafkaPassword",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed/",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:kafka/",
           "group": "services@4"
         },
         {
@@ -748,6 +748,24 @@
           "command": "bitswan.buildImageFromToolbar",
           "when": "resourceLangId == dockerfile",
           "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "bitswan.openCouchDBAdmin",
+          "when": "false"
+        },
+        {
+          "command": "bitswan.openKafkaUI",
+          "when": "false"
+        },
+        {
+          "command": "bitswan.copyCouchDBPassword",
+          "when": "false"
+        },
+        {
+          "command": "bitswan.copyKafkaPassword",
+          "when": "false"
         }
       ]
     }

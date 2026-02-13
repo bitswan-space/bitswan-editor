@@ -690,6 +690,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     let openCouchDBAdminCommand = vscode.commands.registerCommand('bitswan.openCouchDBAdmin',
         async (item: StageItem) => {
+            if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
             const details = await getDeployDetails(context);
             if (!details) { return; }
             const svcStage = serviceStageFor(item.stage);
@@ -708,6 +709,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     let openKafkaUICommand = vscode.commands.registerCommand('bitswan.openKafkaUI',
         async (item: StageItem) => {
+            if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
             const details = await getDeployDetails(context);
             if (!details) { return; }
             const svcStage = serviceStageFor(item.stage);
@@ -726,6 +728,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     let copyCouchDBPasswordCommand = vscode.commands.registerCommand('bitswan.copyCouchDBPassword',
         async (item: StageItem) => {
+            if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
             const details = await getDeployDetails(context);
             if (!details) { return; }
             const svcStage = serviceStageFor(item.stage);
@@ -745,18 +748,19 @@ export function activate(context: vscode.ExtensionContext) {
 
     let copyKafkaPasswordCommand = vscode.commands.registerCommand('bitswan.copyKafkaPassword',
         async (item: StageItem) => {
+            if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
             const details = await getDeployDetails(context);
             if (!details) { return; }
             const svcStage = serviceStageFor(item.stage);
             try {
                 const status = await getServiceStatus(details.deployUrl, details.deploySecret, 'kafka', svcStage, true);
-                const password = status?.connection_info?.admin_password;
+                const password = status?.connection_info?.ui_password;
                 if (!password) {
                     vscode.window.showWarningMessage(`Kafka is not enabled for stage "${item.stage}"`);
                     return;
                 }
                 await vscode.env.clipboard.writeText(password);
-                vscode.window.showInformationMessage('Kafka admin password copied to clipboard');
+                vscode.window.showInformationMessage('Kafka UI password copied to clipboard');
             } catch (err: any) {
                 vscode.window.showErrorMessage(`Failed to get Kafka status: ${err.message || err}`);
             }
