@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as https from 'https';
 import { randomUUID } from 'crypto';
 import * as toml from '@iarna/toml';
 import { sanitizeName } from '../utils/nameUtils';
@@ -21,6 +22,59 @@ type TemplateGroupInfo = {
 };
 
 const TEMPLATES_ROOT = '/workspace/examples';
+const DOCKERHUB_TAGS_URL = 'https://hub.docker.com/v2/repositories/bitswan/pipeline-runtime-environment/tags/?page_size=10&ordering=last_updated';
+const BASE_IMAGE = 'bitswan/pipeline-runtime-environment';
+
+/**
+ * Fetches the latest build tag for bitswan/pipeline-runtime-environment from Docker Hub.
+ * Skips digest tags (sha256_*) and the "latest" tag, returning the first real build tag.
+ */
+function fetchLatestBitswanTag(): Promise<string | null> {
+    return new Promise((resolve) => {
+        https.get(DOCKERHUB_TAGS_URL, (res) => {
+            let data = '';
+            res.on('data', (chunk: string) => { data += chunk; });
+            res.on('end', () => {
+                try {
+                    const json = JSON.parse(data);
+                    const results: Array<{ name: string }> = json.results || [];
+                    const buildTag = results.find(
+                        (t) => t.name !== 'latest' && !t.name.startsWith('sha256_')
+                    );
+                    resolve(buildTag ? buildTag.name : null);
+                } catch {
+                    console.error('[Templates] Failed to parse Docker Hub response');
+                    resolve(null);
+                }
+            });
+        }).on('error', (err) => {
+            console.error('[Templates] Failed to fetch Docker Hub tags:', err.message);
+            resolve(null);
+        });
+    });
+}
+
+/**
+ * Updates the Dockerfile in the target directory to use the given base image tag.
+ * If no Dockerfile exists or no FROM line matches, this is a no-op.
+ */
+function updateDockerfileBaseImage(targetDir: string, tag: string): void {
+    const dockerfilePath = path.join(targetDir, 'image', 'Dockerfile');
+    if (!fs.existsSync(dockerfilePath)) {
+        return;
+    }
+    try {
+        let content = fs.readFileSync(dockerfilePath, 'utf-8');
+        const fromRegex = new RegExp(`^(FROM\\s+${BASE_IMAGE.replace('/', '\\/')}):\\S+`, 'm');
+        if (fromRegex.test(content)) {
+            content = content.replace(fromRegex, `$1:${tag}`);
+            fs.writeFileSync(dockerfilePath, content, 'utf-8');
+            console.log(`[Templates] Updated Dockerfile base image to ${BASE_IMAGE}:${tag}`);
+        }
+    } catch (err) {
+        console.error(`[Templates] Error updating Dockerfile in ${targetDir}:`, err);
+    }
+}
 
 function readGroupToml(filePath: string): TemplateGroupInfo | null {
     try {
@@ -383,9 +437,15 @@ export function openAutomationTemplates(context: vscode.ExtensionContext, busine
             }
 
             try {
+                // Fetch latest base image tag once for all automations in the group
+                const latestTag = await fetchLatestBitswanTag();
+
                 // Copy each automation in the group
                 for (const { src, dest } of targetDirs) {
                     copyDirectory(src, dest, () => true);
+                    if (latestTag) {
+                        updateDockerfileBaseImage(dest, latestTag);
+                    }
                     ensureAutomationId(dest);
                 }
 
@@ -451,6 +511,12 @@ export function openAutomationTemplates(context: vscode.ExtensionContext, busine
 
             // Recursively copy template excluding template.toml
             copyDirectory(templateDir, targetDir, (p) => path.basename(p) !== 'template.toml');
+
+            // Update Dockerfile to use the latest bitswan base image
+            const latestTag = await fetchLatestBitswanTag();
+            if (latestTag) {
+                updateDockerfileBaseImage(targetDir, latestTag);
+            }
 
             // Ensure automation.toml has an id field
             ensureAutomationId(targetDir);
