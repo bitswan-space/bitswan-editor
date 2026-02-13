@@ -1188,13 +1188,17 @@ export const promoteAutomation = async (
   checksum: string,
   stage: string,
   relativePath?: string,
-  automationConfig?: AutomationConfigParams
+  automationConfig?: AutomationConfigParams,
+  replicas?: number
 ) => {
   const form = new FormData();
   form.append('checksum', checksum);
   form.append('stage', stage);
   if (relativePath) {
     form.append('relative_path', relativePath);
+  }
+  if (replicas !== undefined) {
+    form.append('replicas', replicas.toString());
   }
   // Send automation config for live-dev (so server doesn't need to read from filesystem)
   if (automationConfig) {
@@ -1225,6 +1229,23 @@ export const promoteAutomation = async (
   }
 
   const response = await axios.post(deployUrl, form, {
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  return response.status === 200;
+}
+
+export const scaleAutomation = async (
+  scaleUrl: string,
+  secret: string,
+  replicas: number
+) => {
+  const form = new FormData();
+  form.append('replicas', replicas.toString());
+
+  const response = await axios.post(scaleUrl, form, {
     headers: {
       'Authorization': `Bearer ${secret}`,
     },

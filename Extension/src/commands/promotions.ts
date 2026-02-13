@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import urlJoin from 'proper-url-join';
 import { StageItem } from '../views/unified_business_processes_view';
 import { getDeployDetails } from '../deploy_details';
-import { promoteAutomation, getAutomationHistory } from '../lib';
+import { promoteAutomation, getAutomationHistory, scaleAutomation } from '../lib';
 import { outputChannel } from '../extension';
 import { refreshAutomationsCommand, showAutomationLogsCommand } from './automations';
 import { UnifiedBusinessProcessesViewProvider } from '../views/unified_business_processes_view';
@@ -200,7 +200,11 @@ export async function openPromotionManagerCommand(
                     await handleShowLogs(message.deploymentId, details, context);
                     break;
                 case 'rollback':
-                    await handleRollback(message.checksum, message.stage, details, deploymentIds, sanitizedSourceName, context);
+                    await handleRollback(message.checksum, message.stage, message.replicas, details, deploymentIds, sanitizedSourceName, context);
+                    await updateWebview();
+                    break;
+                case 'scale':
+                    await handleScale(message.deploymentId, message.stage, message.currentReplicas || 1, details, context);
                     await updateWebview();
                     break;
                 case 'copyChecksum':
@@ -309,6 +313,7 @@ async function handleShowLogs(
 async function handleRollback(
     checksum: string,
     stage: string,
+    replicas: number | undefined,
     details: { deployUrl: string; deploySecret: string },
     deploymentIds: { dev: string; staging: string; production: string },
     sanitizedSourceName: string,
@@ -316,10 +321,10 @@ async function handleRollback(
 ) {
     const deploymentId = stage === 'production' || !stage ? sanitizedSourceName : deploymentIds[stage as keyof typeof deploymentIds];
     const normalizedStage = stage === 'production' || !stage ? 'production' : stage;
-    
+
     try {
         const deployUrl = urlJoin(details.deployUrl, "automations", deploymentId, "deploy").toString();
-        
+
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: `Rolling back to checksum ${checksum.substring(0, 8)}...`,
@@ -327,8 +332,11 @@ async function handleRollback(
         }, async (progress) => {
             try {
                 progress.report({ increment: 50, message: `Rolling back...` });
-                const success = await promoteAutomation(deployUrl, details.deploySecret, checksum, normalizedStage);
-                
+                const success = await promoteAutomation(
+                    deployUrl, details.deploySecret, checksum, normalizedStage,
+                    undefined, undefined, replicas
+                );
+
                 if (success) {
                     progress.report({ increment: 100, message: `Successfully rolled back` });
                     vscode.window.showInformationMessage(`Successfully rolled back to checksum ${checksum.substring(0, 8)}`);
@@ -347,6 +355,75 @@ async function handleRollback(
         const errorMessage = error.message || 'Unknown error';
         vscode.window.showErrorMessage(`Failed to rollback: ${errorMessage}`);
         outputChannel.appendLine(`Rollback error: ${errorMessage}`);
+    }
+}
+
+async function handleScale(
+    deploymentId: string,
+    stage: string,
+    currentReplicas: number,
+    details: { deployUrl: string; deploySecret: string },
+    context: vscode.ExtensionContext
+) {
+    const input = await vscode.window.showInputBox({
+        prompt: `Enter number of replicas (currently ${currentReplicas})`,
+        placeHolder: String(currentReplicas),
+        validateInput: (value) => {
+            const num = parseInt(value, 10);
+            if (isNaN(num) || num < 1) {
+                return 'Must be a positive integer';
+            }
+            return null;
+        }
+    });
+
+    if (!input) {
+        return;
+    }
+
+    const replicas = parseInt(input, 10);
+    const delta = Math.abs(replicas - currentReplicas);
+
+    if (delta > 3) {
+        const confirm = await vscode.window.showWarningMessage(
+            `You are changing replicas by ${delta} (from ${currentReplicas} to ${replicas}). Continue?`,
+            { modal: true },
+            'Yes'
+        );
+        if (confirm !== 'Yes') {
+            return;
+        }
+    }
+
+    try {
+        const scaleUrl = urlJoin(details.deployUrl, "automations", deploymentId, "scale").toString();
+
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: `Scaling ${deploymentId} to ${replicas} replicas...`,
+            cancellable: false
+        }, async (progress) => {
+            try {
+                progress.report({ increment: 50, message: `Scaling...` });
+                const success = await scaleAutomation(scaleUrl, details.deploySecret, replicas);
+
+                if (success) {
+                    progress.report({ increment: 100, message: `Successfully scaled` });
+                    vscode.window.showInformationMessage(`Successfully scaled ${deploymentId} to ${replicas} replicas`);
+                    await refreshAutomationsCommand(context, { refresh: () => {} } as any);
+                } else {
+                    throw new Error(`Failed to scale`);
+                }
+            } catch (error: any) {
+                const errorMessage = error.message || 'Unknown error';
+                vscode.window.showErrorMessage(`Failed to scale: ${errorMessage}`);
+                outputChannel.appendLine(`Scale error: ${errorMessage}`);
+            }
+        });
+    } catch (error: any) {
+        const errorMessage = error.message || 'Unknown error';
+        vscode.window.showErrorMessage(`Failed to scale: ${errorMessage}`);
+        outputChannel.appendLine(`Scale error: ${errorMessage}`);
     }
 }
 
@@ -567,10 +644,15 @@ function getPromotionManagerHtml(
                         </div>
                     </div>
                 ` : ''}
+                <div class="info-row">
+                    <span class="info-label">Replicas:</span>
+                    <span class="info-value">${histories.dev !== null && histories.dev.length > 0 && histories.dev[0].replicas ? histories.dev[0].replicas : 1}</span>
+                </div>
             </div>
             ${stageData.dev.automationUrl ? `<button class="button button-secondary" onclick="openExternalUrl('${stageData.dev.automationUrl}')">Open External URL</button>` : ''}
             <button class="button button-primary" onclick="promote('dev', 'staging')">Promote to Staging</button>
             <button class="button button-secondary" onclick="showLogs('${deploymentIds.dev}')">Show Logs</button>
+            <button class="button button-secondary" onclick="scaleDeployment('${deploymentIds.dev}', 'dev', ${histories.dev !== null && histories.dev.length > 0 && histories.dev[0].replicas ? histories.dev[0].replicas : 1})">Scale</button>
             ${histories.dev === null ? `
                 <div class="history-section">
                     <div class="history-title">Deployment History</div>
@@ -584,14 +666,17 @@ function getPromotionManagerHtml(
                         const date = item.date || 'Unknown date';
                         const message = item.message || 'No message';
                         const checksumDisplay = item.checksum || 'N/A';
+                        const replicasDisplay = item.replicas && item.replicas > 1 ? `<div class="history-checksum">Replicas: ${item.replicas}</div>` : '';
+                        const itemReplicas = item.replicas || 1;
                         const rollbackButton = index > 0
-                            ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); rollback('${checksum}', 'dev')">Rollback</button>`
+                            ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); rollback('${checksum}', 'dev', ${itemReplicas})">Rollback</button>`
                             : '<span style="margin-left: 10px; color: var(--vscode-descriptionForeground); font-size: 11px;">Current</span>';
-                        return `<div class="history-item" onclick="rollback('${checksum}', 'dev')">
+                        return `<div class="history-item" onclick="rollback('${checksum}', 'dev', ${itemReplicas})">
                             <div class="history-item-content">
                                 <div class="history-item-date">${date}</div>
                                 <div class="history-item-message">${message}</div>
                                 <div class="history-checksum">Checksum: ${checksumDisplay}</div>
+                                ${replicasDisplay}
                             </div>
                             ${rollbackButton}
                         </div>`;
@@ -600,7 +685,7 @@ function getPromotionManagerHtml(
             ` : ''}
         ` : '<p>This stage has not been deployed yet.</p>'}
     </div>
-    
+
     <div class="stage-card">
         <div class="stage-header">
             <div class="stage-title">Staging</div>
@@ -631,10 +716,15 @@ function getPromotionManagerHtml(
                         </div>
                     </div>
                 ` : ''}
+                <div class="info-row">
+                    <span class="info-label">Replicas:</span>
+                    <span class="info-value">${histories.staging !== null && histories.staging.length > 0 && histories.staging[0].replicas ? histories.staging[0].replicas : 1}</span>
+                </div>
             </div>
             ${stageData.staging.automationUrl ? `<button class="button button-secondary" onclick="openExternalUrl('${stageData.staging.automationUrl}')">Open External URL</button>` : ''}
             <button class="button button-primary" onclick="promote('staging', 'production')">Promote to Production</button>
             <button class="button button-secondary" onclick="showLogs('${deploymentIds.staging}')">Show Logs</button>
+            <button class="button button-secondary" onclick="scaleDeployment('${deploymentIds.staging}', 'staging', ${histories.staging !== null && histories.staging.length > 0 && histories.staging[0].replicas ? histories.staging[0].replicas : 1})">Scale</button>
             ${histories.staging === null ? `
                 <div class="history-section">
                     <div class="history-title">Deployment History</div>
@@ -648,14 +738,17 @@ function getPromotionManagerHtml(
                         const date = item.date || 'Unknown date';
                         const message = item.message || 'No message';
                         const checksumDisplay = item.checksum || 'N/A';
+                        const replicasDisplay = item.replicas && item.replicas > 1 ? `<div class="history-checksum">Replicas: ${item.replicas}</div>` : '';
+                        const itemReplicas = item.replicas || 1;
                         const rollbackButton = index > 0
-                            ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); rollback('${checksum}', 'staging')">Rollback</button>`
+                            ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); rollback('${checksum}', 'staging', ${itemReplicas})">Rollback</button>`
                             : '<span style="margin-left: 10px; color: var(--vscode-descriptionForeground); font-size: 11px;">Current</span>';
-                        return `<div class="history-item" onclick="rollback('${checksum}', 'staging')">
+                        return `<div class="history-item" onclick="rollback('${checksum}', 'staging', ${itemReplicas})">
                             <div class="history-item-content">
                                 <div class="history-item-date">${date}</div>
                                 <div class="history-item-message">${message}</div>
                                 <div class="history-checksum">Checksum: ${checksumDisplay}</div>
+                                ${replicasDisplay}
                             </div>
                             ${rollbackButton}
                         </div>`;
@@ -664,7 +757,7 @@ function getPromotionManagerHtml(
             ` : ''}
         ` : '<p>This stage has not been deployed yet.</p>'}
     </div>
-    
+
     <div class="stage-card">
         <div class="stage-header">
             <div class="stage-title">Production</div>
@@ -695,9 +788,14 @@ function getPromotionManagerHtml(
                         </div>
                     </div>
                 ` : ''}
+                <div class="info-row">
+                    <span class="info-label">Replicas:</span>
+                    <span class="info-value">${histories.production !== null && histories.production.length > 0 && histories.production[0].replicas ? histories.production[0].replicas : 1}</span>
+                </div>
             </div>
             ${stageData.production.automationUrl ? `<button class="button button-secondary" onclick="openExternalUrl('${stageData.production.automationUrl}')">Open External URL</button>` : ''}
             <button class="button button-secondary" onclick="showLogs('${deploymentIds.production}')">Show Logs</button>
+            <button class="button button-secondary" onclick="scaleDeployment('${deploymentIds.production}', 'production', ${histories.production !== null && histories.production.length > 0 && histories.production[0].replicas ? histories.production[0].replicas : 1})">Scale</button>
             ${histories.production === null ? `
                 <div class="history-section">
                     <div class="history-title">Deployment History</div>
@@ -711,14 +809,17 @@ function getPromotionManagerHtml(
                         const date = item.date || 'Unknown date';
                         const message = item.message || 'No message';
                         const checksumDisplay = item.checksum || 'N/A';
+                        const replicasDisplay = item.replicas && item.replicas > 1 ? `<div class="history-checksum">Replicas: ${item.replicas}</div>` : '';
+                        const itemReplicas = item.replicas || 1;
                         const rollbackButton = index > 0
-                            ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); rollback('${checksum}', 'production')">Rollback</button>`
+                            ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); rollback('${checksum}', 'production', ${itemReplicas})">Rollback</button>`
                             : '<span style="margin-left: 10px; color: var(--vscode-descriptionForeground); font-size: 11px;">Current</span>';
-                        return `<div class="history-item" onclick="rollback('${checksum}', 'production')">
+                        return `<div class="history-item" onclick="rollback('${checksum}', 'production', ${itemReplicas})">
                             <div class="history-item-content">
                                 <div class="history-item-date">${date}</div>
                                 <div class="history-item-message">${message}</div>
                                 <div class="history-checksum">Checksum: ${checksumDisplay}</div>
+                                ${replicasDisplay}
                             </div>
                             ${rollbackButton}
                         </div>`;
@@ -793,14 +894,24 @@ groups=foo bar</code></pre>
             });
         }
         
-        function rollback(checksum, stage) {
+        function rollback(checksum, stage, replicas) {
             if (!checksum) {
                 return;
             }
             vscode.postMessage({
                 command: 'rollback',
                 checksum: checksum,
-                stage: stage
+                stage: stage,
+                replicas: replicas
+            });
+        }
+
+        function scaleDeployment(deploymentId, stage, currentReplicas) {
+            vscode.postMessage({
+                command: 'scale',
+                deploymentId: deploymentId,
+                stage: stage,
+                currentReplicas: currentReplicas || 1
             });
         }
         
