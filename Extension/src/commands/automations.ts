@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { AutomationItem } from '../views/automations_view';
 import { getAutomationLogs, getAutomations } from '../lib';
 import { AutomationsViewProvider } from '../views/automations_view';
-import { showLogsCommand, refreshItemsCommand } from './items';
+import { showLogsCommand, refreshItemsCommand, RefreshOptions } from './items';
 
 export async function showAutomationLogsCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
     return showLogsCommand(context, treeDataProvider, item, {
@@ -11,11 +11,11 @@ export async function showAutomationLogsCommand(context: vscode.ExtensionContext
     });
 }
 
-export async function refreshAutomationsCommand(context: vscode.ExtensionContext, treeDataProvider: { refresh(): void }) {
+export async function refreshAutomationsCommand(context: vscode.ExtensionContext, treeDataProvider: { refresh(): void }, options?: RefreshOptions) {
     return refreshItemsCommand(context, treeDataProvider, {
         entityType: 'automation',
         getItemsFunction: getAutomations
-    });
+    }, options);
 }
 
 export async function jumpToSourceCommand(context: vscode.ExtensionContext, item: any) {

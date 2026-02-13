@@ -42,6 +42,12 @@ export let gitopsPollingOutputChannel: vscode.OutputChannel;
 // Map to track output channels
 export const outputChannelsMap = new Map<string, vscode.OutputChannel>();
 
+// Pause auto-refresh during user actions to prevent race conditions
+export let refreshPaused = false;
+export function setRefreshPaused(paused: boolean) {
+    refreshPaused = paused;
+}
+
 // Store the refresh interval IDs
 export let automationRefreshInterval: NodeJS.Timer | undefined;
 export let imageRefreshInterval: NodeJS.Timer | undefined;
@@ -58,6 +64,16 @@ export function setImageRefreshInterval(interval: NodeJS.Timer | undefined) {
         clearInterval(imageRefreshInterval);
     }
     imageRefreshInterval = interval;
+}
+
+// SSE client reference for lifecycle management
+import { GitOpsSSEClient } from './services/sse_client';
+export let sseClient: GitOpsSSEClient | undefined;
+export function setSseClient(client: GitOpsSSEClient | undefined) {
+    if (sseClient) {
+        sseClient.disconnect();
+    }
+    sseClient = client;
 }
 
 /**
@@ -925,6 +941,13 @@ export function deactivate() {
         clearInterval(imageRefreshInterval);
         imageRefreshInterval = undefined;
         outputChannel.appendLine('Stopped automatic refresh of images');
+    }
+
+    // Clean up SSE client
+    if (sseClient) {
+        sseClient.disconnect();
+        sseClient = undefined;
+        outputChannel.appendLine('Disconnected SSE client');
     }
 
     // Clean up output channels
