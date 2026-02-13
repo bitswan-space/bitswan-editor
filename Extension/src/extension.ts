@@ -192,6 +192,10 @@ export function activate(context: vscode.ExtensionContext) {
     // Register commands using the new command modules
     let deployCommand = vscode.commands.registerCommand('bitswan.deployAutomation',
         async (item: FolderItem | AutomationSourceItem) => {
+            if (!item) {
+                vscode.window.showErrorMessage('No automation selected. Please click the deploy button on a specific automation.');
+                return;
+            }
             // Convert AutomationSourceItem to FolderItem if needed
             const folderItem = item instanceof AutomationSourceItem
                 ? new FolderItem(item.name, item.resourceUri)
@@ -201,6 +205,10 @@ export function activate(context: vscode.ExtensionContext) {
 
     let startLiveDevServerCommand = vscode.commands.registerCommand('bitswan.startLiveDevServer',
         async (item: FolderItem | AutomationSourceItem | StageItem) => {
+            if (!item) {
+                vscode.window.showErrorMessage('No automation selected. Please click the live dev button on a specific automation.');
+                return;
+            }
             let folderPath: string;
             if (item instanceof StageItem) {
                 // StageItem has sourceUri which points to the automation source directory
