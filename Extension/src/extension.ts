@@ -392,6 +392,7 @@ export function activate(context: vscode.ExtensionContext) {
     let openExternalUrlCommand = vscode.commands.registerCommand(
         "bitswan.openExternalUrl",
         async (item: AutomationItem | StageItem) => {
+            if (!item) { return; }
             const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
             const url = automationItem.automationUrl;
             if (!url) {
@@ -407,8 +408,9 @@ export function activate(context: vscode.ExtensionContext) {
         },
     );
     
-    let startAutomationCommand = vscode.commands.registerCommand('bitswan.startAutomation', 
+    let startAutomationCommand = vscode.commands.registerCommand('bitswan.startAutomation',
         async (item: AutomationItem | StageItem) => {
+            if (!item) { return; }
             const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
             return itemCommands.makeItemCommand({
                 title: `Starting Automation ${automationItem.name}`,
@@ -422,8 +424,9 @@ export function activate(context: vscode.ExtensionContext) {
             })(context, automationsProvider, automationItem);
         });
     
-    let stopAutomationCommand = vscode.commands.registerCommand('bitswan.stopAutomation', 
+    let stopAutomationCommand = vscode.commands.registerCommand('bitswan.stopAutomation',
         async (item: AutomationItem | StageItem) => {
+            if (!item) { return; }
             const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
             return itemCommands.makeItemCommand({
                 title: `Stopping Automation ${automationItem.name}`,
@@ -437,8 +440,9 @@ export function activate(context: vscode.ExtensionContext) {
             })(context, automationsProvider, automationItem);
         });
     
-    let restartAutomationCommand = vscode.commands.registerCommand('bitswan.restartAutomation',     
+    let restartAutomationCommand = vscode.commands.registerCommand('bitswan.restartAutomation',
         async (item: AutomationItem | StageItem) => {
+            if (!item) { return; }
             const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
             return itemCommands.makeItemCommand({
                 title: `Restarting Automation ${automationItem.name}`,
@@ -452,8 +456,9 @@ export function activate(context: vscode.ExtensionContext) {
             })(context, automationsProvider, automationItem);
         });
     
-    let showAutomationLogsCommand = vscode.commands.registerCommand('bitswan.showAutomationLogs', 
+    let showAutomationLogsCommand = vscode.commands.registerCommand('bitswan.showAutomationLogs',
         async (item: AutomationItem | StageItem) => {
+            if (!item) { return; }
             if (item instanceof StageItem && item.automation) {
                 await automationCommands.showAutomationLogsCommand(context, automationsProvider, item.automation);
             } else if (item instanceof AutomationItem) {
@@ -461,11 +466,12 @@ export function activate(context: vscode.ExtensionContext) {
             }
         });
 
-    let jumpToSourceCommand = vscode.commands.registerCommand('bitswan.jumpToSource', 
-        async (item: AutomationItem) => automationCommands.jumpToSourceCommand(context, item));
+    let jumpToSourceCommand = vscode.commands.registerCommand('bitswan.jumpToSource',
+        async (item: AutomationItem) => { if (!item) { return; } return automationCommands.jumpToSourceCommand(context, item); });
 
-    let openProcessReadmeCommand = vscode.commands.registerCommand('bitswan.openProcessReadme', 
+    let openProcessReadmeCommand = vscode.commands.registerCommand('bitswan.openProcessReadme',
         async (item: BusinessProcessItem) => {
+            if (!item) { return; }
             const readmePath = path.join(item.resourceUri.fsPath, 'README.md');
             try {
                 const uri = vscode.Uri.file(readmePath);
@@ -536,7 +542,7 @@ export function activate(context: vscode.ExtensionContext) {
         });
 
     let openPromotionManagerCommand = vscode.commands.registerCommand('bitswan.openPromotionManager',
-        async (item: AutomationSourceItem) => promotionCommands.openPromotionManagerCommand(context, item.name));
+        async (item: AutomationSourceItem) => { if (!item) { return; } return promotionCommands.openPromotionManagerCommand(context, item.name); });
 
     let showImageLogsCommand = vscode.commands.registerCommand('bitswan.showImageLogs', 
         async (item: ImageItem) => {
@@ -550,15 +556,16 @@ export function activate(context: vscode.ExtensionContext) {
             await imageCommands.showImageLogsCommand(context, provider, item);
         });
 
-    let showOrphanedImageLogsCommand = vscode.commands.registerCommand('bitswan.showOrphanedImageLogs', 
-        async (item: ImageItem) => imageCommands.showImageLogsCommand(context, orphanedImagesProvider, item));
+    let showOrphanedImageLogsCommand = vscode.commands.registerCommand('bitswan.showOrphanedImageLogs',
+        async (item: ImageItem) => { if (!item) { return; } return imageCommands.showImageLogsCommand(context, orphanedImagesProvider, item); });
 
     let openImageDetailsCommand = vscode.commands.registerCommand('bitswan.openImageDetails',
-        async (item: ImageItem) => imageCommands.openImageDetailsCommand(context, item));
+        async (item: ImageItem) => { if (!item) { return; } return imageCommands.openImageDetailsCommand(context, item); });
 
 
-    let activateAutomationCommand = vscode.commands.registerCommand('bitswan.activateAutomation', 
+    let activateAutomationCommand = vscode.commands.registerCommand('bitswan.activateAutomation',
         async (item: AutomationItem | StageItem) => {
+            if (!item) { return; }
             const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
             return itemCommands.makeItemCommand({
                 title: `Activating Automation ${automationItem.name}`,
@@ -572,8 +579,9 @@ export function activate(context: vscode.ExtensionContext) {
             })(context, automationsProvider, automationItem);
         });
     
-    let deactivateAutomationCommand = vscode.commands.registerCommand('bitswan.deactivateAutomation', 
+    let deactivateAutomationCommand = vscode.commands.registerCommand('bitswan.deactivateAutomation',
         async (item: AutomationItem | StageItem) => {
+            if (!item) { return; }
             const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
             return itemCommands.makeItemCommand({
                 title: `Deactivating Automation ${automationItem.name}`,
@@ -589,6 +597,10 @@ export function activate(context: vscode.ExtensionContext) {
     
     let deleteAutomationCommand = vscode.commands.registerCommand('bitswan.deleteAutomation',
         async (item: AutomationItem | StageItem) => {
+            if (!item) {
+                vscode.window.showErrorMessage('No automation selected. Please click the delete button on a specific automation.');
+                return;
+            }
             const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
             // Only require confirmation prompt for production deployments
             const requirePrompt = !(item instanceof StageItem) || item.stage === 'production';
