@@ -3,7 +3,7 @@ import urlJoin from 'proper-url-join';
 import { ImageItem } from '../views/unified_images_view';
 import { getImageLogs, getImages } from '../lib';
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
-import { showLogsCommand, refreshItemsCommand } from './items';
+import { showLogsCommand, refreshItemsCommand, RefreshOptions } from './items';
 import { GitOpsItem } from '../views/workspaces_view';
 
 export async function showImageLogsCommand(context: vscode.ExtensionContext, treeDataProvider: any, item: ImageItem) {
@@ -13,11 +13,11 @@ export async function showImageLogsCommand(context: vscode.ExtensionContext, tre
     });
 }
 
-export async function refreshImagesCommand(context: vscode.ExtensionContext, treeDataProvider: any) {
+export async function refreshImagesCommand(context: vscode.ExtensionContext, treeDataProvider: any, options?: RefreshOptions) {
     return refreshItemsCommand(context, treeDataProvider, {
         entityType: 'image',
         getItemsFunction: getImages
-    });
+    }, options);
 }
 
 export async function openImageDetailsCommand(context: vscode.ExtensionContext, item: ImageItem) {

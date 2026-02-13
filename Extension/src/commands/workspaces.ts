@@ -7,9 +7,10 @@ import { WorkspacesViewProvider } from '../views/workspaces_view';
 import { AutomationsViewProvider } from '../views/automations_view';
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
 import { UnifiedBusinessProcessesViewProvider } from '../views/unified_business_processes_view';
-import { outputChannel, setAutomationRefreshInterval, setImageRefreshInterval } from '../extension';
+import { outputChannel, setAutomationRefreshInterval, setImageRefreshInterval, refreshPaused, setSseClient } from '../extension';
 import { refreshAutomationsCommand } from './automations';
 import { refreshImagesCommand } from './images';
+import { GitOpsSSEClient } from '../services/sse_client';
 
 export async function addGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: WorkspacesViewProvider) {
     const name = await vscode.window.showInputBox({
@@ -90,28 +91,42 @@ export async function activateGitOpsCommand(
     unifiedImagesProvider?: UnifiedImagesViewProvider,
     orphanedImagesProvider?: OrphanedImagesViewProvider
 ) {
-    // Clear any existing refresh intervals
+    // Clear any existing refresh intervals and SSE client
     setAutomationRefreshInterval(undefined);
     setImageRefreshInterval(undefined);
+    setSseClient(undefined);
 
     await context.globalState.update('activeGitOpsInstance', item);
     try {
         const automations = await getAutomations(urlJoin(item.url, 'automations', { trailingSlash: true }).toString(), item.secret);
         await context.globalState.update('automations', automations);
 
-        // Set up automatic refresh every 10 seconds for automations (updates global state and refreshes unified view)
-        if (businessProcessesProvider) {
-            setAutomationRefreshInterval(setInterval(async () => {
-                await refreshAutomationsCommand(context, businessProcessesProvider);
-            }, 10000));
+        // Start SSE client for real-time push updates
+        if (businessProcessesProvider && unifiedImagesProvider && orphanedImagesProvider) {
+            const client = new GitOpsSSEClient(
+                context,
+                businessProcessesProvider,
+                unifiedImagesProvider,
+                orphanedImagesProvider,
+            );
+            setSseClient(client);
+            client.connect(item.url, item.secret);
         }
 
-        // Set up automatic refresh every 15 seconds for images
+        // Keep polling as fallback with increased intervals (SSE handles real-time updates)
+        if (businessProcessesProvider) {
+            setAutomationRefreshInterval(setInterval(async () => {
+                if (refreshPaused) { return; }
+                await refreshAutomationsCommand(context, businessProcessesProvider, { silent: true });
+            }, 30000));
+        }
+
         if (unifiedImagesProvider && orphanedImagesProvider) {
             setImageRefreshInterval(setInterval(async () => {
-                await refreshImagesCommand(context, unifiedImagesProvider);
-                await refreshImagesCommand(context, orphanedImagesProvider);
-            }, 15000));
+                if (refreshPaused) { return; }
+                await refreshImagesCommand(context, unifiedImagesProvider, { silent: true });
+                await refreshImagesCommand(context, orphanedImagesProvider, { silent: true });
+            }, 30000));
         }
     } catch (error: any) {
         vscode.window.showErrorMessage(`Failed to get automations from GitOps: ${error.message}`);

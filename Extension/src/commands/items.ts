@@ -5,9 +5,13 @@ import { AutomationsViewProvider} from '../views/automations_view';
 import { ImageItem, UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
 import { AutomationItem } from '../views/automations_view';
 import { GitOpsItem } from '../views/workspaces_view';
-import { outputChannel, outputChannelsMap } from '../extension';
+import { outputChannel, outputChannelsMap, setRefreshPaused } from '../extension';
 import { refreshAutomationsCommand } from './automations';
 import { refreshImagesCommand } from './images';
+
+export interface RefreshOptions {
+    silent?: boolean;
+}
 
 export function makeItemCommand(
     commandConfig: {
@@ -48,6 +52,7 @@ export function makeItemCommand(
             title: commandConfig.title,
             cancellable: false
         }, async (progress) => {
+            setRefreshPaused(true);
             try {
                 progress.report({ increment: 25, message: commandConfig.initialProgress });
 
@@ -79,6 +84,8 @@ export function makeItemCommand(
                 let errorMessage = error.message || 'Unknown error occurred';
                 outputChannel.appendLine(`${commandConfig.errorLogPrefix}: ${errorMessage}`);
                 vscode.window.showErrorMessage(`${commandConfig.errorMessage}: ${errorMessage}`);
+            } finally {
+                setRefreshPaused(false);
             }
         });
     }
@@ -167,16 +174,19 @@ export async function showLogsCommand<T extends AutomationItem | ImageItem>(
 }
 
 export async function refreshItemsCommand(
-    context: vscode.ExtensionContext, 
+    context: vscode.ExtensionContext,
     treeDataProvider: { refresh(): void },
     config: {
         entityType: string;
         getItemsFunction: (url: string, secret: string) => Promise<any>;
-    }
+    },
+    options?: RefreshOptions
 ) {
     const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (!activeInstance) {
-        vscode.window.showErrorMessage('No active GitOps instance');
+        if (!options?.silent) {
+            vscode.window.showErrorMessage('No active GitOps instance');
+        }
         return;
     }
 
@@ -185,9 +195,20 @@ export async function refreshItemsCommand(
             (urlJoin(activeInstance.url, config.entityType + 's', { trailingSlash: true }).toString()),
             activeInstance.secret
         );
+
+        // In silent mode, skip refresh if data hasn't changed
+        if (options?.silent) {
+            const current = context.globalState.get(config.entityType + 's', []);
+            if (JSON.stringify(current) === JSON.stringify(items)) {
+                return;
+            }
+        }
+
         await context.globalState.update(config.entityType + 's', items);
     } catch (error: any) {
-        vscode.window.showErrorMessage(`Failed to get ${config.entityType}s from GitOps: ${error.message}`);
+        if (!options?.silent) {
+            vscode.window.showErrorMessage(`Failed to get ${config.entityType}s from GitOps: ${error.message}`);
+        }
         await context.globalState.update(config.entityType + 's', []);
     }
 
