@@ -7,6 +7,7 @@ import { AutomationItem } from './automations_view';
 import { ImageItem } from './unified_images_view';
 import { isImageMatchingSource } from '../utils/imageMatching';
 import { sanitizeName } from '../utils/nameUtils';
+import { getAutomationDeployConfig } from '../utils/automationImageBuilder';
 
 const getTimestamp = (value?: string | null): number => {
     if (!value) {
@@ -96,7 +97,8 @@ export class StageItem extends vscode.TreeItem {
         public readonly automation: AutomationItem | null, // null if stage not deployed
         public readonly deploymentId: string, // The actual deployment_id (e.g., "my-automation-dev")
         public readonly checksum: string | null = null,
-        public readonly sourceUri?: vscode.Uri // Filesystem path for the automation source
+        public readonly sourceUri?: vscode.Uri, // Filesystem path for the automation source
+        public readonly serviceNames: string[] = [] // Service dependencies from automation.toml (e.g., ['kafka', 'couchdb'])
     ) {
         // Display name: "Live Dev" for live-dev, capitalized for others
         const stageDisplayName = stage === 'live-dev' ? 'Live Dev' : stage.charAt(0).toUpperCase() + stage.slice(1);
@@ -118,7 +120,8 @@ export class StageItem extends vscode.TreeItem {
             const status = automation.active ? 'active' : 'inactive';
             const state = automation.state ?? 'exited';
             const urlStatus = automation.automationUrl ? 'url' : 'nourl';
-            this.contextValue = `automationStage,${stage},deployed,${status},${state},urlStatus:${urlStatus}${sourceUri ? ',fsRoot' : ''}`;
+            const svcTags = serviceNames.map(s => `svc:${s}`).join(',');
+            this.contextValue = `automationStage,${stage},deployed,${status},${state},urlStatus:${urlStatus}${sourceUri ? ',fsRoot' : ''}${svcTags ? ',' + svcTags : ''}`;
             this.iconPath = automation.iconPath;
         } else {
             // Stage not deployed - greyed out
@@ -460,7 +463,28 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         
         console.log(`[DEBUG] getStagesForSource called with sourceName: "${sourceName}"`);
         console.log(`[DEBUG] Sanitized sourceName: "${sanitizedSourceName}"`);
-        
+
+        // Read service dependencies from automation.toml
+        const serviceNames: string[] = [];
+        if (sourceUri) {
+            try {
+                const config = getAutomationDeployConfig(sourceUri.fsPath);
+                console.log(`[DEBUG] getStagesForSource: sourceUri="${sourceUri.fsPath}", services=`, config.services);
+                if (config.services) {
+                    for (const [svcName, svcConf] of Object.entries(config.services)) {
+                        if (svcConf.enabled) {
+                            serviceNames.push(svcName);
+                        }
+                    }
+                }
+                console.log(`[DEBUG] getStagesForSource: serviceNames=[${serviceNames.join(', ')}]`);
+            } catch (e) {
+                console.log(`[DEBUG] getStagesForSource: error reading automation config:`, e);
+            }
+        } else {
+            console.log(`[DEBUG] getStagesForSource: no sourceUri, cannot read services`);
+        }
+
         // Map stages to their deployment IDs
         const stageDeploymentIds: Record<'live-dev' | 'dev' | 'staging' | 'production', string> = {
             'live-dev': `${sanitizedSourceName}-live-dev`,
@@ -507,10 +531,10 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                 // Use version_hash from the automation object instead of fetching history
                 const checksum = automation.version_hash || automation.versionHash || null;
                 
-                stages.push(new StageItem(stage, sourceName, automationItem, deploymentId, checksum, sourceUri));
+                stages.push(new StageItem(stage, sourceName, automationItem, deploymentId, checksum, sourceUri, serviceNames));
             } else {
                 // Stage not deployed - show greyed out
-                stages.push(new StageItem(stage, sourceName, null, deploymentId, null, sourceUri));
+                stages.push(new StageItem(stage, sourceName, null, deploymentId, null, sourceUri, serviceNames));
             }
         }
         
