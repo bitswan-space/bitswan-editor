@@ -335,7 +335,7 @@ function calculateGitTreeHashRecursive(
   outputChannel?: vscode.OutputChannel,
   relativePath: string = '',
   ignorePatterns?: string[]
-): string {
+): string | null {
   const entries: Array<{ mode: string; name: string; hash: string }> = [];
 
   // Use synchronous fs.readdirSync instead of vscode.workspace.fs which can hang
@@ -389,6 +389,13 @@ function calculateGitTreeHashRecursive(
 
     if (entry.isDirectory) {
       const treeHash = calculateGitTreeHashRecursive(fullPath, outputChannel, entryRelativePath, ignorePatterns);
+      // Skip empty directories — git does not track them
+      if (treeHash === null) {
+        if (outputChannel) {
+          outputChannel.appendLine(`Skipping empty directory: ${entryRelativePath}/`);
+        }
+        continue;
+      }
       entries.push({
         mode: '040000',
         name: entry.name,
@@ -409,6 +416,11 @@ function calculateGitTreeHashRecursive(
         outputChannel.appendLine(`CHECKSUM FILE: ${entryRelativePath} -> 100644 ${blobHash}`);
       }
     }
+  }
+
+  // Empty directories are not tracked by git
+  if (entries.length === 0) {
+    return null;
   }
 
   // Build tree object
@@ -460,6 +472,10 @@ export const calculateGitTreeHash = (
     }
     const treeHash = calculateGitTreeHashRecursive(dirPath, outputChannel, '', ignorePatterns);
 
+    if (treeHash === null) {
+      throw new Error(`Directory is empty (no deployable files): ${dirPath}`);
+    }
+
     if (outputChannel) {
       outputChannel.appendLine(`Calculated git tree hash: ${treeHash}`);
     }
@@ -492,6 +508,11 @@ export const calculateMergedGitTreeHash = (
     }
   }
   const treeHash = calculateMergedGitTreeHashRecursive(dirPaths, '', outputChannel, ignorePatterns);
+
+  if (treeHash === null) {
+    throw new Error(`Merged directories are empty (no deployable files)`);
+  }
+
   if (outputChannel) {
     outputChannel.appendLine(`Calculated merged git tree hash: ${treeHash}`);
   }
@@ -503,7 +524,7 @@ function calculateMergedGitTreeHashRecursive(
   relativePath: string,
   outputChannel?: vscode.OutputChannel,
   ignorePatterns?: string[]
-): string {
+): string | null {
   // Build a map of name -> {sourcePath, isDirectory}, with later directories overwriting earlier ones
   const entryMap = new Map<string, { sourcePath: string; isDirectory: boolean }>();
 
@@ -570,6 +591,13 @@ function calculateMergedGitTreeHashRecursive(
 
     if (entry.isDirectory) {
       const treeHash = calculateMergedGitTreeHashRecursive(dirPaths, childRelativePath, outputChannel, ignorePatterns);
+      // Skip empty directories — git does not track them
+      if (treeHash === null) {
+        if (outputChannel) {
+          outputChannel.appendLine(`Skipping empty directory: ${childRelativePath}/`);
+        }
+        continue;
+      }
       entries.push({ mode: '040000', name: entry.name, hash: treeHash });
       if (outputChannel) {
         outputChannel.appendLine(`CHECKSUM DIR:  ${childRelativePath}/ -> ${treeHash}`);
@@ -582,6 +610,11 @@ function calculateMergedGitTreeHashRecursive(
         outputChannel.appendLine(`CHECKSUM FILE: ${childRelativePath} -> 100644 ${blobHash}`);
       }
     }
+  }
+
+  // Empty directories are not tracked by git
+  if (entries.length === 0) {
+    return null;
   }
 
   // Build tree object
