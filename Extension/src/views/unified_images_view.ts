@@ -82,11 +82,17 @@ export class ImageItem extends vscode.TreeItem {
 export class UnifiedImagesViewProvider implements vscode.TreeDataProvider<ImageSourceItem | ImageItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<ImageSourceItem | ImageItem | undefined | null | void> = new vscode.EventEmitter<ImageSourceItem | ImageItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<ImageSourceItem | ImageItem | undefined | null | void> = this._onDidChangeTreeData.event;
+    private refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
     constructor(private context: vscode.ExtensionContext) {}
 
     refresh(): void {
-        this._onDidChangeTreeData.fire();
+        if (this.refreshTimer) {
+            clearTimeout(this.refreshTimer);
+        }
+        this.refreshTimer = setTimeout(() => {
+            this._onDidChangeTreeData.fire();
+        }, 500);
     }
 
     getTreeItem(element: ImageSourceItem | ImageItem): vscode.TreeItem {
@@ -190,11 +196,17 @@ export class UnifiedImagesViewProvider implements vscode.TreeDataProvider<ImageS
 export class OrphanedImagesViewProvider implements vscode.TreeDataProvider<ImageItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<ImageItem | undefined | null | void> = new vscode.EventEmitter<ImageItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<ImageItem | undefined | null | void> = this._onDidChangeTreeData.event;
+    private refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
     constructor(private context: vscode.ExtensionContext) {}
 
     refresh(): void {
-        this._onDidChangeTreeData.fire();
+        if (this.refreshTimer) {
+            clearTimeout(this.refreshTimer);
+        }
+        this.refreshTimer = setTimeout(() => {
+            this._onDidChangeTreeData.fire();
+        }, 500);
     }
 
     getTreeItem(element: ImageItem): vscode.TreeItem {
