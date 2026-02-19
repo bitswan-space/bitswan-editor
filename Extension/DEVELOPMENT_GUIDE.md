@@ -50,14 +50,14 @@ Automations that react to messages from streaming platforms, message queues, or 
 ```
 automation/
   main.ipynb                # main notebook
-  pipelines.conf            # defines connections & config for sources, sinks, secrets, and pipelines
+  automation.toml           # deployment config, secrets, and services
   image/
-    Dockerfile              # ~ can be used to install extra dependencies for the notebook. 
+    Dockerfile              # ~ can be used to install extra dependencies for the notebook.
 ```
 
 - `main.ipynb`: the primary notebook where `auto_pipeline(...)` is called. Cells below it implement the processing steps; helper functions (or imports of helper functions) are typically defined before the `auto_pipeline(...)` call.
-- `pipelines.conf`: wiring/configuration for sources, sinks, deployments, and secrets.
-- `Dockerfile`: usually very small; the runtime environment is imported and a few extra packages are installed. 
+- `automation.toml`: deployment configuration, secrets, and service dependencies.
+- `Dockerfile`: usually very small; the runtime environment is imported and a few extra packages are installed.
 
 ## `auto_pipeline` anatomy
 The notebook typically has:
@@ -139,7 +139,7 @@ expose = true                      # Public internet access
 expose_to = ["admin", "users"]     # OAuth2 protected, specific Keycloak groups only
 
 [secrets]
-dev = ["dev-secrets", "dev-db"]           # Secret groups for dev stage
+dev = ["dev-secrets", "dev-db"]           # Secret groups for dev stage (also used by live-dev)
 staging = ["staging-secrets"]              # Secret groups for staging stage
 production = ["prod-secrets", "prod-db"]   # Secret groups for production stage
 ```
@@ -207,9 +207,12 @@ ENTRYPOINT ["/entrypoint.sh"]
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `dev` | array | Secret groups for dev stage deployments |
+| `live-dev` | array | Secret groups for live-dev stage (falls back to `dev` if not set) |
+| `dev` | array | Secret groups for dev stage (falls back to `live-dev` if not set) |
 | `staging` | array | Secret groups for staging stage deployments |
 | `production` | array | Secret groups for production stage deployments |
+
+**Note:** The `dev` and `live-dev` stages share secrets — if one is configured but not the other, the configured groups are used for both.
 
 **Note:** `expose` and `expose_to` are mutually exclusive - use one or the other.
 
@@ -217,7 +220,7 @@ ENTRYPOINT ["/entrypoint.sh"]
 - Uses TOML syntax instead of INI
 - `image` replaces `pre` for specifying the Docker image
 - Files are mounted to `/app/` instead of `/opt/pipelines`
-- Stage-specific secrets only (no general `groups` fallback like in pipelines.conf)
+- Stage-specific secrets with `dev`/`live-dev` sharing (no general `groups` fallback like in pipelines.conf)
 - No `[docker]` section (uses sensible defaults)
 
 ### `pipelines.conf` (Legacy)
@@ -245,12 +248,9 @@ If both files exist, `automation.toml` takes precedence for deployment settings.
 
 ### Secrets
 
-Secrets in `pipelines.conf` reference secret groups backed by the groups you've created in your `secrets` tab.
-
-### Secrets
-
 - In AOC: secrets are mounted under a shared path and exposed to the runtime
 - Create a secret group in secrets
+- Configure which groups each stage uses in your `automation.toml` `[secrets]` section
 
 #### Managing Secrets in the VS Code Extension
 
@@ -282,14 +282,16 @@ Once created, you can:
 
 ![Managing secrets](resources/DEVELOPMENT_GUIDE/secrets/secrets3.png)
 
-**Reference in `pipelines.conf`:**
+**Reference in `automation.toml`:**
 
-After creating secret groups, reference them in your `pipelines.conf`:
+After creating secret groups, reference them in your `automation.toml`:
 
-```ini
+```toml
 [secrets]
-groups = group_name1, group_name2
-``` 
+dev = ["group_name1", "group_name2"]
+staging = ["group_name1", "group_name2"]
+production = ["group_name1", "group_name2"]
+```
 
 ## Custom PRE
 A PRE is a pre‑built component/image you can reference from your automation (e.g., custom sources/sinks/utilities). Where to register and how to author a PRE depends on your environment.

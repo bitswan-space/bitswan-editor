@@ -1,15 +1,15 @@
 # BitSwan VSC Extension
 
-A VS Code extension that provides a way to interact with the Bitswan runtime, allowing you to simply deploy and manage your pipelines.
+A VS Code extension that provides a way to interact with the Bitswan runtime, allowing you to simply deploy and manage your automations.
 
 ## Features
 
-A simple way to deploy and manage your pipelines.\
-You can easily deploy your pipeline by clicking the upload button in the new Bitswan tab in the sidebar, as seen in the image below.
+A simple way to deploy and manage your automations.\
+You can easily deploy your automation by clicking the upload button in the new Bitswan tab in the sidebar, as seen in the image below.
 
 ![Bitswan tab](resources/readme/pre.png)
 
-This allows you to deploy either pipeline `test` or `test2` by clicking on the corresponding upload button. Possible deployments are discovered from the currently opened folder, where the extension looks for all subfolders containing `pipelines.conf` files. For example, following folder structure would allow you to deploy `test` and `test2` pipelines:
+This allows you to deploy either automation `test` or `test2` by clicking on the corresponding upload button. Possible deployments are discovered from the currently opened folder, where the extension looks for all subfolders containing `automation.toml` (or legacy `pipelines.conf`) files. For example, following folder structure would allow you to deploy `test` and `test2` automations:
 
 ![Bitswan folder structure](resources/readme/explorer.png)
 
