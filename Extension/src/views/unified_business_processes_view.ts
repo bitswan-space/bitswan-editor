@@ -29,6 +29,7 @@ export class BusinessProcessItem extends vscode.TreeItem {
         // Extract just the folder name from the path
         const displayName = name.split('/').pop() || name;
         super(displayName, vscode.TreeItemCollapsibleState.Expanded);
+        this.id = `bp:${name}`;
         this.tooltip = `${this.name} (Business Process)`;
         this.contextValue = 'businessProcess';
         this.iconPath = new vscode.ThemeIcon('organization');
@@ -47,6 +48,7 @@ export class AutomationSourceItem extends vscode.TreeItem {
         // Extract just the folder name from the path
         const displayName = name.split('/').pop() || name;
         super(displayName, vscode.TreeItemCollapsibleState.Collapsed);
+        this.id = `as:${name}`;
         this.tooltip = `${this.name} (Automation Source)`;
         this.contextValue = 'automationSource';
         this.iconPath = new vscode.ThemeIcon('folder');
@@ -67,6 +69,7 @@ export class SubfolderItem extends vscode.TreeItem {
         // Extract just the folder name from the path
         const displayName = name.split('/').pop() || name;
         super(displayName, vscode.TreeItemCollapsibleState.Collapsed);
+        this.id = `sf:${name}`;
         this.children = children;
         const automationCount = SubfolderItem.countAutomations(children);
         this.tooltip = `${this.name} (${automationCount} automation${automationCount === 1 ? '' : 's'})`;
@@ -103,7 +106,8 @@ export class StageItem extends vscode.TreeItem {
         // Display name: "Live Dev" for live-dev, capitalized for others
         const stageDisplayName = stage === 'live-dev' ? 'Live Dev' : stage.charAt(0).toUpperCase() + stage.slice(1);
         super(stageDisplayName, vscode.TreeItemCollapsibleState.None);
-        
+        this.id = `st:${automationSourceName}/${stage}`;
+
         if (sourceUri) {
             this.resourceUri = sourceUri;
         }
@@ -142,6 +146,7 @@ export class AutomationSourceImagesItem extends vscode.TreeItem {
             `Images (${images.length})`,
             images.length ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
         );
+        this.id = `asi:${sourceName}`;
         this.tooltip = images.length
             ? `Image builds found for ${sourceName}`
             : `No image builds found for ${sourceName}`;
@@ -161,6 +166,7 @@ export class AutomationSourceImageItem extends ImageItem {
         metadata: any
     ) {
         super(name, buildTime, size, buildStatus, sourceName, 'businessProcesses', 'automationSourceImage', metadata);
+        this.id = `asimg:${sourceName}/${name}`;
     }
 }
 
@@ -174,6 +180,7 @@ export class AutomationSourceFileItem extends vscode.TreeItem {
     ) {
         const label = path.basename(resourceUri.fsPath) || resourceUri.fsPath;
         super(label, isDirectory ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None);
+        this.id = `asf:${resourceUri.fsPath}`;
         this.resourceUri = resourceUri;
         this.tooltip = resourceUri.fsPath;
         this.contextValue = isDirectory ? 'automationSourceDirectory' : 'automationSourceFile';
@@ -193,6 +200,7 @@ export class AutomationSourceFileItem extends vscode.TreeItem {
 export class OtherAutomationsItem extends vscode.TreeItem {
     constructor() {
         super('Other', vscode.TreeItemCollapsibleState.Expanded);
+        this.id = 'other';
         this.tooltip = 'Automation sources not belonging to any business process';
         this.contextValue = 'otherAutomations';
         this.iconPath = new vscode.ThemeIcon('folder-opened');
@@ -206,6 +214,7 @@ export class OtherAutomationsItem extends vscode.TreeItem {
 export class CreateAutomationItem extends vscode.TreeItem {
     constructor(public readonly businessProcessName: string) {
         super('Create Automation', vscode.TreeItemCollapsibleState.None);
+        this.id = `ca:${businessProcessName}`;
         this.tooltip = 'Create a new automation from a template';
         this.contextValue = 'createAutomation';
         this.iconPath = new vscode.ThemeIcon('add');
@@ -234,6 +243,7 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
     private _onDidChangeTreeData: vscode.EventEmitter<UnifiedTreeItem | undefined | null | void> = new vscode.EventEmitter<UnifiedTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<UnifiedTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
     private readonly separatorIconPaths: { light: vscode.Uri; dark: vscode.Uri };
+    private refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
     constructor(private context: vscode.ExtensionContext) {
         this.separatorIconPaths = {
@@ -244,7 +254,12 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
     refresh(): void {
         console.log(`[DEBUG] UnifiedBusinessProcessesViewProvider.refresh() called`);
-        this._onDidChangeTreeData.fire();
+        if (this.refreshTimer) {
+            clearTimeout(this.refreshTimer);
+        }
+        this.refreshTimer = setTimeout(() => {
+            this._onDidChangeTreeData.fire();
+        }, 500);
     }
 
     getTreeItem(element: UnifiedTreeItem): vscode.TreeItem {
@@ -291,13 +306,13 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
             if (fileEntries.length) {
                 if (items.length) {
-                    items.push(this.createSeparator());
+                    items.push(this.createSeparator(element.name, 0));
                 }
                 items.push(...fileEntries);
             }
 
             if (items.length) {
-                items.push(this.createSeparator());
+                items.push(this.createSeparator(element.name, 1));
             }
 
             items.push(imagesSection);
@@ -857,8 +872,9 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         }
     }
 
-    private createSeparator(): vscode.TreeItem {
+    private createSeparator(parentId: string, index: number): vscode.TreeItem {
         const separatorItem = new vscode.TreeItem('', vscode.TreeItemCollapsibleState.None);
+        separatorItem.id = `sep:${parentId}:${index}`;
         separatorItem.contextValue = 'automationSeparator';
         separatorItem.tooltip = '';
         separatorItem.iconPath = this.separatorIconPaths;
