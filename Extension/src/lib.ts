@@ -977,16 +977,6 @@ export const stopAutomation = async (automationUrl: string, secret: string) => {
   return response.status == 200;
 }
 
-export const getAutomationLogs = async (automationUrl: string, secret: string) => {
-  const response = await axios.get(automationUrl, {
-    headers: {
-      'Authorization': `Bearer ${secret}`,
-    },
-  });
-
-  return response.data;
-}
-
 export const getImageLogs = async (imageUrl: string, secret: string) => {
   const response = await axios.get(imageUrl, {
     headers: {
