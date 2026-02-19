@@ -1,14 +1,19 @@
 import * as vscode from 'vscode';
 import { AutomationItem } from '../views/automations_view';
-import { getAutomationLogs, getAutomations } from '../lib';
+import { getAutomations } from '../lib';
 import { AutomationsViewProvider } from '../views/automations_view';
-import { showLogsCommand, refreshItemsCommand, RefreshOptions } from './items';
+import { refreshItemsCommand, RefreshOptions } from './items';
+import { GitOpsItem } from '../views/workspaces_view';
+import { LogViewerPanel } from './log_viewer';
 
-export async function showAutomationLogsCommand(context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
-    return showLogsCommand(context, treeDataProvider, item, {
-        entityType: 'automation',
-        getLogsFunction: getAutomationLogs
-    });
+export async function showAutomationLogsCommand(context: vscode.ExtensionContext, _treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
+    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
+    if (!activeInstance) {
+        vscode.window.showErrorMessage('No active GitOps instance');
+        return;
+    }
+
+    LogViewerPanel.open(item.name, activeInstance.url, activeInstance.secret);
 }
 
 export async function refreshAutomationsCommand(context: vscode.ExtensionContext, treeDataProvider: { refresh(): void }, options?: RefreshOptions) {
