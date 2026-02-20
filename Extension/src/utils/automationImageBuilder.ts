@@ -252,18 +252,18 @@ function extractChecksumFromTag(tag: string): string | null {
 }
 
 /**
- * Update automation.toml with new image value
+ * Update automation.toml with new image value.
+ * Uses string-level editing to preserve the original file formatting and content.
  */
 async function updateAutomationTomlImageValue(
   automationFolderPath: string,
   newImageValue: string,
   outputChannel: vscode.OutputChannel
 ): Promise<void> {
-  const state = loadAutomationTomlState(automationFolderPath);
+  const automationTomlPath = path.join(automationFolderPath, "automation.toml");
 
-  if (!state) {
+  if (!fs.existsSync(automationTomlPath)) {
     // Create new automation.toml
-    const automationTomlPath = path.join(automationFolderPath, "automation.toml");
     const newData: toml.JsonMap = {
       deployment: {
         image: newImageValue,
@@ -276,26 +276,59 @@ async function updateAutomationTomlImageValue(
     return;
   }
 
-  const { automationTomlPath, data, imageValue } = state;
+  const content = fs.readFileSync(automationTomlPath, "utf-8");
+  const lines = content.split(/\r?\n/);
+  const newline = content.includes("\r\n") ? "\r\n" : "\n";
 
-  if (imageValue === newImageValue) {
-    outputChannel.appendLine(
-      `automation.toml image already points to ${newImageValue}, no update needed`
+  let inDeploymentSection = false;
+  let imageLineIndex = -1;
+  let deploymentSectionIndex = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      inDeploymentSection = trimmed.toLowerCase() === "[deployment]";
+      if (inDeploymentSection) {
+        deploymentSectionIndex = i;
+      }
+      continue;
+    }
+    if (inDeploymentSection && trimmed.toLowerCase().startsWith("image")) {
+      const match = trimmed.match(/^image\s*=\s*/);
+      if (match) {
+        imageLineIndex = i;
+        break;
+      }
+    }
+  }
+
+  if (imageLineIndex >= 0) {
+    // Check if already up to date
+    const currentLine = lines[imageLineIndex].trim();
+    const expectedLine = `image = "${newImageValue}"`;
+    if (currentLine === expectedLine) {
+      outputChannel.appendLine(
+        `automation.toml image already points to ${newImageValue}, no update needed`
+      );
+      return;
+    }
+    // Replace just the image line, preserving leading whitespace
+    const prefix = lines[imageLineIndex].substring(
+      0,
+      lines[imageLineIndex].indexOf(lines[imageLineIndex].trim())
     );
-    return;
+    lines[imageLineIndex] = `${prefix}image = "${newImageValue}"`;
+  } else if (deploymentSectionIndex >= 0) {
+    // [deployment] exists but no image key — insert after the section header
+    lines.splice(deploymentSectionIndex + 1, 0, `image = "${newImageValue}"`);
+  } else {
+    // No [deployment] section at all — append one
+    lines.push("");
+    lines.push("[deployment]");
+    lines.push(`image = "${newImageValue}"`);
   }
 
-  // Update the image value
-  if (!data.deployment) {
-    data.deployment = {};
-  }
-  (data.deployment as toml.JsonMap).image = newImageValue;
-
-  // Stringify and remove underscores from numbers (TOML 1.0 feature not supported by Python's toml library)
-  let tomlContent = toml.stringify(data);
-  tomlContent = tomlContent.replace(/(\d)_(\d)/g, '$1$2');
-
-  fs.writeFileSync(automationTomlPath, tomlContent, "utf-8");
+  fs.writeFileSync(automationTomlPath, lines.join(newline), "utf-8");
   outputChannel.appendLine(
     `Updated automation.toml image value to ${newImageValue}`
   );
