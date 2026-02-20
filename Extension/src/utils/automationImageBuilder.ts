@@ -77,20 +77,16 @@ function loadAutomationTomlState(
     return null;
   }
 
-  try {
-    const content = fs.readFileSync(automationTomlPath, "utf-8");
-    const data = toml.parse(content);
-    const deployment = (data.deployment as toml.JsonMap) || {};
-    const imageValue = (deployment.image as string) || null;
+  const content = fs.readFileSync(automationTomlPath, "utf-8");
+  const data = toml.parse(content);
+  const deployment = (data.deployment as toml.JsonMap) || {};
+  const imageValue = (deployment.image as string) || null;
 
-    return {
-      automationTomlPath,
-      data,
-      imageValue,
-    };
-  } catch {
-    return null;
-  }
+  return {
+    automationTomlPath,
+    data,
+    imageValue,
+  };
 }
 
 /**
@@ -253,7 +249,8 @@ function extractChecksumFromTag(tag: string): string | null {
 
 /**
  * Update automation.toml with new image value.
- * Uses string-level editing to preserve the original file formatting and content.
+ * Validates the TOML first, then uses string-level editing to preserve
+ * the original file formatting and content.
  */
 async function updateAutomationTomlImageValue(
   automationFolderPath: string,
@@ -277,6 +274,16 @@ async function updateAutomationTomlImageValue(
   }
 
   const content = fs.readFileSync(automationTomlPath, "utf-8");
+
+  // Validate TOML syntax before proceeding
+  try {
+    toml.parse(content);
+  } catch (e: any) {
+    const msg = `automation.toml has invalid TOML syntax: ${e.message || e}`;
+    outputChannel.appendLine(msg);
+    throw new Error(msg);
+  }
+
   const lines = content.split(/\r?\n/);
   const newline = content.includes("\r\n") ? "\r\n" : "\n";
 
