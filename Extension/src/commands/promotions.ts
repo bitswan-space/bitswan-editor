@@ -853,7 +853,6 @@ function getPromotionManagerHtml(
             In your <code>automation.toml</code> file, you can specify stage-specific secret groups:
         </p>
         <pre style="background-color: var(--vscode-textCodeBlock-background); padding: 12px; border-radius: 4px; overflow-x: auto; margin: 10px 0;"><code>[secrets]
-live-dev = ["foo-dev", "bar-dev"]
 dev = ["foo-dev", "bar-dev"]
 staging = ["foo-staging", "bar-staging"]
 production = ["foo-prod", "bar-prod"]</code></pre>
@@ -861,15 +860,10 @@ production = ["foo-prod", "bar-prod"]</code></pre>
             When an automation is deployed to a specific stage:
         </p>
         <ul style="line-height: 1.8; padding-left: 20px;">
-            <li><strong>Dev stage</strong>: Uses <code>dev</code> secret groups. Falls back to <code>live-dev</code> groups if <code>dev</code> is not specified.</li>
-            <li><strong>Live-dev stage</strong>: Uses <code>live-dev</code> secret groups. Falls back to <code>dev</code> groups if <code>live-dev</code> is not specified.</li>
+            <li><strong>Dev stage</strong>: Uses <code>dev</code> secret groups. These are also used in the <strong>live-dev</strong> stage.</li>
             <li><strong>Staging stage</strong>: Uses <code>staging</code> secret groups.</li>
             <li><strong>Production stage</strong>: Uses <code>production</code> secret groups.</li>
         </ul>
-        <p style="line-height: 1.6; margin-bottom: 0;">
-            The <strong>dev</strong> and <strong>live-dev</strong> stages share secrets — if one is configured but not the other, the configured groups are used for both.
-            This means you typically only need to configure one of the two.
-        </p>
         <p style="line-height: 1.6; margin-top: 15px; margin-bottom: 0;">
             <strong>Note:</strong> In Jupyter notebooks, secrets are loaded as if the automation is running in the <strong>dev</strong> stage.
             The automation container also receives a <code>BITSWAN_AUTOMATION_STAGE</code> environment variable indicating its current stage.
