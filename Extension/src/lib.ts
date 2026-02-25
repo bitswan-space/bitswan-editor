@@ -637,15 +637,20 @@ function calculateMergedGitTreeHashRecursive(
   return finalHash;
 }
 
-export const zipDirectory = async (dirPath: string, relativePath: string = '', zipFile: JSZip = new JSZip(), outputChannel: vscode.OutputChannel) => {
+export const zipDirectory = async (dirPath: string, relativePath: string = '', zipFile: JSZip = new JSZip(), outputChannel: vscode.OutputChannel, ignorePatterns?: string[]) => {
 
   const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dirPath));
   for (const [name, type] of entries) {
     const fullPath = path.join(dirPath, name);
     const zipPath = path.join(relativePath, name);
 
+    if (shouldIgnore(zipPath, ignorePatterns)) {
+      outputChannel.appendLine(`Ignoring: ${zipPath}`);
+      continue;
+    }
+
     if (type === vscode.FileType.Directory) {
-      await zipDirectory(fullPath, zipPath, zipFile, outputChannel);
+      await zipDirectory(fullPath, zipPath, zipFile, outputChannel, ignorePatterns);
     } else {
       const content = await vscode.workspace.fs.readFile(vscode.Uri.file(fullPath));
       outputChannel.appendLine(`Adding file ${fullPath}`);
