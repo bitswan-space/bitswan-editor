@@ -16,7 +16,7 @@ import { UnifiedBusinessProcessesViewProvider } from '../views/unified_business_
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
 import { sanitizeName } from '../utils/nameUtils';
 import { refreshAutomationsCommand } from './automations';
-import { ensureAutomationImageReady, getAutomationDeployConfig } from '../utils/automationImageBuilder';
+import { ensureAutomationImageReady, getAutomationDeployConfig, checkImageDirectoryPreflight } from '../utils/automationImageBuilder';
 
 /**
  * Recursively copies all files and directories from srcDir to destDir, preserving the directory structure.
@@ -87,6 +87,29 @@ export async function deployCommandAbstract(
     // folderName is the name of the folder immediately containing the item being deployed so /bar/foo → foo
     const folderName = path.basename(folderPath);
 
+    // Read automation config early so we have ignore patterns for pre-flight and image build
+    let ignorePatterns: string[] | undefined;
+    if (itemSet === "automations") {
+        const automationConfig = getAutomationDeployConfig(folderPath);
+        ignorePatterns = automationConfig.ignore;
+        if (ignorePatterns && ignorePatterns.length > 0) {
+            outputChannel.appendLine(`Ignore patterns from config: ${ignorePatterns.join(', ')}`);
+        }
+
+        // Pre-flight check on image/ directory
+        const preflightWarning = checkImageDirectoryPreflight(folderPath, ignorePatterns);
+        if (preflightWarning) {
+            const choice = await vscode.window.showWarningMessage(
+                preflightWarning,
+                { modal: true },
+                'Continue Anyway'
+            );
+            if (choice !== 'Continue Anyway') {
+                return;
+            }
+        }
+    }
+
     // deployment of pipeline
     await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
@@ -116,16 +139,9 @@ export async function deployCommandAbstract(
                 progress.report({ increment: 5, message: "Preparing automation image..." });
                 let imageBuildResult: Awaited<ReturnType<typeof ensureAutomationImageReady>> = null;
                 try {
-                    imageBuildResult = await ensureAutomationImageReady(details, folderPath, outputChannel);
+                    imageBuildResult = await ensureAutomationImageReady(details, folderPath, outputChannel, ignorePatterns);
                 } catch (imageError: any) {
                     throw new Error(`Failed to prepare automation image: ${imageError.message || imageError}`);
-                }
-
-                // Get automation config to read ignore patterns
-                const automationConfig = getAutomationDeployConfig(folderPath);
-                const ignorePatterns = automationConfig.ignore;
-                if (ignorePatterns && ignorePatterns.length > 0) {
-                    outputChannel.appendLine(`Ignore patterns from config: ${ignorePatterns.join(', ')}`);
                 }
 
                 // Recalculate checksum with ignore patterns
@@ -378,26 +394,50 @@ export async function startLiveDevServerCommand(
     const folderName = path.basename(folderPath);
     const normalizedFolderName = sanitizeName(folderName);
 
+    // Read automation config before withProgress so we have ignore patterns for pre-flight
+    const automationConfig = getAutomationDeployConfig(folderPath);
+    const ignorePatterns = automationConfig.ignore;
+    if (ignorePatterns && ignorePatterns.length > 0) {
+        outputChannel.appendLine(`Ignore patterns from config: ${ignorePatterns.join(', ')}`);
+    }
+
+    // Pre-flight check on image/ directory
+    const preflightWarning = checkImageDirectoryPreflight(folderPath, ignorePatterns);
+    if (preflightWarning) {
+        const choice = await vscode.window.showWarningMessage(
+            preflightWarning,
+            { modal: true },
+            'Continue Anyway'
+        );
+        if (choice !== 'Continue Anyway') {
+            return;
+        }
+    }
+
     await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: `Starting live dev server for ${folderName}`,
-        cancellable: false
-    }, async (progress) => {
+        cancellable: true
+    }, async (progress, token) => {
         try {
             progress.report({ increment: 20, message: "Preparing automation image..." });
 
+            if (token.isCancellationRequested) { return; }
+
             // Build image if needed
-            const imageResult = await ensureAutomationImageReady(details, folderPath, outputChannel);
+            const imageResult = await ensureAutomationImageReady(details, folderPath, outputChannel, ignorePatterns);
             // imageResult is null if no image folder exists, which is fine
+
+            if (token.isCancellationRequested) { return; }
 
             progress.report({ increment: 50, message: "Reading automation config..." });
 
             // Get relative path for source mounting
             const relativePath = path.relative(workspaceFolders[0].uri.fsPath, folderPath);
 
-            // Read automation config to send to server (so server doesn't need filesystem access)
-            const automationConfig = getAutomationDeployConfig(folderPath);
             outputChannel.appendLine(`Live-dev config: image=${automationConfig.image}, expose=${automationConfig.expose}, port=${automationConfig.port}, mountPath=${automationConfig.mountPath}, secretGroups=${automationConfig.secretGroups?.join(',') || 'none'}, automationId=${automationConfig.automationId || 'none'}, auth=${automationConfig.auth ?? false}`);
+
+            if (token.isCancellationRequested) { return; }
 
             progress.report({ increment: 70, message: "Starting live dev server..." });
 

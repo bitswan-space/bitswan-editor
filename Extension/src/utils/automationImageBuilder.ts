@@ -12,6 +12,7 @@ import {
   calculateGitTreeHash,
   deploy,
   getImages,
+  shouldIgnore,
   zip2stream,
   zipDirectory,
 } from "../lib";
@@ -505,10 +506,11 @@ async function startImageBuild(
   automationFolderPath: string,
   checksum: string,
   normalizedName: string,
-  outputChannel: vscode.OutputChannel
+  outputChannel: vscode.OutputChannel,
+  ignorePatterns?: string[]
 ): Promise<void> {
   const imageDir = path.join(automationFolderPath, IMAGE_FOLDER_NAME);
-  let zip = await zipDirectory(imageDir, "", new JSZip(), outputChannel);
+  let zip = await zipDirectory(imageDir, "", new JSZip(), outputChannel, ignorePatterns);
   const stream = zip2stream(zip);
 
   const form = new FormData();
@@ -531,10 +533,64 @@ async function startImageBuild(
   outputChannel.appendLine("Image upload successful, waiting for build logs...");
 }
 
+/**
+ * Pre-flight check on the image/ directory.
+ * Returns a warning message string if issues are found, or null if everything looks fine.
+ */
+export function checkImageDirectoryPreflight(
+  automationFolderPath: string,
+  ignorePatterns?: string[]
+): string | null {
+  const imageFolder = path.join(automationFolderPath, IMAGE_FOLDER_NAME);
+  if (!fs.existsSync(imageFolder) || !fs.statSync(imageFolder).isDirectory()) {
+    return null;
+  }
+
+  const warnings: string[] = [];
+  let fileCount = 0;
+  let hasUnignoredNodeModules = false;
+
+  function walk(dir: string, relativePath: string) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const entryRelative = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+      if (shouldIgnore(entryRelative, ignorePatterns)) {
+        continue;
+      }
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules") {
+          hasUnignoredNodeModules = true;
+        }
+        walk(path.join(dir, entry.name), entryRelative);
+      } else if (entry.isFile()) {
+        fileCount++;
+      }
+    }
+  }
+
+  walk(imageFolder, "");
+
+  if (hasUnignoredNodeModules) {
+    warnings.push(
+      "The image/ directory contains an unignored node_modules folder. " +
+      "Add 'node_modules' to [deployment].ignore in automation.toml to exclude it."
+    );
+  }
+  if (fileCount > 150) {
+    warnings.push(
+      `The image/ directory contains ${fileCount} files (after applying ignore patterns). ` +
+      "This may result in a very large image upload."
+    );
+  }
+
+  return warnings.length > 0 ? warnings.join("\n\n") : null;
+}
+
 export async function ensureAutomationImageReady(
   details: DeployDetails,
   automationFolderPath: string,
-  outputChannel: vscode.OutputChannel
+  outputChannel: vscode.OutputChannel,
+  ignorePatterns?: string[]
 ): Promise<AutomationImageResult | null> {
   const imageFolder = path.join(automationFolderPath, IMAGE_FOLDER_NAME);
   const dockerfilePath = path.join(imageFolder, "Dockerfile");
@@ -550,7 +606,7 @@ export async function ensureAutomationImageReady(
   const automationName = path.basename(automationFolderPath);
   const normalizedName = sanitizeName(automationName);
 
-  const checksum = calculateGitTreeHash(imageFolder, outputChannel);
+  const checksum = calculateGitTreeHash(imageFolder, outputChannel, ignorePatterns);
   const expectedTag = `internal/${normalizedName}:sha${checksum}`;
 
   // Get current image value from either config format
@@ -609,7 +665,8 @@ export async function ensureAutomationImageReady(
       automationFolderPath,
       checksum,
       normalizedName,
-      outputChannel
+      outputChannel,
+      ignorePatterns
     );
   }
 
