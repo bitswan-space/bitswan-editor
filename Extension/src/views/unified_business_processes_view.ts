@@ -244,6 +244,8 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
     readonly onDidChangeTreeData: vscode.Event<UnifiedTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
     private readonly separatorIconPaths: { light: vscode.Uri; dark: vscode.Uri };
     private refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    // Track automation source items so we can fire targeted refreshes
+    private _knownAutomationSources: AutomationSourceItem[] = [];
 
     constructor(private context: vscode.ExtensionContext) {
         this.separatorIconPaths = {
@@ -252,13 +254,39 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         };
     }
 
+    /**
+     * Full tree refresh — rebuilds everything from root.
+     * Use only when the file structure or business processes change.
+     */
     refresh(): void {
         console.log(`[DEBUG] UnifiedBusinessProcessesViewProvider.refresh() called`);
         if (this.refreshTimer) {
             clearTimeout(this.refreshTimer);
         }
+        this._knownAutomationSources = [];
         this.refreshTimer = setTimeout(() => {
             this._onDidChangeTreeData.fire();
+        }, 500);
+    }
+
+    /**
+     * Targeted refresh — only re-fetches children of known AutomationSourceItems.
+     * This avoids rebuilding the entire tree when only automations data changes,
+     * keeping the sidebar interactive during refresh.
+     */
+    refreshAutomations(): void {
+        if (this.refreshTimer) {
+            clearTimeout(this.refreshTimer);
+        }
+        this.refreshTimer = setTimeout(() => {
+            if (this._knownAutomationSources.length > 0) {
+                for (const item of this._knownAutomationSources) {
+                    this._onDidChangeTreeData.fire(item);
+                }
+            } else {
+                // No tracked sources yet — fall back to full refresh
+                this._onDidChangeTreeData.fire();
+            }
         }, 500);
     }
 
@@ -284,6 +312,8 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             // Show automation sources for this business process
             console.log(`[DEBUG] getChildren - BusinessProcessItem: "${element.name}"`);
             const items = this.getAutomationSourcesForBusinessProcess(element.name);
+            // Track AutomationSourceItems for targeted refresh
+            this._trackAutomationSources(items);
             // Add the "+ Create Automation" button at the end
             return [...items, new CreateAutomationItem(element.name)];
         }
@@ -341,11 +371,29 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         if (element instanceof OtherAutomationsItem) {
             // Show automation sources not belonging to any business process
             console.log(`[DEBUG] getChildren - OtherAutomationsItem`);
-            return this.getOtherAutomationSources();
+            const items = this.getOtherAutomationSources();
+            this._trackAutomationSources(items);
+            return items;
         }
 
         console.log(`[DEBUG] getChildren - unknown element type: ${element.constructor.name}`);
         return [];
+    }
+
+    /**
+     * Collect AutomationSourceItem instances (including inside SubfolderItems)
+     * so that refreshAutomations() can fire targeted change events.
+     */
+    private _trackAutomationSources(items: readonly UnifiedTreeItem[]): void {
+        for (const item of items) {
+            if (item instanceof AutomationSourceItem) {
+                if (!this._knownAutomationSources.some(s => s.id === item.id)) {
+                    this._knownAutomationSources.push(item);
+                }
+            } else if (item instanceof SubfolderItem) {
+                this._trackAutomationSources(item.children);
+            }
+        }
     }
 
     private getBusinessProcesses(): (BusinessProcessItem | OtherAutomationsItem)[] {

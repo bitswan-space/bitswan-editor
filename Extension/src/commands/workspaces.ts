@@ -130,7 +130,6 @@ export async function activateGitOpsCommand(
         }
     } catch (error: any) {
         vscode.window.showErrorMessage(`Failed to get automations from GitOps: ${error.message}`);
-        await context.globalState.update('automations', []);
     }
 
     treeDataProvider.refresh();

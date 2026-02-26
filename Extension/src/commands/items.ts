@@ -175,7 +175,7 @@ export async function showLogsCommand<T extends AutomationItem | ImageItem>(
 
 export async function refreshItemsCommand(
     context: vscode.ExtensionContext,
-    treeDataProvider: { refresh(): void },
+    treeDataProvider: { refresh(): void; refreshAutomations?(): void },
     config: {
         entityType: string;
         getItemsFunction: (url: string, secret: string) => Promise<any>;
@@ -209,8 +209,15 @@ export async function refreshItemsCommand(
         if (!options?.silent) {
             vscode.window.showErrorMessage(`Failed to get ${config.entityType}s from GitOps: ${error.message}`);
         }
-        await context.globalState.update(config.entityType + 's', []);
+        // Keep existing data on error — stale data is better than an empty sidebar
+        return;
     }
 
-    treeDataProvider.refresh();
+    // Use targeted refresh for automations (only updates stage items),
+    // full refresh for other entity types
+    if (config.entityType === 'automation' && treeDataProvider.refreshAutomations) {
+        treeDataProvider.refreshAutomations();
+    } else {
+        treeDataProvider.refresh();
+    }
 }
