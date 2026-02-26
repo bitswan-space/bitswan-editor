@@ -16,7 +16,7 @@ export async function showAutomationLogsCommand(context: vscode.ExtensionContext
     LogViewerPanel.open(item.name, activeInstance.url, activeInstance.secret);
 }
 
-export async function refreshAutomationsCommand(context: vscode.ExtensionContext, treeDataProvider: { refresh(): void }, options?: RefreshOptions) {
+export async function refreshAutomationsCommand(context: vscode.ExtensionContext, treeDataProvider: { refresh(): void; refreshAutomations?(): void }, options?: RefreshOptions) {
     return refreshItemsCommand(context, treeDataProvider, {
         entityType: 'automation',
         getItemsFunction: getAutomations

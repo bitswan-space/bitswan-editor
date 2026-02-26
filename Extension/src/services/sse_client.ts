@@ -11,7 +11,7 @@ export class GitOpsSSEClient {
 
     constructor(
         private context: vscode.ExtensionContext,
-        private businessProcessesProvider: { refresh(): void },
+        private businessProcessesProvider: { refresh(): void; refreshAutomations(): void },
         private imagesProvider: { refresh(): void },
         private orphanedImagesProvider: { refresh(): void },
     ) {}
@@ -66,7 +66,7 @@ export class GitOpsSSEClient {
             const current = this.context.globalState.get('automations', []);
             if (JSON.stringify(current) !== JSON.stringify(data)) {
                 await this.context.globalState.update('automations', data);
-                this.businessProcessesProvider.refresh();
+                this.businessProcessesProvider.refreshAutomations();
             }
         } else if (event === 'images') {
             const current = this.context.globalState.get('images', []);
