@@ -1210,6 +1210,13 @@ export interface AutomationConfigParams {
   services?: Record<string, { enabled: boolean }>;
 }
 
+export interface DeployResponse {
+  success: boolean;
+  task_id?: string;
+  deployment_id?: string;
+  alreadyDeploying?: boolean;
+}
+
 export const promoteAutomation = async (
   deployUrl: string,
   secret: string,
@@ -1218,7 +1225,7 @@ export const promoteAutomation = async (
   relativePath?: string,
   automationConfig?: AutomationConfigParams,
   replicas?: number
-) => {
+): Promise<DeployResponse> => {
   const form = new FormData();
   form.append('checksum', checksum);
   form.append('stage', stage);
@@ -1260,9 +1267,40 @@ export const promoteAutomation = async (
     headers: {
       'Authorization': `Bearer ${secret}`,
     },
+    validateStatus: (status) => status === 200 || status === 202 || status === 409,
   });
 
-  return response.status === 200;
+  if (response.status === 409) {
+    return { success: false, alreadyDeploying: true };
+  }
+
+  if (response.status === 202) {
+    return {
+      success: true,
+      task_id: response.data.task_id,
+      deployment_id: response.data.deployment_id,
+    };
+  }
+
+  // Legacy 200 response (bulk deploy or other callers)
+  return { success: true };
+}
+
+export const getDeployStatus = async (
+  statusUrl: string,
+  secret: string,
+): Promise<{ task_id: string; deployment_id: string; status: string; step: string | null; message: string; error: string | null } | null> => {
+  try {
+    const response = await axios.get(statusUrl, {
+      headers: { 'Authorization': `Bearer ${secret}` },
+    });
+    if (response.status === 200) {
+      return response.data;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export const scaleAutomation = async (

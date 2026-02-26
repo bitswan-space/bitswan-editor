@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import axios from 'axios';
+import { deployState } from './deploy_state';
 
 export class GitOpsSSEClient {
     private stream: any = null;
@@ -74,6 +75,8 @@ export class GitOpsSSEClient {
                 this.imagesProvider.refresh();
                 this.orphanedImagesProvider.refresh();
             }
+        } else if (event === 'deploy_progress') {
+            deployState.handleDeployProgress(data);
         }
     }
 

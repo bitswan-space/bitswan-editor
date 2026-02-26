@@ -2,12 +2,14 @@ import * as vscode from 'vscode';
 import urlJoin from 'proper-url-join';
 import { StageItem } from '../views/unified_business_processes_view';
 import { getDeployDetails } from '../deploy_details';
-import { promoteAutomation, getAutomationHistory, scaleAutomation } from '../lib';
+import { promoteAutomation, getAutomationHistory, scaleAutomation, getDeployStatus } from '../lib';
 import { outputChannel } from '../extension';
 import { refreshAutomationsCommand, showAutomationLogsCommand } from './automations';
 import { UnifiedBusinessProcessesViewProvider } from '../views/unified_business_processes_view';
 import { AutomationItem } from '../views/automations_view';
 import { AutomationsViewProvider } from '../views/automations_view';
+import { deployState, DeployProgressEvent } from '../services/deploy_state';
+import { waitForDeployCompletion } from './deployments';
 
 export async function promoteStageCommand(
     context: vscode.ExtensionContext,
@@ -53,6 +55,12 @@ export async function promoteStageCommand(
             ? sanitizedSourceName 
             : `${sanitizedSourceName}-${targetStage}`;
 
+        // Guard: check if already deploying
+        if (deployState.isDeploying(targetDeploymentId)) {
+            vscode.window.showWarningMessage(`Deployment ${targetDeploymentId} is already in progress`);
+            return;
+        }
+
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: `Promoting ${item.stage} to ${targetStage}`,
@@ -60,14 +68,31 @@ export async function promoteStageCommand(
         }, async (progress) => {
             try {
                 progress.report({ increment: 50, message: `Promoting to ${targetStage}...` });
-                
+
                 const deployUrl = urlJoin(details.deployUrl, "automations", targetDeploymentId, "deploy").toString();
-                const success = await promoteAutomation(deployUrl, details.deploySecret, checksum, targetStage);
-                
-                if (success) {
+                const deployResult = await promoteAutomation(deployUrl, details.deploySecret, checksum, targetStage);
+
+                if (deployResult.alreadyDeploying) {
+                    vscode.window.showWarningMessage(`Deployment ${targetDeploymentId} is already in progress`);
+                    return;
+                }
+
+                if (deployResult.success && deployResult.task_id) {
+                    deployState.markDeploying(targetDeploymentId, deployResult.task_id);
+                    const result = await waitForDeployCompletion(
+                        targetDeploymentId, deployResult.task_id, progress, details, 120_000
+                    );
+                    if (result.outcome === 'completed') {
+                        progress.report({ increment: 100, message: `Successfully promoted to ${targetStage}` });
+                        vscode.window.showInformationMessage(`Successfully promoted ${item.stage} to ${targetStage}`);
+                        await refreshAutomationsCommand(context, provider);
+                        provider.refresh();
+                    } else {
+                        throw new Error(result.error || `Promotion ${result.outcome}`);
+                    }
+                } else if (deployResult.success) {
                     progress.report({ increment: 100, message: `Successfully promoted to ${targetStage}` });
                     vscode.window.showInformationMessage(`Successfully promoted ${item.stage} to ${targetStage}`);
-                    // Refresh automations and business processes view
                     await refreshAutomationsCommand(context, provider);
                     provider.refresh();
                 } else {
@@ -183,9 +208,15 @@ export async function openPromotionManagerCommand(
         await updateWebview();
     }, 10000);
 
-    // Clean up interval when panel is disposed
+    // Forward deploy_progress events to webview
+    const deployListener = deployState.addListener((event: DeployProgressEvent) => {
+        panel.webview.postMessage({ command: 'deployProgress', event });
+    });
+
+    // Clean up interval and listener when panel is disposed
     panel.onDidDispose(() => {
         clearInterval(refreshInterval);
+        deployListener.dispose();
     }, null, context.subscriptions);
 
     // Handle messages from the webview
@@ -239,12 +270,18 @@ async function handlePromote(
 ) {
     const fromDeploymentId = deploymentIds[fromStage as keyof typeof deploymentIds];
     const toDeploymentId = toStage === 'production' ? sanitizedSourceName : deploymentIds[toStage as keyof typeof deploymentIds];
-    
+
+    // Guard: check if already deploying
+    if (deployState.isDeploying(toDeploymentId)) {
+        vscode.window.showWarningMessage(`Deployment ${toDeploymentId} is already in progress`);
+        return;
+    }
+
     try {
         const historyUrl = urlJoin(details.deployUrl, "automations", fromDeploymentId, "history").toString();
         const history = await getAutomationHistory(historyUrl, details.deploySecret, 1, 1);
         const latestEntry = history.items && history.items.length > 0 ? history.items[0] : null;
-        
+
         if (!latestEntry || !latestEntry.checksum) {
             vscode.window.showErrorMessage(`Could not find checksum for ${fromStage} stage`);
             return;
@@ -252,7 +289,7 @@ async function handlePromote(
 
         const checksum = latestEntry.checksum;
         const deployUrl = urlJoin(details.deployUrl, "automations", toDeploymentId, "deploy").toString();
-        
+
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: `Promoting ${fromStage} to ${toStage}`,
@@ -260,12 +297,28 @@ async function handlePromote(
         }, async (progress) => {
             try {
                 progress.report({ increment: 50, message: `Promoting to ${toStage}...` });
-                const success = await promoteAutomation(deployUrl, details.deploySecret, checksum, toStage);
-                
-                if (success) {
+                const deployResult = await promoteAutomation(deployUrl, details.deploySecret, checksum, toStage);
+
+                if (deployResult.alreadyDeploying) {
+                    vscode.window.showWarningMessage(`Deployment ${toDeploymentId} is already in progress`);
+                    return;
+                }
+
+                if (deployResult.success && deployResult.task_id) {
+                    deployState.markDeploying(toDeploymentId, deployResult.task_id);
+                    const result = await waitForDeployCompletion(
+                        toDeploymentId, deployResult.task_id, progress, details, 120_000
+                    );
+                    if (result.outcome === 'completed') {
+                        progress.report({ increment: 100, message: `Successfully promoted to ${toStage}` });
+                        vscode.window.showInformationMessage(`Successfully promoted ${fromStage} to ${toStage}`);
+                        await refreshAutomationsCommand(context, { refresh: () => {} } as any);
+                    } else {
+                        throw new Error(result.error || `Promotion ${result.outcome}`);
+                    }
+                } else if (deployResult.success) {
                     progress.report({ increment: 100, message: `Successfully promoted to ${toStage}` });
                     vscode.window.showInformationMessage(`Successfully promoted ${fromStage} to ${toStage}`);
-                    // Refresh automations
                     await refreshAutomationsCommand(context, { refresh: () => {} } as any);
                 } else {
                     throw new Error(`Failed to promote to ${toStage}`);
@@ -322,6 +375,12 @@ async function handleRollback(
     const deploymentId = stage === 'production' || !stage ? sanitizedSourceName : deploymentIds[stage as keyof typeof deploymentIds];
     const normalizedStage = stage === 'production' || !stage ? 'production' : stage;
 
+    // Guard: check if already deploying
+    if (deployState.isDeploying(deploymentId)) {
+        vscode.window.showWarningMessage(`Deployment ${deploymentId} is already in progress`);
+        return;
+    }
+
     try {
         const deployUrl = urlJoin(details.deployUrl, "automations", deploymentId, "deploy").toString();
 
@@ -332,15 +391,31 @@ async function handleRollback(
         }, async (progress) => {
             try {
                 progress.report({ increment: 50, message: `Rolling back...` });
-                const success = await promoteAutomation(
+                const deployResult = await promoteAutomation(
                     deployUrl, details.deploySecret, checksum, normalizedStage,
                     undefined, undefined, replicas
                 );
 
-                if (success) {
+                if (deployResult.alreadyDeploying) {
+                    vscode.window.showWarningMessage(`Deployment ${deploymentId} is already in progress`);
+                    return;
+                }
+
+                if (deployResult.success && deployResult.task_id) {
+                    deployState.markDeploying(deploymentId, deployResult.task_id);
+                    const result = await waitForDeployCompletion(
+                        deploymentId, deployResult.task_id, progress, details, 120_000
+                    );
+                    if (result.outcome === 'completed') {
+                        progress.report({ increment: 100, message: `Successfully rolled back` });
+                        vscode.window.showInformationMessage(`Successfully rolled back to checksum ${checksum.substring(0, 8)}`);
+                        await refreshAutomationsCommand(context, { refresh: () => {} } as any);
+                    } else {
+                        throw new Error(result.error || `Rollback ${result.outcome}`);
+                    }
+                } else if (deployResult.success) {
                     progress.report({ increment: 100, message: `Successfully rolled back` });
                     vscode.window.showInformationMessage(`Successfully rolled back to checksum ${checksum.substring(0, 8)}`);
-                    // Refresh automations
                     await refreshAutomationsCommand(context, { refresh: () => {} } as any);
                 } else {
                     throw new Error(`Failed to rollback`);
@@ -609,6 +684,21 @@ function getPromotionManagerHtml(
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        .deploy-status {
+            display: flex;
+            align-items: center;
+            padding: 8px 0;
+            color: var(--vscode-charts-yellow);
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+        .deploy-status-text {
+            margin-left: 8px;
+        }
+        .button.deploying {
+            opacity: 0.4;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -649,10 +739,11 @@ function getPromotionManagerHtml(
                     <span class="info-value">${histories.dev !== null && histories.dev.length > 0 && histories.dev[0].replicas ? histories.dev[0].replicas : 1}</span>
                 </div>
             </div>
+            <div class="deploy-status" data-deployment-id="${deploymentIds.dev}" style="display:none;"><div class="spinner"></div><span class="deploy-status-text">Deploying...</span></div>
             ${stageData.dev.automationUrl ? `<button class="button button-secondary" onclick="openExternalUrl('${stageData.dev.automationUrl}')">Open External URL</button>` : ''}
-            <button class="button button-primary" onclick="promote('dev', 'staging')">Promote to Staging</button>
+            <button class="button button-primary" data-deployment-id="${deploymentIds.dev}" onclick="promote('dev', 'staging')">Promote to Staging</button>
             <button class="button button-secondary" onclick="showLogs('${deploymentIds.dev}')">Show Logs</button>
-            <button class="button button-secondary" onclick="scaleDeployment('${deploymentIds.dev}', 'dev', ${histories.dev !== null && histories.dev.length > 0 && histories.dev[0].replicas ? histories.dev[0].replicas : 1})">Scale</button>
+            <button class="button button-secondary" data-deployment-id="${deploymentIds.dev}" onclick="scaleDeployment('${deploymentIds.dev}', 'dev', ${histories.dev !== null && histories.dev.length > 0 && histories.dev[0].replicas ? histories.dev[0].replicas : 1})">Scale</button>
             ${histories.dev === null ? `
                 <div class="history-section">
                     <div class="history-title">Deployment History</div>
@@ -721,10 +812,11 @@ function getPromotionManagerHtml(
                     <span class="info-value">${histories.staging !== null && histories.staging.length > 0 && histories.staging[0].replicas ? histories.staging[0].replicas : 1}</span>
                 </div>
             </div>
+            <div class="deploy-status" data-deployment-id="${deploymentIds.staging}" style="display:none;"><div class="spinner"></div><span class="deploy-status-text">Deploying...</span></div>
             ${stageData.staging.automationUrl ? `<button class="button button-secondary" onclick="openExternalUrl('${stageData.staging.automationUrl}')">Open External URL</button>` : ''}
-            <button class="button button-primary" onclick="promote('staging', 'production')">Promote to Production</button>
+            <button class="button button-primary" data-deployment-id="${deploymentIds.staging}" onclick="promote('staging', 'production')">Promote to Production</button>
             <button class="button button-secondary" onclick="showLogs('${deploymentIds.staging}')">Show Logs</button>
-            <button class="button button-secondary" onclick="scaleDeployment('${deploymentIds.staging}', 'staging', ${histories.staging !== null && histories.staging.length > 0 && histories.staging[0].replicas ? histories.staging[0].replicas : 1})">Scale</button>
+            <button class="button button-secondary" data-deployment-id="${deploymentIds.staging}" onclick="scaleDeployment('${deploymentIds.staging}', 'staging', ${histories.staging !== null && histories.staging.length > 0 && histories.staging[0].replicas ? histories.staging[0].replicas : 1})">Scale</button>
             ${histories.staging === null ? `
                 <div class="history-section">
                     <div class="history-title">Deployment History</div>
@@ -793,9 +885,10 @@ function getPromotionManagerHtml(
                     <span class="info-value">${histories.production !== null && histories.production.length > 0 && histories.production[0].replicas ? histories.production[0].replicas : 1}</span>
                 </div>
             </div>
+            <div class="deploy-status" data-deployment-id="${deploymentIds.production}" style="display:none;"><div class="spinner"></div><span class="deploy-status-text">Deploying...</span></div>
             ${stageData.production.automationUrl ? `<button class="button button-secondary" onclick="openExternalUrl('${stageData.production.automationUrl}')">Open External URL</button>` : ''}
             <button class="button button-secondary" onclick="showLogs('${deploymentIds.production}')">Show Logs</button>
-            <button class="button button-secondary" onclick="scaleDeployment('${deploymentIds.production}', 'production', ${histories.production !== null && histories.production.length > 0 && histories.production[0].replicas ? histories.production[0].replicas : 1})">Scale</button>
+            <button class="button button-secondary" data-deployment-id="${deploymentIds.production}" onclick="scaleDeployment('${deploymentIds.production}', 'production', ${histories.production !== null && histories.production.length > 0 && histories.production[0].replicas ? histories.production[0].replicas : 1})">Scale</button>
             ${histories.production === null ? `
                 <div class="history-section">
                     <div class="history-title">Deployment History</div>
@@ -872,7 +965,45 @@ production = ["foo-prod", "bar-prod"]</code></pre>
     
     <script>
         const vscode = acquireVsCodeApi();
-        
+        const deployingIds = new Set();
+
+        function updateButtonStates() {
+            document.querySelectorAll('.button[data-deployment-id]').forEach(btn => {
+                const id = btn.getAttribute('data-deployment-id');
+                if (deployingIds.has(id)) {
+                    btn.disabled = true;
+                    btn.classList.add('deploying');
+                } else {
+                    btn.disabled = false;
+                    btn.classList.remove('deploying');
+                }
+            });
+            // Show/hide deploy spinners
+            document.querySelectorAll('.deploy-status').forEach(el => {
+                const id = el.getAttribute('data-deployment-id');
+                el.style.display = deployingIds.has(id) ? 'flex' : 'none';
+            });
+        }
+
+        // Listen for deploy progress messages from the extension
+        window.addEventListener('message', event => {
+            const msg = event.data;
+            if (msg.command === 'deployProgress') {
+                const e = msg.event;
+                if (e.status === 'completed' || e.status === 'failed') {
+                    deployingIds.delete(e.deployment_id);
+                } else {
+                    deployingIds.add(e.deployment_id);
+                }
+                // Update status text if visible
+                const statusEl = document.querySelector('.deploy-status[data-deployment-id="' + e.deployment_id + '"] .deploy-status-text');
+                if (statusEl) {
+                    statusEl.textContent = e.message || e.step || e.status;
+                }
+                updateButtonStates();
+            }
+        });
+
         function promote(fromStage, toStage) {
             vscode.postMessage({
                 command: 'promote',
@@ -880,14 +1011,14 @@ production = ["foo-prod", "bar-prod"]</code></pre>
                 toStage: toStage
             });
         }
-        
+
         function showLogs(deploymentId) {
             vscode.postMessage({
                 command: 'showLogs',
                 deploymentId: deploymentId
             });
         }
-        
+
         function rollback(checksum, stage, replicas) {
             if (!checksum) {
                 return;
@@ -908,14 +1039,14 @@ production = ["foo-prod", "bar-prod"]</code></pre>
                 currentReplicas: currentReplicas || 1
             });
         }
-        
+
         function copyChecksum(checksum) {
             vscode.postMessage({
                 command: 'copyChecksum',
                 checksum: checksum
             });
         }
-        
+
         function openExternalUrl(url) {
             vscode.postMessage({
                 command: 'openExternalUrl',

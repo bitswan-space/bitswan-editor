@@ -8,7 +8,7 @@ import urlJoin from 'proper-url-join';
 import axios from 'axios';
 
 import { FolderItem } from '../views/sources_view';
-import { activateDeployment, deploy, zip2stream, zipDirectory, createStreamingZip, uploadAsset, uploadAssetStream, promoteAutomation, calculateGitTreeHash, calculateMergedGitTreeHash, getImages, getAutomations } from '../lib';
+import { activateDeployment, deploy, zip2stream, zipDirectory, createStreamingZip, uploadAsset, uploadAssetStream, promoteAutomation, calculateGitTreeHash, calculateMergedGitTreeHash, getImages, getAutomations, getDeployStatus, DeployResponse } from '../lib';
 import { getDeployDetails } from '../deploy_details';
 import { outputChannel } from '../extension';
 import { AutomationSourcesViewProvider } from '../views/automation_sources_view';
@@ -17,6 +17,7 @@ import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/
 import { sanitizeName } from '../utils/nameUtils';
 import { refreshAutomationsCommand } from './automations';
 import { ensureAutomationImageReady, getAutomationDeployConfig, checkImageDirectoryPreflight } from '../utils/automationImageBuilder';
+import { deployState } from '../services/deploy_state';
 
 /**
  * Recursively copies all files and directories from srcDir to destDir, preserving the directory structure.
@@ -220,17 +221,46 @@ export async function deployCommandAbstract(
                 // For automations, use the promotion workflow
                 const relativePath = path.relative(workspaceFolders[0].uri.fsPath, folderPath);
 
+                // Guard: check if already deploying
+                const devDeploymentId = `${normalizedFolderName}-dev`;
+                if (deployState.isDeploying(devDeploymentId)) {
+                    vscode.window.showWarningMessage(`Deployment ${devDeploymentId} is already in progress`);
+                    return;
+                }
+
                 progress.report({ increment: 75, message: "Deploying to dev stage..." });
 
                 // Deploy to dev stage with -dev suffix
-                const devDeploymentId = `${normalizedFolderName}-dev`;
                 const devDeployUrl = urlJoin(details.deployUrl, "automations", devDeploymentId, "deploy").toString();
-                const activationSuccess = await promoteAutomation(devDeployUrl, details.deploySecret, checksum, 'dev', relativePath);
-                
-                if (activationSuccess) {
+                const deployResult = await promoteAutomation(devDeployUrl, details.deploySecret, checksum, 'dev', relativePath);
+
+                if (deployResult.alreadyDeploying) {
+                    vscode.window.showWarningMessage(`Deployment ${devDeploymentId} is already in progress`);
+                    return;
+                }
+
+                if (deployResult.success && deployResult.task_id) {
+                    // Optimistically mark as deploying and wait for SSE completion
+                    deployState.markDeploying(devDeploymentId, deployResult.task_id);
+
+                    const result = await waitForDeployCompletion(
+                        devDeploymentId, deployResult.task_id, progress, details, 120_000
+                    );
+
+                    if (result.outcome === 'completed') {
+                        progress.report({ increment: 100, message: `Successfully deployed automation to dev stage` });
+                        vscode.window.showInformationMessage(`Successfully deployed automation to dev stage`);
+                        const providerForRefresh = (businessProcessesProvider || treeDataProvider);
+                        if (providerForRefresh) {
+                            await refreshAutomationsCommand(context, providerForRefresh as any);
+                        }
+                    } else {
+                        throw new Error(result.error || `Deployment to dev stage ${result.outcome}`);
+                    }
+                } else if (deployResult.success) {
+                    // Legacy 200 response path
                     progress.report({ increment: 100, message: `Successfully deployed automation to dev stage` });
                     vscode.window.showInformationMessage(`Successfully deployed automation to dev stage`);
-                    // Immediately refetch automations and refresh the unified view
                     const providerForRefresh = (businessProcessesProvider || treeDataProvider);
                     if (providerForRefresh) {
                         await refreshAutomationsCommand(context, providerForRefresh as any);
@@ -445,8 +475,14 @@ export async function startLiveDevServerCommand(
             // For live-dev, we use a placeholder checksum since the source is mounted directly
             // and changes are reflected immediately without redeployment
             const liveDevDeploymentId = `${normalizedFolderName}-live-dev`;
+
+            if (deployState.isDeploying(liveDevDeploymentId)) {
+                vscode.window.showWarningMessage(`Deployment ${liveDevDeploymentId} is already in progress`);
+                return;
+            }
+
             const deployUrl = urlJoin(details.deployUrl, "automations", liveDevDeploymentId, "deploy").toString();
-            const success = await promoteAutomation(deployUrl, details.deploySecret, 'live-dev', 'live-dev', relativePath, {
+            const deployResult = await promoteAutomation(deployUrl, details.deploySecret, 'live-dev', 'live-dev', relativePath, {
                 image: automationConfig.image,
                 expose: automationConfig.expose,
                 port: automationConfig.port,
@@ -457,13 +493,34 @@ export async function startLiveDevServerCommand(
                 services: automationConfig.services,
             });
 
-            if (success) {
+            if (deployResult.alreadyDeploying) {
+                vscode.window.showWarningMessage(`Deployment ${liveDevDeploymentId} is already in progress`);
+                return;
+            }
+
+            if (deployResult.success && deployResult.task_id) {
+                deployState.markDeploying(liveDevDeploymentId, deployResult.task_id);
+
+                const result = await waitForDeployCompletion(
+                    liveDevDeploymentId, deployResult.task_id, progress, details, 120_000
+                );
+
+                if (result.outcome === 'completed') {
+                    progress.report({ increment: 100, message: "Live dev server started!" });
+                    vscode.window.showInformationMessage(
+                        `Live dev server started for ${folderName}. Changes to source files will auto-reload.`
+                    );
+                    if (businessProcessesProvider) {
+                        await refreshAutomationsCommand(context, businessProcessesProvider);
+                    }
+                } else {
+                    throw new Error(result.error || `Failed to start live dev server: ${result.outcome}`);
+                }
+            } else if (deployResult.success) {
                 progress.report({ increment: 100, message: "Live dev server started!" });
                 vscode.window.showInformationMessage(
                     `Live dev server started for ${folderName}. Changes to source files will auto-reload.`
                 );
-
-                // Refresh the view
                 if (businessProcessesProvider) {
                     await refreshAutomationsCommand(context, businessProcessesProvider);
                 }
@@ -474,5 +531,76 @@ export async function startLiveDevServerCommand(
             vscode.window.showErrorMessage(`Failed to start live dev server: ${error.message}`);
             outputChannel.appendLine(`Live dev server error: ${error.message}`);
         }
+    });
+}
+
+export interface DeployWaitResult {
+    outcome: 'completed' | 'failed' | 'timeout';
+    error?: string;
+}
+
+/**
+ * Wait for a deploy task to complete by listening to deployState events
+ * AND polling GET /deploy-status/{taskId} every few seconds as a fallback.
+ */
+export async function waitForDeployCompletion(
+    deploymentId: string,
+    taskId: string,
+    progress: vscode.Progress<{ increment?: number; message?: string }>,
+    details: { deployUrl: string; deploySecret: string },
+    timeoutMs: number = 120_000,
+): Promise<DeployWaitResult> {
+    const statusUrl = urlJoin(details.deployUrl, "automations", "deploy-status", taskId).toString();
+
+    return new Promise<DeployWaitResult>((resolve) => {
+        let settled = false;
+
+        function settle(outcome: 'completed' | 'failed' | 'timeout', error?: string) {
+            if (settled) { return; }
+            settled = true;
+            clearTimeout(deadlineTimer);
+            clearInterval(pollTimer);
+            listener.dispose();
+            resolve({ outcome, error });
+        }
+
+        // Hard deadline
+        const deadlineTimer = setTimeout(() => settle('timeout'), timeoutMs);
+
+        // Poll every 3 seconds as a robust fallback for missed SSE events
+        const pollTimer = setInterval(async () => {
+            if (settled) { return; }
+            try {
+                const status = await getDeployStatus(statusUrl, details.deploySecret);
+                if (!status) { return; }
+                if (status.message) {
+                    progress.report({ message: status.message });
+                }
+                if (status.status === 'completed') {
+                    settle('completed');
+                } else if (status.status === 'failed') {
+                    settle('failed', status.error || status.message || undefined);
+                }
+            } catch {
+                // Ignore poll errors, will retry on next interval
+            }
+        }, 3000);
+
+        // Primary mechanism: listen for SSE deploy_progress events
+        const listener = deployState.addListener((event) => {
+            if (settled) { return; }
+            if (event.deployment_id !== deploymentId) { return; }
+
+            // Relay step messages to the progress notification
+            if (event.message) {
+                progress.report({ message: event.message });
+            }
+
+            if (event.status === 'completed') {
+                settle('completed');
+            } else if (event.status === 'failed') {
+                settle('failed', event.error || event.message || undefined);
+            }
+        });
     });
 }
