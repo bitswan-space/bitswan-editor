@@ -1,0 +1,14 @@
+# Functional requirements using a conda environment file
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - ipywidgets
+  - pandas
+  - nbformat
+  - jinja2
+  - jupyter
+  - numpy
+  - matplotlib
+  - tensorflow
+  - xarray

@@ -1,0 +1,10 @@
+.DS_Store
+dist
+out
+**/node_modules
+bin/**
+logs/**
+obj/**
+temp/
+tmp/
+*.d.ts

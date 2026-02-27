@@ -8,6 +8,22 @@ RUN apk add --no-cache jq && \
 RUN npm install && chmod +x node_modules/.bin/*
 RUN npm exec vsce -- package --out bitswan-extension.vsix
 
+# Stage 2: Build vendored jupyter extension
+FROM --platform=linux/amd64 node:20-bookworm AS jupyter_builder
+WORKDIR /build
+COPY jupyter/ ./
+# --ignore-scripts skips slow native addon compilation (zeromq etc);
+# prebuilt binaries are already shipped in the npm packages.
+RUN npm ci --ignore-scripts
+ENV VSC_VSCE_TARGET=linux-x64
+# Download VS Code proposed API types
+RUN npx vscode-dts dev
+# Run postinstall patches (fixes @jupyterlab code, downloads ZMQ prebuilds).
+# Allow failure on ZMQ download since prebuilds are already in node_modules.
+RUN node ./build/ci/postInstall.js || echo "WARN: postInstall had errors (ZMQ download may have failed, prebuilds from npm will be used)"
+RUN npx tsx build/esbuild/build.ts --production
+RUN npx @vscode/vsce package --out bitswan-jupyter.vsix
+
 FROM --platform=linux/amd64 codercom/code-server:4.108.1-ubuntu
 
 ENV VSCODE_AGENT_FOLDER=/home/coder/.vscode-server
@@ -17,7 +33,6 @@ ENV ELECTRON_DISABLE_SECURITY_WARNINGS=1
 ENV ELECTRON_NO_ATTACH_CONSOLE=1
 ENV VSCODE_DISABLE_CRASH_REPORTER=1
 ENV PYTHON_EXTENSION_VERSION="2025.17.2025100201"
-ENV JUPYTER_EXTENSION_VERSION="2025.8.0"
 ENV COPILOT_EXTENSION_VERSION="1.378.1798"
 ENV COPILOT_CHAT_EXTENSION_VERSION="0.31.4"
 ENV PYLANCE_EXTENSION_VERSION="2025.8.3"
@@ -108,8 +123,8 @@ RUN curl -L -o /opt/extensions/pylance.vsix.gz "https://marketplace.visualstudio
 RUN curl -L -o /opt/extensions/python.vsix.gz "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-python/vsextensions/python/$PYTHON_EXTENSION_VERSION/vspackage" && \
     gunzip /opt/extensions/python.vsix.gz
 
-RUN curl -L -o /opt/extensions/jupyter.vsix.gz "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-toolsai/vsextensions/jupyter/$JUPYTER_EXTENSION_VERSION/vspackage" && \
-    gunzip /opt/extensions/jupyter.vsix.gz
+# Copy vendored jupyter extension from builder stage (replaces marketplace download)
+COPY --from=jupyter_builder /build/bitswan-jupyter.vsix /opt/extensions/jupyter.vsix
 
 RUN chown -R coder:coder /opt/extensions
 
@@ -120,7 +135,7 @@ RUN ln -sf /usr/lib/node_modules/@azure/msal-node-extensions /usr/lib/code-serve
 
 # Create code-server configuration directory and add settings (static config - cache early)
 RUN mkdir -p /home/coder/.config/code-server
-RUN echo '{"extensions.supportNodeGlobalNavigator": false}' > /home/coder/.config/code-server/settings.json
+RUN echo '{"extensions.supportNodeGlobalNavigator": false, "notebook.lineNumbers": "on", "notebook.showCellStatusBar": "visible", "notebook.globalToolbar": true}' > /home/coder/.config/code-server/settings.json
 RUN chown -R coder:coder /home/coder/.config
 
 # Create directories for source code (cache early)

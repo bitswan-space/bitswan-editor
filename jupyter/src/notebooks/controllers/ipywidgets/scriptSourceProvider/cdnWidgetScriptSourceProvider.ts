@@ -1,0 +1,342 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+import { inject, injectable, named } from 'inversify';
+import { ConfigurationTarget, Memento, Uri, env, window } from 'vscode';
+import { Telemetry } from '../../../../platform/common/constants';
+import { GLOBAL_MEMENTO, IConfigurationService, IMemento, WidgetCDNs } from '../../../../platform/common/types';
+import { createDeferred, createDeferredFromPromise, Deferred } from '../../../../platform/common/utils/async';
+import { Common, DataScience } from '../../../../platform/common/utils/localize';
+import { noop } from '../../../../platform/common/utils/misc';
+import { logger } from '../../../../platform/logging';
+import { ConsoleForegroundColors } from '../../../../platform/logging/types';
+import { sendTelemetryEvent } from '../../../../telemetry';
+import { IWidgetScriptSourceProvider, WidgetScriptSource } from '../types';
+import { HttpClient } from '../../../../platform/common/net/httpClient';
+
+// Source borrowed from https://github.com/jupyter-widgets/ipywidgets/blob/54941b7a4b54036d089652d91b39f937bde6b6cd/packages/html-manager/src/libembed-amd.ts#L33
+const unpgkUrl = 'https://unpkg.com/';
+const jsdelivrUrl = 'https://cdn.jsdelivr.net/npm/';
+
+export const GlobalStateKeyToTrackIfUserConfiguredCDNAtLeastOnce = 'IPYWidgetCDNConfigured';
+export const GlobalStateKeyToNeverWarnAboutScriptsNotFoundOnCDN = 'IPYWidgetNotFoundOnCDN';
+export const GlobalStateKeyToNeverWarnAboutNoNetworkAccess = 'IPYWidgetNoNetWorkAccess';
+
+const VARIABLE_PATTERN = /\$\{(.*?)\}/g;
+
+function moduleNameToCDNUrl(cdn: WidgetCDNs, moduleName: string, moduleVersionSpec: string) {
+    const cdnTemplate = getCDNTemplate(cdn);
+    if (!cdnTemplate) {
+        return undefined;
+    }
+    let packageName = moduleName;
+    let fileName = 'index'; // default filename
+    // if a '/' is present, like 'foo/bar', packageName is changed to 'foo', and path to 'bar'
+    // We first find the first '/'
+    let index = moduleName.indexOf('/');
+    if (index !== -1 && moduleName[0] === '@') {
+        // if we have a namespace, it's a different story
+        // @foo/bar/baz should translate to @foo/bar and baz
+        // so we find the 2nd '/'
+        index = moduleName.indexOf('/', index + 1);
+    }
+    if (index !== -1) {
+        fileName = moduleName.substr(index + 1);
+        packageName = moduleName.substr(0, index);
+    }
+    const fileNameWithExt = !fileName.endsWith('.js') ? fileName.concat('.js') : fileName;
+    const moduleVersion = moduleVersionSpec.startsWith('^') ? moduleVersionSpec.slice(1) : moduleVersionSpec;
+    return cdnTemplate.replace(VARIABLE_PATTERN, (match: string, variable: string) => {
+        let result: string;
+        switch (variable) {
+            case 'packageName':
+                result = packageName;
+                break;
+            case 'fileName':
+                result = fileName;
+                break;
+            case 'fileNameWithExt':
+                result = fileNameWithExt;
+                break;
+            case 'moduleVersion':
+                result = moduleVersion;
+                break;
+            case 'moduleVersionSpec':
+                result = moduleVersionSpec;
+                break;
+            default:
+                result = match;
+                break;
+        }
+        return result;
+    });
+}
+
+function getCDNTemplate(cdn: WidgetCDNs): string | undefined {
+    switch (cdn) {
+        case 'unpkg.com':
+            return `${unpgkUrl}\${packageName}@\${moduleVersionSpec}/dist/\${fileName}`;
+        case 'jsdelivr.com':
+            // Js Delivr doesn't support ^ in the version. It needs an exact version
+            // Js Delivr also needs the .js file on the end.
+            return `${jsdelivrUrl}\${packageName}@\${moduleVersion}/dist/\${fileNameWithExt}`;
+        default:
+            return cdn;
+    }
+}
+/**
+ * Widget scripts are found in CDN.
+ * Given an widget module name & version, this will attempt to find the Url on a CDN.
+ * We'll need to stick to the order of preference prescribed by the user.
+ */
+@injectable()
+export class CDNWidgetScriptSourceProvider implements IWidgetScriptSourceProvider {
+    id = 'cdn';
+    private cache = new Map<string, Promise<WidgetScriptSource>>();
+    private isOnCDNCache = new Map<string, Promise<boolean>>();
+    private readonly notifiedUserAboutWidgetScriptNotFound = new Set<string>();
+    private get cdnProviders(): readonly WidgetCDNs[] {
+        const settings = this.configurationSettings.getSettings(undefined);
+        return settings.widgetScriptSources;
+    }
+    private configurationPromise?: Deferred<void>;
+    constructor(
+        @inject(IMemento) @named(GLOBAL_MEMENTO) private readonly globalMemento: Memento,
+        @inject(IConfigurationService) private readonly configurationSettings: IConfigurationService
+    ) {}
+    public dispose() {
+        this.cache.clear();
+    }
+    /**
+     * Whether the module is available on the CDN.
+     */
+    public async isOnCDN(moduleName: string): Promise<boolean> {
+        const key = `MODULE_VERSION_ON_CDN_${moduleName}`;
+        if (this.isOnCDNCache.has(key)) {
+            return this.isOnCDNCache.get(key)!;
+        }
+        if (this.globalMemento.get<boolean>(key, false)) {
+            return true;
+        }
+        const promise = (async () => {
+            const httpClient = new HttpClient();
+            const unpkgPromise = createDeferredFromPromise(httpClient.exists(`${unpgkUrl}${moduleName}`));
+            const jsDeliverPromise = createDeferredFromPromise(httpClient.exists(`${jsdelivrUrl}${moduleName}`));
+            await Promise.race([unpkgPromise.promise, jsDeliverPromise.promise]);
+            if (unpkgPromise.value || jsDeliverPromise.value) {
+                return true;
+            }
+            await Promise.all([unpkgPromise.promise, jsDeliverPromise.promise]);
+            return unpkgPromise.value || jsDeliverPromise.value ? true : false;
+        })();
+        // Keep this in cache.
+        promise
+            .then((exists) => {
+                if (exists) {
+                    return this.globalMemento.update(key, true);
+                }
+            })
+            .then(noop, noop);
+        this.isOnCDNCache.set(key, promise);
+        return promise;
+    }
+    public async getWidgetScriptSource(
+        moduleName: string,
+        moduleVersion: string,
+        isWebViewOnline?: boolean
+    ): Promise<WidgetScriptSource> {
+        // If the webview is not online, then we cannot use the CDN.
+        if (isWebViewOnline === false) {
+            logger.ci(`Webview is offline, cannot use CDN for ${moduleName}`);
+            this.warnIfNoAccessToInternetFromWebView(moduleName).catch(noop);
+            return {
+                moduleName
+            };
+        }
+        if (
+            this.cdnProviders.length === 0 &&
+            this.globalMemento.get<boolean>(GlobalStateKeyToTrackIfUserConfiguredCDNAtLeastOnce, false)
+        ) {
+            logger.ci(`No CDN providers and user configured CDN`);
+            return {
+                moduleName
+            };
+        }
+        // First see if we already have it downloaded.
+        const key = this.getModuleKey(moduleName, moduleVersion);
+        if (!this.cache.get(key)) {
+            this.cache.set(key, this.getWidgetScriptSourceImplementation(moduleName, moduleVersion));
+        }
+        return this.cache.get(key)!;
+    }
+    protected async generateDownloadUri(
+        moduleName: string,
+        moduleVersion: string,
+        cdn: WidgetCDNs
+    ): Promise<string | undefined> {
+        return moduleNameToCDNUrl(cdn, moduleName, moduleVersion);
+    }
+
+    protected getModuleKey(moduleName: string, moduleVersion: string) {
+        return `${moduleName}${moduleVersion}`;
+    }
+    protected async getWidgetScriptSourceImplementation(
+        moduleName: string,
+        moduleVersion: string
+    ): Promise<WidgetScriptSource> {
+        logger.trace(
+            `${
+                ConsoleForegroundColors.Green
+            }Searching for Widget Script ${moduleName}#${moduleVersion} using cdns ${this.cdnProviders.join(' ')}`
+        );
+        await this.configureWidgets();
+        if (this.cdnProviders.length === 0) {
+            return { moduleName };
+        }
+        // Try all cdns
+        const uris = await Promise.all(
+            this.cdnProviders.map((cdn) => this.getValidUri(moduleName, moduleVersion, cdn))
+        );
+        const scriptUri = uris.find((u) => u);
+        if (scriptUri) {
+            logger.trace(
+                `${ConsoleForegroundColors.Green}Widget Script ${moduleName}#${moduleVersion} found at URI: ${scriptUri}`
+            );
+            return { moduleName, scriptUri, source: 'cdn' };
+        }
+
+        logger.error(`Widget Script ${moduleName}#${moduleVersion} was not found on on any cdn`);
+        this.handleWidgetSourceNotFound(moduleName, moduleVersion).catch(noop);
+        return { moduleName };
+    }
+
+    private async getValidUri(moduleName: string, moduleVersion: string, cdn: WidgetCDNs): Promise<string | undefined> {
+        // Make sure CDN has the item before returning it.
+        try {
+            const downloadUrl = await this.generateDownloadUri(moduleName, moduleVersion, cdn);
+            const httpClient = new HttpClient();
+            if (downloadUrl && (await httpClient.exists(downloadUrl))) {
+                return downloadUrl;
+            }
+        } catch (ex) {
+            logger.trace(`Failed downloading ${moduleName}:${moduleVersion} from ${cdn}`);
+            return undefined;
+        }
+    }
+    private async warnIfNoAccessToInternetFromWebView(moduleName: string) {
+        // if widget exists nothing to do.
+        if (this.globalMemento.get<boolean>(GlobalStateKeyToNeverWarnAboutNoNetworkAccess, false)) {
+            return;
+        }
+        if (this.notifiedUserAboutWidgetScriptNotFound.has(moduleName) || this.cdnProviders.length === 0) {
+            return;
+        }
+        this.notifiedUserAboutWidgetScriptNotFound.add(moduleName);
+        const selection = await window.showWarningMessage(
+            DataScience.cdnWidgetScriptNotAccessibleWarningMessage(moduleName, JSON.stringify(this.cdnProviders)),
+            Common.ok,
+            Common.doNotShowAgain,
+            Common.moreInfo
+        );
+        switch (selection) {
+            case Common.doNotShowAgain:
+                return this.globalMemento.update(GlobalStateKeyToNeverWarnAboutNoNetworkAccess, true);
+            case Common.moreInfo:
+                return env.openExternal(Uri.parse('https://aka.ms/PVSCIPyWidgets'));
+            default:
+                noop();
+        }
+    }
+
+    private async configureWidgets(): Promise<void> {
+        if (this.cdnProviders.length !== 0) {
+            return;
+        }
+
+        if (this.globalMemento.get<boolean>(GlobalStateKeyToTrackIfUserConfiguredCDNAtLeastOnce, false)) {
+            return;
+        }
+
+        if (this.configurationPromise) {
+            return this.configurationPromise.promise;
+        }
+        this.configurationPromise = createDeferred();
+        sendTelemetryEvent(Telemetry.IPyWidgetPromptToUseCDN);
+        const selection = await window.showInformationMessage(
+            DataScience.useCDNForWidgetsNoInformation,
+            { modal: true },
+            Common.ok,
+            Common.doNotShowAgain,
+            Common.moreInfo
+        );
+
+        let selectionForTelemetry: 'ok' | 'cancel' | 'dismissed' | 'doNotShowAgain' = 'dismissed';
+        switch (selection) {
+            case Common.ok: {
+                selectionForTelemetry = 'ok';
+                // always search local interpreter or attempt to fetch scripts from remote jupyter server as backups.
+                await Promise.all([
+                    this.updateScriptSources(['jsdelivr.com', 'unpkg.com']),
+                    this.globalMemento.update(GlobalStateKeyToTrackIfUserConfiguredCDNAtLeastOnce, true)
+                ]);
+                break;
+            }
+            case Common.doNotShowAgain: {
+                selectionForTelemetry = 'doNotShowAgain';
+                // At a minimum search local interpreter or attempt to fetch scripts from remote jupyter server.
+                await Promise.all([
+                    this.updateScriptSources([]),
+                    this.globalMemento.update(GlobalStateKeyToTrackIfUserConfiguredCDNAtLeastOnce, true)
+                ]);
+                break;
+            }
+            case Common.moreInfo: {
+                void env.openExternal(Uri.parse('https://aka.ms/PVSCIPyWidgets'));
+                break;
+            }
+            default:
+                selectionForTelemetry = selection === Common.cancel ? 'cancel' : 'dismissed';
+                break;
+        }
+
+        sendTelemetryEvent(Telemetry.IPyWidgetPromptToUseCDNSelection, undefined, { selection: selectionForTelemetry });
+        this.configurationPromise.resolve();
+    }
+    private async updateScriptSources(scriptSources: WidgetCDNs[]) {
+        const targetSetting = 'widgetScriptSources';
+        await this.configurationSettings.updateSetting(
+            targetSetting,
+            scriptSources,
+            undefined,
+            ConfigurationTarget.Global
+        );
+    }
+    private async handleWidgetSourceNotFound(moduleName: string, version: string) {
+        // if widget exists nothing to do.
+        if (this.globalMemento.get<boolean>(GlobalStateKeyToNeverWarnAboutScriptsNotFoundOnCDN, false)) {
+            return;
+        }
+        if (this.notifiedUserAboutWidgetScriptNotFound.has(moduleName) || this.cdnProviders.length === 0) {
+            return;
+        }
+        this.notifiedUserAboutWidgetScriptNotFound.add(moduleName);
+        const selection = await window.showWarningMessage(
+            DataScience.widgetScriptNotFoundOnCDNWidgetMightNotWork(
+                moduleName,
+                version,
+                JSON.stringify(this.cdnProviders)
+            ),
+            Common.ok,
+            Common.doNotShowAgain,
+            Common.reportThisIssue
+        );
+        switch (selection) {
+            case Common.doNotShowAgain:
+                return this.globalMemento.update(GlobalStateKeyToNeverWarnAboutScriptsNotFoundOnCDN, true);
+            case Common.reportThisIssue:
+                return env.openExternal(Uri.parse('https://aka.ms/CreatePVSCDataScienceIssue'));
+            default:
+                noop();
+        }
+    }
+}
