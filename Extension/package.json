@@ -31,7 +31,7 @@
     "onUri"
   ],
   "extensionDependencies": [
-    "ms-toolsai.jupyter"
+    "LibertyAcesLtd.bitswan-jupyter"
   ],
   "contributes": {
     "uriHandler": true,
@@ -374,6 +374,16 @@
         "command": "bitswan.copyKafkaPassword",
         "title": "Copy Kafka Password",
         "icon": "$(key)"
+      },
+      {
+        "command": "bitswan.jumpToCell",
+        "title": "Jump to Cell",
+        "icon": "$(list-ordered)"
+      },
+      {
+        "command": "bitswan.restartBitswanKernel",
+        "title": "Restart Bitswan Kernel",
+        "icon": "$(debug-restart)"
       }
     ],
     "menus": {
@@ -726,6 +736,13 @@
           "group": "navigation@1"
         }
       ],
+      "editor/title": [
+        {
+          "command": "bitswan.buildImageFromToolbar",
+          "when": "resourceLangId == dockerfile",
+          "group": "navigation"
+        }
+      ],
       "notebook/toolbar": [
         {
           "command": "bitswan.deployAutomationFromToolbar",
@@ -741,13 +758,16 @@
           "command": "bitswan.stopBitswanKernel",
           "when": "notebookType == 'jupyter-notebook' && bitswan.kernelRunning",
           "group": "navigation@1"
-        }
-      ],
-      "editor/title": [
+        },
         {
-          "command": "bitswan.buildImageFromToolbar",
-          "when": "resourceLangId == dockerfile",
-          "group": "navigation"
+          "command": "bitswan.restartBitswanKernel",
+          "when": "notebookType == 'jupyter-notebook' && bitswan.kernelRunning",
+          "group": "navigation@2"
+        },
+        {
+          "command": "bitswan.jumpToCell",
+          "when": "notebookType == 'jupyter-notebook'",
+          "group": "navigation@3"
         }
       ],
       "commandPalette": [
@@ -768,7 +788,14 @@
           "when": "false"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "bitswan.jumpToCell",
+        "key": "ctrl+g",
+        "when": "notebookEditorFocused"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

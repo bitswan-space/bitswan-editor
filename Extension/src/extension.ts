@@ -29,7 +29,8 @@ import { activateAutomation, deactivateAutomation, deleteAutomation, restartAuto
 import { getDeployDetails } from './deploy_details';
 import { Jupyter } from '@vscode/jupyter-extension';
 import { getJupyterServers } from './commands/jupyter-server';
-import { startBitswanKernel, stopBitswanKernel, checkAndUpdateKernelStatus, updateKernelStatusContext } from './commands/kernel';
+import { startBitswanKernel, stopBitswanKernel, restartBitswanKernel, autoStartAndConnectKernel, checkAndUpdateKernelStatus, updateKernelStatusContext } from './commands/kernel';
+import { jumpToCell } from './commands/jupyter-navigation';
 import * as filesystemCommands from './commands/filesystem';
 
 // Defining logging channel
@@ -107,7 +108,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     const jupyterExt =
-      vscode.extensions.getExtension<Jupyter>("ms-toolsai.jupyter");
+      vscode.extensions.getExtension<Jupyter>("LibertyAcesLtd.bitswan-jupyter");
     if (!jupyterExt) {
       throw new Error("Jupyter Extension not installed");
     }
@@ -166,6 +167,12 @@ export function activate(context: vscode.ExtensionContext) {
     
     let stopKernelCommand = vscode.commands.registerCommand('bitswan.stopBitswanKernel',
         async (item: any) => await stopBitswanKernel(context, item));
+
+    let restartKernelCommand = vscode.commands.registerCommand('bitswan.restartBitswanKernel',
+        async (item: any) => await restartBitswanKernel(context, item));
+
+    let jumpToCellCommand = vscode.commands.registerCommand('bitswan.jumpToCell',
+        async () => await jumpToCell());
     
     // Check kernel status when notebooks are opened or when active editor changes
     const updateKernelContextForNotebook = async (notebook: vscode.NotebookDocument) => {
@@ -178,9 +185,13 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }
     };
-    
+
     context.subscriptions.push(
-        vscode.workspace.onDidOpenNotebookDocument(updateKernelContextForNotebook)
+        vscode.workspace.onDidOpenNotebookDocument(async (notebook) => {
+            await updateKernelContextForNotebook(notebook);
+            // Auto-start kernel when notebook is opened
+            autoStartAndConnectKernel(context, notebook);
+        })
     );
     
     // Also update when active notebook editor changes

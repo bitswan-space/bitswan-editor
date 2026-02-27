@@ -1,0 +1,24 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+import * as React from 'react';
+
+interface IVariableExplorerHeaderCellFormatterProps {
+    // value gets populated by the default cell formatter props
+    column?: {
+        name: string;
+    };
+}
+
+// Our formatter for cells in the variable explorer. Allow for different styles per column type
+export class VariableExplorerHeaderCellFormatter extends React.Component<IVariableExplorerHeaderCellFormatterProps> {
+    public override render() {
+        if (this.props.column) {
+            return (
+                <div role="columnheader">
+                    <span>{this.props.column.name}</span>
+                </div>
+            );
+        }
+    }
+}

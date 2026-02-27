@@ -59,6 +59,43 @@ export async function checkAndUpdateKernelStatus(
   }
 }
 
+export async function autoStartAndConnectKernel(
+  context: vscode.ExtensionContext,
+  doc: vscode.NotebookDocument
+) {
+  if (!doc.uri.fsPath.endsWith('.ipynb')) {
+    return;
+  }
+
+  const automationName = path.dirname(doc.uri.fsPath).split("/").pop() || "";
+  if (!automationName) {
+    return;
+  }
+
+  const details = await getDeployDetails(context);
+  if (!details) {
+    return;
+  }
+
+  // Check if kernel is already running
+  const isRunning = await checkAndUpdateKernelStatus(context, automationName);
+  if (isRunning) {
+    outputChannel.appendLine(`Kernel for ${automationName} already running, skipping auto-start`);
+    return;
+  }
+
+  // Auto-start the kernel in background
+  outputChannel.appendLine(`Auto-starting kernel for ${automationName}...`);
+  vscode.window.setStatusBarMessage(`Starting kernel for ${automationName}...`, 5000);
+
+  try {
+    const notebookPath = doc.uri.fsPath;
+    await startKernelInternal(details, automationName, notebookPath, context);
+  } catch (error: any) {
+    outputChannel.appendLine(`Auto-start kernel failed for ${automationName}: ${error.message || error}`);
+  }
+}
+
 export async function startBitswanKernel(
   context: vscode.ExtensionContext,
   item: any
@@ -216,6 +253,14 @@ async function startKernelInternal(deployDetails: any, automationName: string, n
     vscode.window.showErrorMessage(`Failed to start kernel: ${errorMessage}`);
     logHttpError(error, "Start Kernel", outputChannel);
   }
+}
+
+export async function restartBitswanKernel(
+  context: vscode.ExtensionContext,
+  item: any
+) {
+  await stopBitswanKernel(context, item);
+  await startBitswanKernel(context, item);
 }
 
 export async function stopBitswanKernel(

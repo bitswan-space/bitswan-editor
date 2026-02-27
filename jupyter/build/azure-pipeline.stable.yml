@@ -1,0 +1,126 @@
+trigger:
+  branches:
+    include:
+      - main
+pr: none
+
+parameters:
+  - name: publishExtension
+    displayName: 🚀 Publish Extension
+    type: boolean
+    default: false
+
+resources:
+  repositories:
+    - repository: templates
+      type: github
+      name: microsoft/vscode-engineering
+      ref: main
+      endpoint: Monaco
+
+extends:
+  template: azure-pipelines/extension/stable.yml@templates
+  parameters:
+    publishExtension: ${{ parameters.publishExtension }}
+    l10nSourcePaths: ./src
+    buildPlatforms:
+      - name: Linux
+        vsceTarget: 'web'
+      - name: Linux
+        packageArch: arm64
+        vsceTarget: linux-arm64
+        codesignPaths:
+          [
+            './dist/node_modules/zeromq/prebuilds/linux-arm64/node.napi.glibc.node',
+            './dist/node_modules/zeromq/prebuilds/linux-arm64/node.napi.musl.node'
+          ]
+      - name: Linux
+        packageArch: arm
+        vsceTarget: linux-armhf
+        codesignPaths: ['./dist/node_modules/zeromq/prebuilds/linux-arm/node.napi.glibc.node']
+      - name: Linux
+        vsceTarget: alpine-x64
+        codesignPaths:
+          [
+            './dist/node_modules/zeromq/prebuilds/linux-x64/node.napi.glibc.node',
+            './dist/node_modules/zeromq/prebuilds/linux-x64/node.napi.musl.node'
+          ]
+      - name: Linux
+        vsceTarget: alpine-arm64
+        codesignPaths:
+          [
+            './dist/node_modules/zeromq/prebuilds/linux-arm64/node.napi.glibc.node',
+            './dist/node_modules/zeromq/prebuilds/linux-arm64/node.napi.musl.node'
+          ]
+      - name: Linux
+        packageArch: x64
+        vsceTarget: linux-x64
+        codesignPaths:
+          [
+            './dist/node_modules/zeromq/prebuilds/linux-x64/node.napi.glibc.node',
+            './dist/node_modules/zeromq/prebuilds/linux-x64/node.napi.musl.node'
+          ]
+      - name: MacOS
+        packageArch: arm64
+        vsceTarget: darwin-arm64
+        codesignPaths: ['./dist/node_modules/zeromq/prebuilds/darwin-arm64/node.napi.glibc.node']
+      - name: MacOS
+        packageArch: x64
+        vsceTarget: darwin-x64
+        codesignPaths: ['./dist/node_modules/zeromq/prebuilds/darwin-x64/node.napi.glibc.node']
+      - name: Windows
+        packageArch: x64
+        vsceTarget: win32-x64
+        codesignPaths: ['./dist/node_modules/zeromq/prebuilds/win32-x64/node.napi.glibc.node']
+      - name: Windows
+        packageArch: arm64
+        vsceTarget: win32-arm64
+        codesignPaths: ['./dist/node_modules/zeromq/prebuilds/win32-arm64/node.napi.glibc.node']
+    buildSteps:
+      - script: |
+          sudo apt-get update
+          sudo apt-get install libpango1.0-dev libgif-dev
+        displayName: Install zmq dependencies
+        condition: or(eq(variables.vsceTarget, ''), contains(variables.vsceTarget, 'linux'), contains(variables.vsceTarget, 'alpine'))
+
+      - script: npm i -g npm@10.9.2
+        displayName: npm 10.9.2
+
+      - task: UsePythonVersion@0
+        inputs:
+          versionSpec: '3.12'
+          addToPath: true
+          architecture: 'x64'
+
+      - script: npm ci --foreground-scripts --ignore-scripts
+        displayName: npm ci
+        env:
+          npm_config_build_from_source: true
+          VSC_VSCE_TARGET: $(vsceTarget)
+
+      - script: npm run postinstall
+        displayName: npm postinstall
+        env:
+          npm_config_build_from_source: true
+          VSC_VSCE_TARGET: $(vsceTarget)
+
+      - script: npm run clean
+        displayName: Clean
+
+      - script: npm run build:stable
+        displayName: Build
+        env:
+          VSC_VSCE_TARGET: $(vsceTarget)
+
+    tsa:
+      config:
+        areaPath: 'Visual Studio Code Jupyter Extensions'
+        serviceTreeID: '14f24efd-b502-422a-9f40-09ea7ce9cf14'
+      enabled: true
+
+    apiScanDependentPipelineId: '466' # zeromq-prebuilt
+    apiScanSoftwareVersion: '2024'
+
+    # Exclude win32-arm64/*.* because APIScan cannot process them.
+    apiScanExcludes: |
+      extension/dist/node_modules/zeromq/prebuilds/win32-arm64/*.*

@@ -192,6 +192,11 @@ install_or_update_extension_local() {
     fi
 }
 
+# Remove any leftover ms-toolsai.jupyter extensions — we use bitswan-jupyter instead
+echo "Removing any ms-toolsai.jupyter extensions (replaced by bitswan-jupyter)..."
+rm -rf "${EXTENSIONS_DIR}"/ms-toolsai.jupyter* 2>/dev/null || true
+rm -rf "${EXTENSIONS_DIR}"/ms-toolsai.vscode-jupyter* 2>/dev/null || true
+
 echo "Installing/Updating extensions from pre-downloaded files..."
 
 # Track installation results
@@ -214,7 +219,7 @@ install_or_update_extension_local "GitHub.copilot" "$COPILOT_EXTENSION_VERSION" 
 install_or_update_extension_local "GitHub.copilot-chat" "$COPILOT_CHAT_EXTENSION_VERSION" "/opt/extensions/copilot-chat.vsix"
 install_or_update_extension_local "ms-python.vscode-pylance" "$PYLANCE_EXTENSION_VERSION" "/opt/extensions/pylance.vsix"
 install_or_update_extension_local "ms-python.python" "$PYTHON_EXTENSION_VERSION" "/opt/extensions/python.vsix"
-install_or_update_extension_local "ms-toolsai.jupyter" "$JUPYTER_EXTENSION_VERSION" "/opt/extensions/jupyter.vsix"
+install_or_update_extension_local "LibertyAcesLtd.bitswan-jupyter" "2025.10.0" "/opt/extensions/jupyter.vsix"
 
 # Auto-detect dev mode if extension source is available in workspace
 # This allows automatic dev mode when the bitswan-editor repo is mounted
@@ -322,6 +327,50 @@ else
     fi
 fi
 
+# Dev mode for vendored jupyter extension
+JUPYTER_DEV_PATH="/workspace/workspace/AOC/bitswan-editor/jupyter"
+if [ "$BITSWAN_DEV_MODE" = "true" ] && [ -f "$JUPYTER_DEV_PATH/package.json" ]; then
+    JUPYTER_DEV_NAME=$(jq -r .name "$JUPYTER_DEV_PATH/package.json" 2>/dev/null)
+    if [ "$JUPYTER_DEV_NAME" = "bitswan-jupyter" ]; then
+        echo "========================================"
+        echo "DEV MODE: Setting up vendored Jupyter extension development"
+        echo "========================================"
+
+        JUPYTER_DEV_PUBLISHER=$(jq -r .publisher "$JUPYTER_DEV_PATH/package.json")
+        JUPYTER_DEV_VERSION=$(jq -r .version "$JUPYTER_DEV_PATH/package.json")
+        JUPYTER_DEV_ID="${JUPYTER_DEV_PUBLISHER,,}.${JUPYTER_DEV_NAME}-${JUPYTER_DEV_VERSION}"
+
+        # Remove existing installed version
+        rm -rf "${EXTENSIONS_DIR}/${JUPYTER_DEV_PUBLISHER,,}.${JUPYTER_DEV_NAME}"* 2>/dev/null || true
+
+        # Create symlink
+        JUPYTER_DEV_SYMLINK="${EXTENSIONS_DIR}/${JUPYTER_DEV_ID}"
+        echo "Creating symlink: $JUPYTER_DEV_SYMLINK -> $JUPYTER_DEV_PATH"
+        ln -sf "$JUPYTER_DEV_PATH" "$JUPYTER_DEV_SYMLINK"
+
+        # Install dependencies if needed
+        if [ ! -d "$JUPYTER_DEV_PATH/node_modules" ] || [ "$JUPYTER_DEV_PATH/package.json" -nt "$JUPYTER_DEV_PATH/node_modules" ]; then
+            echo "Installing jupyter extension dependencies..."
+            (cd "$JUPYTER_DEV_PATH" && npm ci)
+        fi
+
+        # Build if dist/ doesn't exist
+        if [ ! -d "$JUPYTER_DEV_PATH/dist" ]; then
+            echo "Building jupyter extension..."
+            (cd "$JUPYTER_DEV_PATH" && VSC_VSCE_TARGET=linux-x64 npx tsx build/esbuild/build.ts 2>&1 || true)
+        fi
+
+        # Start esbuild watch in background
+        echo "Starting jupyter esbuild watch in background..."
+        (cd "$JUPYTER_DEV_PATH" && VSC_VSCE_TARGET=linux-x64 npx tsx build/esbuild/build.ts --watch 2>&1 | while read line; do echo "[jupyter-watch] $line"; done) &
+        JUPYTER_WATCH_PID=$!
+        echo "Jupyter watch PID: $JUPYTER_WATCH_PID"
+
+        echo "DEV MODE: Vendored Jupyter development environment ready!"
+        echo "========================================"
+    fi
+fi
+
 # Extension installation summary
 echo ""
 echo "Extension installation summary:"
@@ -380,6 +429,7 @@ cd /workspace/workspace
 /usr/bin/entrypoint.sh \
   --bind-addr "127.0.0.1:${INTERNAL_CODE_SERVER_PORT}" \
   --auth ${CODE_SERVER_AUTH} \
+  --enable-proposed-api LibertyAcesLtd.bitswan-jupyter \
   /workspace/workspace &
 CODE_SERVER_PID=$!
 
