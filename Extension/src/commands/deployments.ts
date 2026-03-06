@@ -485,6 +485,7 @@ export async function startLiveDevServerCommand(
             const deployResult = await promoteAutomation(deployUrl, details.deploySecret, 'live-dev', 'live-dev', relativePath, {
                 image: automationConfig.image,
                 expose: automationConfig.expose,
+                exposeTo: automationConfig.exposeTo,
                 port: automationConfig.port,
                 mountPath: automationConfig.mountPath,
                 secretGroups: automationConfig.secretGroups,

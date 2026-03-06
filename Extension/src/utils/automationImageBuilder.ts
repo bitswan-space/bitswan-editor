@@ -96,6 +96,7 @@ function loadAutomationTomlState(
 export interface AutomationDeployConfig {
   image: string;
   expose: boolean;
+  exposeTo?: string[];
   port: number;
   mountPath: string;
   secretGroups?: string[];
@@ -153,6 +154,7 @@ export function getAutomationDeployConfig(automationFolderPath: string): Automat
     return {
       image: (deployment.image as string) || defaults.image,
       expose: (deployment.expose as boolean) ?? defaults.expose,
+      exposeTo: parseStringOrArray(deployment.expose_to),
       port: (deployment.port as number) ?? defaults.port,
       mountPath: "/app/", // TOML format always uses /app/
       secretGroups: liveDevSecrets,

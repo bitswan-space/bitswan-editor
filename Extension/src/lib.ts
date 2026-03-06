@@ -1202,6 +1202,7 @@ export const uploadAssetStream = async (
 export interface AutomationConfigParams {
   image?: string;
   expose?: boolean;
+  exposeTo?: string[];
   port?: number;
   mountPath?: string;
   secretGroups?: string[];
@@ -1242,6 +1243,9 @@ export const promoteAutomation = async (
     }
     if (automationConfig.expose !== undefined) {
       form.append('expose', automationConfig.expose.toString());
+    }
+    if (automationConfig.exposeTo && automationConfig.exposeTo.length > 0) {
+      form.append('expose_to', JSON.stringify(automationConfig.exposeTo));
     }
     if (automationConfig.port !== undefined) {
       form.append('port', automationConfig.port.toString());
