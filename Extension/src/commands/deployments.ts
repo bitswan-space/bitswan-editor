@@ -458,6 +458,11 @@ export async function startLiveDevServerCommand(
             const imageResult = await ensureAutomationImageReady(details, folderPath, outputChannel, ignorePatterns);
             // imageResult is null if no image folder exists, which is fine
 
+            // If a custom image was built, use it instead of the config default
+            if (imageResult?.imageTag) {
+                automationConfig.image = imageResult.imageTag;
+            }
+
             if (token.isCancellationRequested) { return; }
 
             progress.report({ increment: 50, message: "Reading automation config..." });

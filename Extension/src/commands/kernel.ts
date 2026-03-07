@@ -2,9 +2,8 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
 import axios, { AxiosError } from "axios";
-import { outputChannel } from "../extension";
+import { outputChannel, serverChangedEmitter } from "../extension";
 import { getDeployDetails } from "../deploy_details";
-import { getPipelineConfigContent } from "./jupyter-server";
 import { logHttpError } from "../lib";
 import { ensureAutomationImageReady } from "../utils/automationImageBuilder";
 
@@ -146,16 +145,24 @@ async function startKernelInternal(deployDetails: any, automationName: string, n
 
   const automationDirectoryPath = path.dirname(notebookPath);
 
+  let imageResult: Awaited<ReturnType<typeof ensureAutomationImageReady>> = null;
   try {
-    await ensureAutomationImageReady(deployDetails, automationDirectoryPath, outputChannel);
+    imageResult = await ensureAutomationImageReady(deployDetails, automationDirectoryPath, outputChannel);
   } catch (imageError: any) {
     vscode.window.showErrorMessage(`Failed to prepare automation image: ${imageError.message || imageError}`);
     return;
   }
 
-  const pipelinesConfContent = getPipelineConfigContent(notebookDoc) || "";
-  if (!pipelinesConfContent) {
-    vscode.window.showErrorMessage("pipelines.conf not found");
+  // Read config files for fallback image + secrets
+  const automationTomlPath = path.join(automationDirectoryPath, "automation.toml");
+  const pipelinesConfPath = path.join(automationDirectoryPath, "pipelines.conf");
+  const automationTomlContent = fs.existsSync(automationTomlPath)
+    ? fs.readFileSync(automationTomlPath, "utf-8") : "";
+  const pipelinesConfContent = fs.existsSync(pipelinesConfPath)
+    ? fs.readFileSync(pipelinesConfPath, "utf-8") : "";
+
+  if (!imageResult && !automationTomlContent && !pipelinesConfContent) {
+    vscode.window.showErrorMessage("No image/ dir, automation.toml, or pipelines.conf found");
     return;
   }
 
@@ -190,6 +197,10 @@ async function startKernelInternal(deployDetails: any, automationName: string, n
   const params = new URLSearchParams();
   params.append("relative_path", relativePath);
   params.append("pipelines_conf_content", pipelinesConfContent);
+  params.append("automation_toml_content", automationTomlContent);
+  if (imageResult) {
+    params.append("image_tag", imageResult.imageTag);
+  }
 
   try {
     const response = await axios.post(
@@ -247,6 +258,10 @@ async function startKernelInternal(deployDetails: any, automationName: string, n
           deploymentId: automationName,
         },
       });
+
+      // Notify the Jupyter extension that servers have changed
+      outputChannel.appendLine(`Firing onDidChangeServers for ${automationName}`);
+      serverChangedEmitter.fire();
     }
   } catch (error: any) {
     const errorMessage = error.response?.data?.detail || error.message || "Unknown error";

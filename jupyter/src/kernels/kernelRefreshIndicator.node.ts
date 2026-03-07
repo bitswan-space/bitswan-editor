@@ -34,20 +34,8 @@ export class KernelRefreshIndicator implements IExtensionSyncActivationService {
         dispose(this.disposables);
     }
     public activate() {
-        if (this.extensionChecker.isPythonExtensionInstalled) {
-            this.startRefreshWithPython();
-        } else {
-            this.startRefreshWithoutPython();
-            this.extensionChecker.onPythonExtensionInstallationStatusChanged(
-                () => {
-                    if (this.extensionChecker.isPythonExtensionInstalled) {
-                        this.startRefreshWithPython();
-                    }
-                },
-                this,
-                this.disposables
-            );
-        }
+        // Disabled — only Bitswan remote kernels are used. No local kernel refresh needed.
+        return;
     }
     private startRefreshWithoutPython() {
         if (this.refreshedOnceBefore) {

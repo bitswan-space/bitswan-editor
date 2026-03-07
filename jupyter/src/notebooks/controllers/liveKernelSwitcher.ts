@@ -30,11 +30,8 @@ export class LiveKernelSwitcher implements IExtensionSyncActivationService {
         private readonly preferredRemoteKernelIdProvider: PreferredRemoteKernelIdProvider
     ) {}
     public activate() {
-        // Listen to notebook open events. If we open a notebook that had a remote kernel started on it, reset it
-        workspace.onDidOpenNotebookDocument(this.onDidOpenNotebook, this, this.disposables);
-
-        // For all currently open notebooks, need to run the same code
-        workspace.notebookDocuments.forEach((d) => this.onDidOpenNotebook(d));
+        // Disabled — only Bitswan remote kernels are used. BitswanKernelAutoConnector handles auto-selection.
+        return;
     }
 
     @swallowExceptions()

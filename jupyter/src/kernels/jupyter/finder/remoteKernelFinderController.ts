@@ -26,7 +26,7 @@ import { JupyterServerCollection, JupyterServerProvider } from '../../../api';
 import { CancellationTokenSource } from 'vscode';
 import { logger } from '../../../platform/logging';
 import { IRemoteKernelFinderController } from './types';
-import { CodespaceExtensionId } from '../../../platform/common/constants';
+import { CodespaceExtensionId, JVSC_EXTENSION_ID } from '../../../platform/common/constants';
 import { trackRemoteServerDisplayName } from '../connection/jupyterServerProviderRegistry';
 
 @injectable()
@@ -88,14 +88,16 @@ export class RemoteKernelFinderController implements IRemoteKernelFinderControll
     private mappedServers = new Set<string>();
     @swallowExceptions('Handle Jupyter Provider Changes')
     private async handleProviderChanges() {
-        if (!this.serverUriStorage.all.length) {
-            // We do not have any of the previously used servers, or the data has not yet loaded.
-            return;
-        }
+        const hasUsedServers = this.serverUriStorage.all.length > 0;
         const token = new CancellationTokenSource();
         this.disposables.push(token);
         await Promise.all(
             this.jupyterServerProviderRegistry.jupyterCollections.map((collection) => {
+                const isThirdParty = collection.extensionId !== JVSC_EXTENSION_ID;
+                // Skip collections with no used servers, unless it's a third-party collection
+                if (!hasUsedServers && !isThirdParty) {
+                    return;
+                }
                 const serverProvider = collection.serverProvider;
                 if (!serverProvider || this.mappedProviders.has(serverProvider)) {
                     return;
@@ -120,7 +122,8 @@ export class RemoteKernelFinderController implements IRemoteKernelFinderControll
     }
     @swallowExceptions('Check Servers in Jupyter Server Provider')
     private async lookForServersInCollectionAndRemoveOldServers(collection: JupyterServerCollection) {
-        if (!this.serverUriStorage.all.length) {
+        const isThirdParty = collection.extensionId !== JVSC_EXTENSION_ID;
+        if (!isThirdParty && !this.serverUriStorage.all.length) {
             // We do not have any of the previously used servers, or the data has not yet loaded.
             return;
         }
@@ -142,8 +145,8 @@ export class RemoteKernelFinderController implements IRemoteKernelFinderControll
                 const serverId = generateIdFromRemoteProvider(serverProviderHandle);
                 currentServerIds.add(serverId);
                 trackRemoteServerDisplayName(serverProviderHandle, server.label);
-                // If this sever was never used in the past, then no need to create a finder for this.
-                if (this.mappedServers.has(serverId) || !usedServers.has(serverId)) {
+                // For third-party collections, always create a finder; otherwise require prior use
+                if (this.mappedServers.has(serverId) || (!isThirdParty && !usedServers.has(serverId))) {
                     return;
                 }
                 this.mappedServers.add(serverId);

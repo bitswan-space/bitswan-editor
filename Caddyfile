@@ -20,6 +20,7 @@
         reverse_proxy http://127.0.0.1:9998 {
             header_up Host {host}
             header_up X-Real-IP {remote}
+            header_up X-Forwarded-Prefix /codeserver
         }
     }
     

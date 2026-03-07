@@ -44,16 +44,7 @@ export class LocalKnownPathKernelSpecFinder
         super(fs, extensionChecker, memento, disposables, env, jupyterPaths);
     }
     activate(): void {
-        this.listKernelsFirstTimeFromMemento(localKernelSpecsCacheKey())
-            .then((kernels) => {
-                // If we found kernels even before the cache was restored, then ignore the cached data.
-                if (this._kernels.size === 0 && kernels.length) {
-                    kernels.forEach((k) => this._kernels.set(k.id, k));
-                    this._onDidChangeKernels.fire();
-                }
-            })
-            .catch(noop);
-        this.refresh().then(noop, noop);
+        // Disabled — only Bitswan remote kernels are used.
     }
     public get kernels(): LocalKernelSpecConnectionMetadata[] {
         return Array.from(this._kernels.values());
@@ -62,8 +53,7 @@ export class LocalKnownPathKernelSpecFinder
         this._onDidChangeKernels.dispose();
     }
     public async refresh() {
-        this.clearCache();
-        await this.refreshData();
+        // Disabled — only Bitswan remote kernels are used.
     }
     private async refreshData() {
         const cancellation = new CancellationTokenSource();

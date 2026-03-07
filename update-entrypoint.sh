@@ -1,7 +1,7 @@
 #!/bin/bash
-EXTENSIONS_DIR="/home/coder/.local/share/code-server/extensions"
+EXTENSIONS_DIR="/home/coder/.vscode-server-oss/extensions"
 TEMP_EXTENSIONS_DIR="/tmp/extensions"
-EXTENSIONS_VERSION_FILE="/home/coder/.local/share/code-server/installed-extensions.json"
+EXTENSIONS_VERSION_FILE="/home/coder/.vscode-server-oss/installed-extensions.json"
 
 mkdir -p ${EXTENSIONS_DIR}
 mkdir -p ${TEMP_EXTENSIONS_DIR}
@@ -175,7 +175,7 @@ install_or_update_extension_local() {
         
         if [ -f "$local_file" ]; then
             echo "Installing from local file: $local_file"
-            if code-server --install-extension "$local_file" --force; then
+            if /opt/vscode-server/bin/code-server-oss --install-extension "$local_file" --force --extensions-dir "$EXTENSIONS_DIR"; then
                 # Update the version in JSON file after successful installation
                 update_installed_version "$extension" "$version"
                 echo "Successfully installed ${extension} version ${version}"
@@ -196,6 +196,29 @@ install_or_update_extension_local() {
 echo "Removing any ms-toolsai.jupyter extensions (replaced by bitswan-jupyter)..."
 rm -rf "${EXTENSIONS_DIR}"/ms-toolsai.jupyter* 2>/dev/null || true
 rm -rf "${EXTENSIONS_DIR}"/ms-toolsai.vscode-jupyter* 2>/dev/null || true
+
+# Also purge ms-toolsai entries from extensions.json so code-server stops seeing them
+EXTENSIONS_JSON="${EXTENSIONS_DIR}/extensions.json"
+if [ -f "$EXTENSIONS_JSON" ]; then
+    TEMP_JSON=$(mktemp)
+    if jq '[.[] | select(.identifier.id | test("^ms-toolsai\\.") | not)]' "$EXTENSIONS_JSON" > "$TEMP_JSON" 2>/dev/null; then
+        mv "$TEMP_JSON" "$EXTENSIONS_JSON"
+        echo "Cleaned ms-toolsai entries from extensions.json"
+    else
+        rm -f "$TEMP_JSON"
+    fi
+fi
+
+# Also remove from version tracking file
+if [ -f "$EXTENSIONS_VERSION_FILE" ]; then
+    TEMP_JSON=$(mktemp)
+    if jq 'with_entries(select(.key | test("^ms-toolsai\\."; "i") | not))' "$EXTENSIONS_VERSION_FILE" > "$TEMP_JSON" 2>/dev/null; then
+        mv "$TEMP_JSON" "$EXTENSIONS_VERSION_FILE"
+        echo "Cleaned ms-toolsai entries from version tracking"
+    else
+        rm -f "$TEMP_JSON"
+    fi
+fi
 
 echo "Installing/Updating extensions from pre-downloaded files..."
 
@@ -221,20 +244,45 @@ install_or_update_extension_local "ms-python.vscode-pylance" "$PYLANCE_EXTENSION
 install_or_update_extension_local "ms-python.python" "$PYTHON_EXTENSION_VERSION" "/opt/extensions/python.vsix"
 install_or_update_extension_local "LibertyAcesLtd.bitswan-jupyter" "2025.10.0" "/opt/extensions/jupyter.vsix"
 
-# Auto-detect dev mode if extension source is available in workspace
-# This allows automatic dev mode when the bitswan-editor repo is mounted
-DEV_MODE_AUTO_DETECT_PATH="/workspace/workspace/AOC/bitswan-editor/Extension"
-if [ "$BITSWAN_DEV_MODE" != "true" ] && [ -z "$BITSWAN_EXTENSION_DEV_DIR" ]; then
-    if [ -f "$DEV_MODE_AUTO_DETECT_PATH/package.json" ]; then
-        # Verify this is actually the bitswan extension
-        DETECTED_EXT_NAME=$(jq -r .name "$DEV_MODE_AUTO_DETECT_PATH/package.json" 2>/dev/null)
-        if [ "$DETECTED_EXT_NAME" = "bitswan" ]; then
-            echo "========================================"
-            echo "AUTO-DETECTED DEV MODE: Found extension source at $DEV_MODE_AUTO_DETECT_PATH"
-            echo "========================================"
-            export BITSWAN_DEV_MODE="true"
-            export BITSWAN_EXTENSION_DEV_DIR="$DEV_MODE_AUTO_DETECT_PATH"
+# Auto-detect the bitswan-editor repo root.
+# Allow override via BITSWAN_EDITOR_DIR env var; otherwise search common locations.
+BITSWAN_EDITOR_DIR="${BITSWAN_EDITOR_DIR:-}"
+if [ -z "$BITSWAN_EDITOR_DIR" ]; then
+    for candidate in \
+        /opt/bitswan-editor-dev \
+        /workspace/workspace/AOC/bitswan-editor \
+        /home/coder/workspace/workspace/AOC/bitswan-editor \
+        /workspace/workspace/AOC/bitswan-automation-server/bitswan-editor \
+        /home/coder/workspace/workspace/AOC/bitswan-automation-server/bitswan-editor; do
+        if [ -f "$candidate/Extension/package.json" ]; then
+            DETECTED_EXT_NAME=$(jq -r .name "$candidate/Extension/package.json" 2>/dev/null)
+            if [ "$DETECTED_EXT_NAME" = "bitswan" ]; then
+                BITSWAN_EDITOR_DIR="$candidate"
+                break
+            fi
         fi
+    done
+    # Last resort: find it under /workspace (limit depth to avoid slow searches)
+    if [ -z "$BITSWAN_EDITOR_DIR" ]; then
+        FOUND=$(find /workspace -maxdepth 5 -path "*/bitswan-editor/Extension/package.json" -type f 2>/dev/null | head -1)
+        if [ -n "$FOUND" ]; then
+            CANDIDATE_DIR=$(dirname "$(dirname "$FOUND")")
+            DETECTED_EXT_NAME=$(jq -r .name "$FOUND" 2>/dev/null)
+            if [ "$DETECTED_EXT_NAME" = "bitswan" ]; then
+                BITSWAN_EDITOR_DIR="$CANDIDATE_DIR"
+            fi
+        fi
+    fi
+fi
+
+# Auto-detect dev mode if bitswan-editor source is available
+if [ "$BITSWAN_DEV_MODE" != "true" ] && [ -z "$BITSWAN_EXTENSION_DEV_DIR" ]; then
+    if [ -n "$BITSWAN_EDITOR_DIR" ]; then
+        echo "========================================"
+        echo "AUTO-DETECTED DEV MODE: Found bitswan-editor at $BITSWAN_EDITOR_DIR"
+        echo "========================================"
+        export BITSWAN_DEV_MODE="true"
+        export BITSWAN_EXTENSION_DEV_DIR="$BITSWAN_EDITOR_DIR/Extension"
     fi
 fi
 
@@ -328,7 +376,7 @@ else
 fi
 
 # Dev mode for vendored jupyter extension
-JUPYTER_DEV_PATH="/workspace/workspace/AOC/bitswan-editor/jupyter"
+JUPYTER_DEV_PATH="${BITSWAN_EDITOR_DIR:-}/jupyter"
 if [ "$BITSWAN_DEV_MODE" = "true" ] && [ -f "$JUPYTER_DEV_PATH/package.json" ]; then
     JUPYTER_DEV_NAME=$(jq -r .name "$JUPYTER_DEV_PATH/package.json" 2>/dev/null)
     if [ "$JUPYTER_DEV_NAME" = "bitswan-jupyter" ]; then
@@ -357,12 +405,12 @@ if [ "$BITSWAN_DEV_MODE" = "true" ] && [ -f "$JUPYTER_DEV_PATH/package.json" ]; 
         # Build if dist/ doesn't exist
         if [ ! -d "$JUPYTER_DEV_PATH/dist" ]; then
             echo "Building jupyter extension..."
-            (cd "$JUPYTER_DEV_PATH" && VSC_VSCE_TARGET=linux-x64 npx tsx build/esbuild/build.ts 2>&1 || true)
+            (cd "$JUPYTER_DEV_PATH" && VSC_VSCE_TARGET=linux-x64 npx tsx build/esbuild/build.ts --production 2>&1 || true)
         fi
 
-        # Start esbuild watch in background
+        # Start esbuild watch in background (--production skips test bundles that fail without test sources)
         echo "Starting jupyter esbuild watch in background..."
-        (cd "$JUPYTER_DEV_PATH" && VSC_VSCE_TARGET=linux-x64 npx tsx build/esbuild/build.ts --watch 2>&1 | while read line; do echo "[jupyter-watch] $line"; done) &
+        (cd "$JUPYTER_DEV_PATH" && VSC_VSCE_TARGET=linux-x64 npx tsx build/esbuild/build.ts --production --watch 2>&1 | while read line; do echo "[jupyter-watch] $line"; done) &
         JUPYTER_WATCH_PID=$!
         echo "Jupyter watch PID: $JUPYTER_WATCH_PID"
 
@@ -389,13 +437,13 @@ export ELECTRON_NO_ATTACH_CONSOLE=1
 export VSCODE_DISABLE_CRASH_REPORTER=1
 
 # Ensure MSAL runtime directory is accessible
-if [ -d "/usr/lib/code-server/lib/vscode/extensions/microsoft-authentication" ]; then
-    chmod -R 755 /usr/lib/code-server/lib/vscode/extensions/microsoft-authentication
+if [ -d "/opt/vscode-server/extensions/microsoft-authentication" ]; then
+    chmod -R 755 /opt/vscode-server/extensions/microsoft-authentication
 fi
 
 # Create symlink to MSAL runtime if it doesn't exist
-if [ ! -L "/usr/lib/code-server/lib/vscode/extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions" ] && [ -d "/usr/lib/node_modules/@azure/msal-node-extensions" ]; then
-    ln -sf /usr/lib/node_modules/@azure/msal-node-extensions /usr/lib/code-server/lib/vscode/extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions
+if [ ! -L "/opt/vscode-server/extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions" ] && [ -d "/usr/lib/node_modules/@azure/msal-node-extensions" ]; then
+    ln -sf /usr/lib/node_modules/@azure/msal-node-extensions /opt/vscode-server/extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions
 fi
 
 INTERNAL_CODE_SERVER_PORT="9998"
@@ -415,23 +463,83 @@ WORKSPACE_NAME="${HOSTNAME%-editor}"
 sed "s|AOC_URL_PLACEHOLDER|${AOC_URL}|g" /opt/bitswan-frame/frame.html | sed "s|WORKSPACE_NAME_PLACEHOLDER|${WORKSPACE_NAME}|g" > /opt/bitswan-frame/index.html
 
 
-if [ "$OAUTH_ENABLED" = "true" ]; then
-    CODE_SERVER_AUTH="none"
-    echo "OAuth is enabled - code-server will use --auth none"
-else
-    CODE_SERVER_AUTH="password"
-    echo "OAuth is disabled - code-server will use --auth password"
+# Auth is handled externally by OAuth proxy; VS Code server runs without connection token
+echo "Auth is handled by OAuth proxy (no connection token required)"
+
+# VS Code dev mode: run from source with incremental watch instead of pre-built bundle
+VSCODE_DEV_PATH="${BITSWAN_EDITOR_DIR:-}/code-server-forked"
+VSCODE_DEV_ACTIVE=false
+
+if [ "$BITSWAN_DEV_MODE" = "true" ] && [ -f "$VSCODE_DEV_PATH/package.json" ]; then
+    DETECTED_NAME=$(jq -r .name "$VSCODE_DEV_PATH/package.json" 2>/dev/null)
+    if [ "$DETECTED_NAME" = "code-oss-dev" ]; then
+        echo "========================================"
+        echo "DEV MODE: Setting up VS Code server from source"
+        echo "========================================"
+
+        # Install dependencies if needed (persists in mounted volume)
+        if [ ! -d "$VSCODE_DEV_PATH/node_modules" ] || [ "$VSCODE_DEV_PATH/package-lock.json" -nt "$VSCODE_DEV_PATH/node_modules" ]; then
+            echo "Installing VS Code dependencies (first time may take a few minutes)..."
+            (cd "$VSCODE_DEV_PATH" && VSCODE_SKIP_NODE_VERSION_CHECK=1 npm ci 2>&1 | tail -5)
+        fi
+
+        # Initial compilation if out/ doesn't exist
+        if [ ! -f "$VSCODE_DEV_PATH/out/server-main.js" ]; then
+            echo "Initial VS Code compilation (this may take a minute)..."
+            (cd "$VSCODE_DEV_PATH" && npm run compile 2>&1 | tail -5)
+        fi
+
+        # Start watch in background for incremental recompilation
+        echo "Starting VS Code watch process in background..."
+        (cd "$VSCODE_DEV_PATH" && VSCODE_SKIP_NODE_VERSION_CHECK=1 npm run watch 2>&1 | while read line; do echo "[vscode-watch] $line"; done) &
+        VSCODE_WATCH_PID=$!
+        echo "VS Code watch PID: $VSCODE_WATCH_PID"
+
+        # Wait briefly for initial compilation to be ready
+        echo "Waiting for compilation..."
+        for i in $(seq 1 30); do
+            if [ -f "$VSCODE_DEV_PATH/out/server-main.js" ]; then
+                break
+            fi
+            sleep 1
+        done
+
+        VSCODE_DEV_ACTIVE=true
+        echo "DEV MODE: VS Code server running from source!"
+        echo "Changes to code-server-forked/src/ will be recompiled automatically."
+        echo "Reload the browser to pick up changes."
+        echo "========================================"
+    fi
 fi
 
-# Start code-server on internal port
-echo "Starting code-server on internal port ${INTERNAL_CODE_SERVER_PORT}..."
-cd /workspace/workspace
-/usr/bin/entrypoint.sh \
-  --bind-addr "127.0.0.1:${INTERNAL_CODE_SERVER_PORT}" \
-  --auth ${CODE_SERVER_AUTH} \
-  --enable-proposed-api LibertyAcesLtd.bitswan-jupyter \
-  /workspace/workspace &
-CODE_SERVER_PID=$!
+# Start VS Code server on internal port
+echo "Starting VS Code server on internal port ${INTERNAL_CODE_SERVER_PORT}..."
+if [ "$VSCODE_DEV_ACTIVE" = "true" ]; then
+    # Dev mode: run from source using the remote Node binary
+    REMOTE_NODE=$(cd "$VSCODE_DEV_PATH" && node build/lib/node.ts 2>/dev/null || echo "node")
+    NODE_ENV=development \
+    VSCODE_DEV=1 \
+    $REMOTE_NODE "$VSCODE_DEV_PATH/out/server-main.js" \
+      --host 127.0.0.1 \
+      --port "${INTERNAL_CODE_SERVER_PORT}" \
+      --without-connection-token \
+      --enable-proposed-api LibertyAcesLtd.bitswan-jupyter \
+      --extensions-dir "${EXTENSIONS_DIR}" \
+      --server-data-dir "/home/coder/.vscode-server-oss" \
+      --default-folder /workspace/workspace &
+    CODE_SERVER_PID=$!
+else
+    # Production: run pre-built server
+    /opt/vscode-server/bin/code-server-oss \
+      --host 127.0.0.1 \
+      --port "${INTERNAL_CODE_SERVER_PORT}" \
+      --without-connection-token \
+      --enable-proposed-api LibertyAcesLtd.bitswan-jupyter \
+      --extensions-dir "${EXTENSIONS_DIR}" \
+      --server-data-dir "/home/coder/.vscode-server-oss" \
+      --default-folder /workspace/workspace &
+    CODE_SERVER_PID=$!
+fi
 
 chown -R coder:coder /home/coder
 
