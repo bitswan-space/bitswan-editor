@@ -68,73 +68,20 @@ export class ContributedLocalKernelSpecFinder
     ) {
         super();
         this.disposables.push(this);
-        kernelFinder.registerKernelFinder(this);
+        // Removed — only Bitswan remote kernels are used.
+        // kernelFinder.registerKernelFinder(this);
         this.disposables.push(this._onDidChangeStatus);
         this.disposables.push(this._onDidChangeKernels);
         this.disposables.push(this.promiseMonitor);
     }
 
     activate() {
-        this.promiseMonitor.onStateChange(() => {
-            this.status =
-                this.promiseMonitor.isComplete &&
-                this.interpreters.status === 'idle' &&
-                this.nonPythonKernelFinder.status === 'idle' &&
-                this.pythonKernelFinder.status === 'idle'
-                    ? 'idle'
-                    : 'discovering';
-        });
-
-        this.updateCache();
-        let combinedProgress: Deferred<void> | undefined = undefined;
-        const updateCombinedStatus = () => {
-            const latestStatus: (typeof this.nonPythonKernelFinder.status)[] = [
-                this.nonPythonKernelFinder.status,
-                this.pythonKernelFinder.status,
-                this.interpreters.status === 'refreshing' ? 'discovering' : 'idle'
-            ];
-            if (latestStatus.includes('discovering')) {
-                if (!combinedProgress) {
-                    combinedProgress = createDeferred<void>();
-                    this.promiseMonitor.push(combinedProgress.promise);
-                }
-            } else {
-                combinedProgress?.resolve();
-                combinedProgress = undefined;
-            }
-        };
-        updateCombinedStatus();
-        this.nonPythonKernelFinder.onDidChangeStatus(updateCombinedStatus, this, this.disposables);
-        this.pythonKernelFinder.onDidChangeStatus(updateCombinedStatus, this, this.disposables);
-        this.interpreters.onDidChangeStatus(updateCombinedStatus, this, this.disposables);
-        this.updateCache();
-        this.interpreters.onDidChangeInterpreters(this.updateCache, this, this.disposables);
-        extensions.onDidChange(
-            () => {
-                // If we just installed the Python extension and we fetched the controllers, then fetch it again.
-                if (
-                    !this.wasPythonInstalledWhenFetchingControllers &&
-                    this.extensionChecker.isPythonExtensionInstalled
-                ) {
-                    this.updateCache();
-                }
-            },
-            this,
-            this.disposables
-        );
-        this.nonPythonKernelFinder.onDidChangeKernels(this.updateCache, this, this.disposables);
-        this.pythonKernelFinder.onDidChangeKernels(this.updateCache, this, this.disposables);
-        this.wasPythonInstalledWhenFetchingControllers = this.extensionChecker.isPythonExtensionInstalled;
+        // Disabled — only Bitswan remote kernels are used.
+        return;
     }
 
     public async refresh() {
-        const promise = (async () => {
-            await this.nonPythonKernelFinder.refresh();
-            await this.pythonKernelFinder.refresh();
-            this.updateCache();
-        })();
-        this.promiseMonitor.push(promise);
-        await promise;
+        // Disabled — only Bitswan remote kernels are used.
     }
 
     @errorDecorator('List kernels failed')

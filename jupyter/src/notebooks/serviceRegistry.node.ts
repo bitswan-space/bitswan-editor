@@ -7,6 +7,7 @@ import { IExtensionSyncActivationService } from '../platform/activation/types';
 import { Identifiers } from '../platform/common/constants';
 import { IServiceManager } from '../platform/ioc/types';
 import { InstallPythonControllerCommands } from './controllers/commands/installPythonControllerCommands';
+import { BitswanKernelAutoConnector } from './controllers/bitswanKernelAutoConnector';
 import { LiveKernelSwitcher } from './controllers/liveKernelSwitcher';
 import { NotebookIPyWidgetCoordinator } from './controllers/notebookIPyWidgetCoordinator';
 import { RemoteKernelConnectionHandler } from './controllers/remoteKernelConnectionHandler';
@@ -43,7 +44,12 @@ import { INotebookEditorProvider, INotebookPythonEnvironmentService } from './ty
 
 export function registerTypes(serviceManager: IServiceManager, isDevMode: boolean) {
     registerControllerTypes(serviceManager, isDevMode);
-    serviceManager.addSingleton<IExtensionSyncActivationService>(IExtensionSyncActivationService, LiveKernelSwitcher);
+    // Removed — only Bitswan remote kernels are used. BitswanKernelAutoConnector handles auto-selection.
+    // serviceManager.addSingleton<IExtensionSyncActivationService>(IExtensionSyncActivationService, LiveKernelSwitcher);
+    serviceManager.addSingleton<IExtensionSyncActivationService>(
+        IExtensionSyncActivationService,
+        BitswanKernelAutoConnector
+    );
     serviceManager.addSingleton<INotebookCommandHandler>(INotebookCommandHandler, NotebookCommandListener);
     serviceManager.addBinding(INotebookCommandHandler, IExtensionSyncActivationService);
     serviceManager.addSingleton<INotebookEditorProvider>(INotebookEditorProvider, NotebookEditorProvider);
@@ -70,10 +76,11 @@ export function registerTypes(serviceManager: IServiceManager, isDevMode: boolea
         IExtensionSyncActivationService,
         InterpreterPackageTracker
     );
-    serviceManager.addSingleton<IExtensionSyncActivationService>(
-        IExtensionSyncActivationService,
-        InstallPythonControllerCommands
-    );
+    // Removed — only Bitswan remote kernels are used.
+    // serviceManager.addSingleton<IExtensionSyncActivationService>(
+    //     IExtensionSyncActivationService,
+    //     InstallPythonControllerCommands
+    // );
 
     serviceManager.addSingleton<NotebookCellLanguageService>(NotebookCellLanguageService, NotebookCellLanguageService);
     serviceManager.addBinding(NotebookCellLanguageService, IExtensionSyncActivationService);

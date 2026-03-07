@@ -1,7 +1,7 @@
-FROM --platform=linux/amd64 node:18-alpine AS extension_builder
+FROM --platform=linux/amd64 node:22-bookworm AS extension_builder
 WORKDIR /build
 COPY Extension/ ./
-RUN apk add --no-cache jq && \
+RUN apt-get update && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/* && \
     BUILD_VERSION="1.0.$(date +%Y%m%d%H%M%S)" && \
     jq --arg v "$BUILD_VERSION" '.version = $v' package.json > package.json.tmp && \
     mv package.json.tmp package.json
@@ -9,7 +9,7 @@ RUN npm install && chmod +x node_modules/.bin/*
 RUN npm exec vsce -- package --out bitswan-extension.vsix
 
 # Stage 2: Build vendored jupyter extension
-FROM --platform=linux/amd64 node:20-bookworm AS jupyter_builder
+FROM --platform=linux/amd64 node:22-bookworm AS jupyter_builder
 WORKDIR /build
 COPY jupyter/ ./
 # --ignore-scripts skips slow native addon compilation (zeromq etc);
@@ -24,11 +24,48 @@ RUN node ./build/ci/postInstall.js || echo "WARN: postInstall had errors (ZMQ do
 RUN npx tsx build/esbuild/build.ts --production
 RUN npx @vscode/vsce package --out bitswan-jupyter.vsix
 
-FROM --platform=linux/amd64 codercom/code-server:4.108.1-ubuntu
+# Stage 3a: Install VS Code dependencies (use --target vscode_deps to cache)
+FROM --platform=linux/amd64 node:22-bookworm AS vscode_deps
+WORKDIR /build
 
-ENV VSCODE_AGENT_FOLDER=/home/coder/.vscode-server
-ENV VSCODE_EXTENSIONS_FOLDER=/home/coder/.local/share/code-server/extensions
-ENV CODE_SERVER_EXTENSIONS_DIR=/home/coder/.local/share/code-server/extensions
+# Build dependencies for native modules
+RUN apt-get update && apt-get install -y \
+    python3 build-essential pkg-config \
+    libsecret-1-dev libkrb5-dev libx11-dev libxkbfile-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+COPY code-server-forked/ ./
+
+# Init a dummy git repo so the postinstall script's `git config` calls succeed
+RUN git init
+
+RUN npm ci
+RUN cd build && npm ci
+RUN cd remote && npm ci
+RUN npm run download-builtin-extensions
+
+# Stage 3b: Build VS Code server (reh-web)
+# Source-only changes only re-run from here (~25s)
+FROM vscode_deps AS vscode_builder
+COPY code-server-forked/src/ ./src/
+RUN npm run gulp vscode-reh-web-linux-x64-min
+
+FROM --platform=linux/amd64 ubuntu:22.04
+
+# Copy the built VS Code server
+COPY --from=vscode_builder /vscode-reh-web-linux-x64 /opt/vscode-server
+
+# Create the coder user (previously provided by codercom base image)
+RUN useradd -m -s /bin/bash -u 1000 coder && \
+    apt-get update && apt-get install -y sudo && \
+    echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/nopasswd
+
+ENV VSCODE_AGENT_FOLDER=/home/coder/.vscode-server-oss
+ENV VSCODE_EXTENSIONS_FOLDER=/home/coder/.vscode-server-oss/extensions
+ENV CODE_SERVER_EXTENSIONS_DIR=/home/coder/.vscode-server-oss/extensions
 ENV ELECTRON_DISABLE_SECURITY_WARNINGS=1
 ENV ELECTRON_NO_ATTACH_CONSOLE=1
 ENV VSCODE_DISABLE_CRASH_REPORTER=1
@@ -54,6 +91,10 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     jq \
     libxss1 \
+    libkrb5-dev \
+    libx11-dev \
+    libxkbfile-dev \
+    python3 \
     ca-certificates \
     gnupg \
     lsb-release \
@@ -82,11 +123,8 @@ RUN (type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
 	&& sudo apt update \
 	&& sudo apt install gh -y
 
-COPY mob /usr/local/bin/mob
-RUN chmod +x /usr/local/bin/mob
-
-# Install Node.js 18 (required for MSAL)
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+# Install Node.js 22 (required for VS Code dev mode and MSAL)
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y nodejs
 
 # Install Caddy
@@ -106,9 +144,9 @@ RUN LATEST_VERSION=$(curl -s https://api.github.com/repos/bitswan-space/bitswan-
     && chmod +x /usr/local/bin/oauth2-proxy
 
 # Download marketplace extensions (external resources - cache early)
-RUN mkdir -p /home/coder/.local/share/code-server/extensions
+RUN mkdir -p /home/coder/.vscode-server-oss/extensions
 RUN mkdir -p /opt/extensions
-RUN chown -R coder:coder /home/coder/.local/share/code-server
+RUN chown -R coder:coder /home/coder/.vscode-server-oss
 RUN chown -R coder:coder /opt/extensions
 
 RUN curl -L -o /opt/extensions/copilot.vsix.gz "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/GitHub/vsextensions/copilot/$COPILOT_EXTENSION_VERSION/vspackage" && \
@@ -129,14 +167,14 @@ COPY --from=jupyter_builder /build/bitswan-jupyter.vsix /opt/extensions/jupyter.
 RUN chown -R coder:coder /opt/extensions
 
 # Setup MSAL runtime (external dependency setup - cache early)
-RUN mkdir -p /usr/lib/code-server/lib/vscode/extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions
-RUN chown -R coder:coder /usr/lib/code-server/lib/vscode/extensions
-RUN ln -sf /usr/lib/node_modules/@azure/msal-node-extensions /usr/lib/code-server/lib/vscode/extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions || true
+RUN mkdir -p /opt/vscode-server/extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions
+RUN chown -R coder:coder /opt/vscode-server/extensions
+RUN ln -sf /usr/lib/node_modules/@azure/msal-node-extensions /opt/vscode-server/extensions/microsoft-authentication/node_modules/@azure/msal-node-extensions || true
 
-# Create code-server configuration directory and add settings (static config - cache early)
-RUN mkdir -p /home/coder/.config/code-server
-RUN echo '{"extensions.supportNodeGlobalNavigator": false, "notebook.lineNumbers": "on", "notebook.showCellStatusBar": "visible", "notebook.globalToolbar": true}' > /home/coder/.config/code-server/settings.json
-RUN chown -R coder:coder /home/coder/.config
+# Create VS Code server configuration directory and add settings (static config - cache early)
+RUN mkdir -p /home/coder/.vscode-server-oss/data/User
+RUN echo '{"extensions.supportNodeGlobalNavigator": false, "notebook.lineNumbers": "on", "notebook.showCellStatusBar": "visible", "notebook.globalToolbar": true}' > /home/coder/.vscode-server-oss/data/User/settings.json
+RUN chown -R coder:coder /home/coder/.vscode-server-oss
 
 # Create directories for source code (cache early)
 RUN mkdir -p /opt/bitswan-extension
@@ -159,6 +197,9 @@ COPY --from=extension_builder /build/bitswan-extension.vsix /opt/bitswan-extensi
 # Copy scripts and configuration files (source code)
 COPY update-entrypoint.sh /usr/bin/update-entrypoint.sh
 RUN chmod +x /usr/bin/update-entrypoint.sh
+
+COPY mob /usr/bin/mob
+RUN chmod +x /usr/bin/mob
 
 COPY Caddyfile /etc/caddy/Caddyfile
 RUN chmod 644 /etc/caddy/Caddyfile

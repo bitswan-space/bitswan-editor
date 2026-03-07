@@ -1,0 +1,15 @@
+# Node modules (installed inside Docker)
+**/node_modules
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

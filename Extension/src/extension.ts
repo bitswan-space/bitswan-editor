@@ -16,6 +16,10 @@ import * as workspaceCommands from './commands/workspaces';
 import * as deploymentCommands from './commands/deployments';
 import * as businessProcessCommands from './commands/business_processes';
 import * as promotionCommands from './commands/promotions';
+import { registerCellNumbering } from './commands/cell-numbering';
+
+// Event emitter to notify the Jupyter extension when servers change
+export const serverChangedEmitter = new vscode.EventEmitter<void>();
 
 // Import view providers
 import { AutomationSourcesViewProvider } from './views/automation_sources_view';
@@ -107,6 +111,9 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.executeCommand('bitswan-workspaces.removeView');
     }
 
+    // Register cell numbering for notebooks
+    registerCellNumbering(context);
+
     const jupyterExt =
       vscode.extensions.getExtension<Jupyter>("LibertyAcesLtd.bitswan-jupyter");
     if (!jupyterExt) {
@@ -122,6 +129,7 @@ export function activate(context: vscode.ExtensionContext) {
       {
         provideJupyterServers: () => getJupyterServers(context),
         resolveJupyterServer: (server) => server,
+        onDidChangeServers: serverChangedEmitter.event,
       }
     );
 

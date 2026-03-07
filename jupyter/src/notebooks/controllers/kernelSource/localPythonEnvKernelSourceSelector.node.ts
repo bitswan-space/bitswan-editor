@@ -78,28 +78,12 @@ export class LocalPythonEnvNotebookKernelSourceSelector
     ) {
         super();
         disposables.push(this);
-        kernelFinder.registerKernelFinder(this);
+        // Removed — only Bitswan remote kernels are used.
+        // kernelFinder.registerKernelFinder(this);
     }
     activate() {
-        this._register(
-            this.promiseMonitor.onStateChange(
-                () => (this.status = this.promiseMonitor.isComplete ? 'idle' : 'discovering'),
-                this
-            )
-        );
-        if (this.checker.isPythonExtensionInstalled) {
-            this.getKernelSpecsDir().catch(noop);
-            this.hookupPythonApi().catch(noop);
-        } else {
-            this._register(
-                this.checker.onPythonExtensionInstallationStatusChanged(() => {
-                    if (this.checker.isPythonExtensionInstalled) {
-                        this.getKernelSpecsDir().catch(noop);
-                        this.hookupPythonApi().catch(noop);
-                    }
-                }, this)
-            );
-        }
+        // Disabled — only Bitswan remote kernels are used.
+        return;
     }
     public async selectLocalKernel(notebook: NotebookDocument): Promise<PythonKernelConnectionMetadata | undefined> {
         const cancellationTokenSource = new CancellationTokenSource();
@@ -164,20 +148,7 @@ export class LocalPythonEnvNotebookKernelSourceSelector
     }
 
     public async refresh() {
-        this.previousCancellationTokens.forEach((t) => t.cancel());
-        dispose(this.previousCancellationTokens);
-        this.previousCancellationTokens = [];
-        this._kernels.clear();
-        this.pythonApi
-            .getNewApi()
-            .then((api) => {
-                if (!api) {
-                    return;
-                }
-                this.promiseMonitor.push(api.environments.refreshEnvironments({ forceRefresh: true }).catch(noop));
-                api.environments.known.forEach((e) => this.buildDummyEnvironment(e).catch(noop));
-            })
-            .catch(noop);
+        // Disabled — only Bitswan remote kernels are used.
     }
     private getKernelSpecsDir() {
         if (!this.tempDirForKernelSpecs) {
