@@ -28,8 +28,17 @@ export class InstallPythonControllerCommands implements IExtensionSyncActivation
         @inject(IDataScienceErrorHandler) private readonly errorHandler: IDataScienceErrorHandler
     ) {}
     public activate() {
-        // Disabled — only Bitswan remote kernels are used.
-        return;
+        // Register our commands that will handle installing the python extension or python via the kernel picker
+        this.disposables.push(
+            commands.registerCommand(
+                Commands.InstallPythonExtensionViaKernelPicker,
+                this.installPythonExtensionViaKernelPicker,
+                this
+            )
+        );
+        this.disposables.push(
+            commands.registerCommand(Commands.InstallPythonViaKernelPicker, this.installPythonViaKernelPicker, this)
+        );
     }
 
     // This is called via the "install python" command in the kernel picker in the case where

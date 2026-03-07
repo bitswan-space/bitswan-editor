@@ -38,15 +38,14 @@ export function registerTypes(serviceManager: IServiceManager, isDevMode: boolea
         ILocalPythonNotebookKernelSourceSelector,
         LocalPythonEnvNotebookKernelSourceSelector
     );
-    // Removed — only Bitswan remote kernels are used.
-    // serviceManager.addBinding(ILocalPythonNotebookKernelSourceSelector, IExtensionSyncActivationService);
-    // serviceManager.addSingleton<IExtensionSyncActivationService>(
-    //     IExtensionSyncActivationService,
-    //     KernelSourceCommandHandler
-    // );
-    // serviceManager.addSingleton<IExtensionSyncActivationService>(
-    //     IExtensionSyncActivationService,
-    //     EnvironmentCreationCommand
-    // );
+    serviceManager.addBinding(ILocalPythonNotebookKernelSourceSelector, IExtensionSyncActivationService);
+    serviceManager.addSingleton<IExtensionSyncActivationService>(
+        IExtensionSyncActivationService,
+        KernelSourceCommandHandler
+    );
+    serviceManager.addSingleton<IExtensionSyncActivationService>(
+        IExtensionSyncActivationService,
+        EnvironmentCreationCommand
+    );
     registerWidgetTypes(serviceManager, isDevMode);
 }

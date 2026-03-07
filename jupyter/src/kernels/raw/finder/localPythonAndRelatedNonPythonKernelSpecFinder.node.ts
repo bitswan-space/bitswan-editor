@@ -128,8 +128,42 @@ export class LocalPythonAndRelatedNonPythonKernelSpecFinder extends LocalKernelS
         );
     }
     public activate() {
-        // Disabled — only Bitswan remote kernels are used.
-        return;
+        this.listKernelsFirstTimeFromMemento(localPythonKernelsCacheKey())
+            .then((kernels) => {
+                if (kernels.length) {
+                    // Its possible we have already started discovering via Python API,
+                    // Hence don't override what we have.
+                    // Give preference to what is already in the cache.
+                    kernels
+                        .filter((item) => !this._kernels.has(item.id))
+                        .forEach((item) => {
+                            this._kernelsFromCache.push(item);
+                            this._kernels.set(item.id, item);
+                        });
+                    this._onDidChangeKernels.fire();
+                }
+            })
+            .finally(async () => {
+                this.refreshCancellation?.cancel();
+                this.refreshData().catch(noop);
+                this.kernelSpecsFromKnownLocations.onDidChangeKernels(
+                    () => {
+                        // Only refresh if we know there are new global Python kernels that we haven't already seen before.
+                        const lastKnownPythonKernels = this.lastKnownGlobalPythonKernelSpecs;
+                        const newPythonKernels = this.listGlobalPythonKernelSpecsIncludingThoseRegisteredByUs();
+                        if (
+                            lastKnownPythonKernels.length !== newPythonKernels.length ||
+                            !areObjectsWithUrisTheSame(lastKnownPythonKernels, newPythonKernels)
+                        ) {
+                            this.refreshCancellation?.cancel();
+                            this.refreshData().catch(noop);
+                        }
+                    },
+                    this,
+                    this.disposables
+                );
+            })
+            .catch(noop);
     }
     public get kernels(): LocalKernelConnectionMetadata[] {
         return Array.from(this._kernels.values());
@@ -140,7 +174,12 @@ export class LocalPythonAndRelatedNonPythonKernelSpecFinder extends LocalKernelS
     private refreshCancellation?: CancellationTokenSource;
     private lastKnownGlobalPythonKernelSpecs: LocalKernelSpecConnectionMetadata[] = [];
     public async refresh() {
-        // Disabled — only Bitswan remote kernels are used.
+        this.globalPythonKernelSpecFinder.clear();
+        this.clearCache();
+        this.cachedInformationForPythonInterpreter.clear();
+        this.discoveredKernelSpecFiles.clear();
+        this.interpreterService.refreshInterpreters(true).catch(noop);
+        await this.refreshData(true);
     }
     public refreshData(forcePythonInterpreterRefresh: boolean = false) {
         // If we're already discovering, then no need to cancel the existing search process

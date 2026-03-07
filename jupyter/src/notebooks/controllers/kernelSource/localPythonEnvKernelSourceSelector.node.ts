@@ -78,12 +78,28 @@ export class LocalPythonEnvNotebookKernelSourceSelector
     ) {
         super();
         disposables.push(this);
-        // Removed — only Bitswan remote kernels are used.
-        // kernelFinder.registerKernelFinder(this);
+        kernelFinder.registerKernelFinder(this);
     }
     activate() {
-        // Disabled — only Bitswan remote kernels are used.
-        return;
+        this._register(
+            this.promiseMonitor.onStateChange(
+                () => (this.status = this.promiseMonitor.isComplete ? 'idle' : 'discovering'),
+                this
+            )
+        );
+        if (this.checker.isPythonExtensionInstalled) {
+            this.getKernelSpecsDir().catch(noop);
+            this.hookupPythonApi().catch(noop);
+        } else {
+            this._register(
+                this.checker.onPythonExtensionInstallationStatusChanged(() => {
+                    if (this.checker.isPythonExtensionInstalled) {
+                        this.getKernelSpecsDir().catch(noop);
+                        this.hookupPythonApi().catch(noop);
+                    }
+                }, this)
+            );
+        }
     }
     public async selectLocalKernel(notebook: NotebookDocument): Promise<PythonKernelConnectionMetadata | undefined> {
         const cancellationTokenSource = new CancellationTokenSource();
@@ -148,7 +164,20 @@ export class LocalPythonEnvNotebookKernelSourceSelector
     }
 
     public async refresh() {
-        // Disabled — only Bitswan remote kernels are used.
+        this.previousCancellationTokens.forEach((t) => t.cancel());
+        dispose(this.previousCancellationTokens);
+        this.previousCancellationTokens = [];
+        this._kernels.clear();
+        this.pythonApi
+            .getNewApi()
+            .then((api) => {
+                if (!api) {
+                    return;
+                }
+                this.promiseMonitor.push(api.environments.refreshEnvironments({ forceRefresh: true }).catch(noop));
+                api.environments.known.forEach((e) => this.buildDummyEnvironment(e).catch(noop));
+            })
+            .catch(noop);
     }
     private getKernelSpecsDir() {
         if (!this.tempDirForKernelSpecs) {

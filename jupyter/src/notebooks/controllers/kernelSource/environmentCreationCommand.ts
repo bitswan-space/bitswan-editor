@@ -11,7 +11,27 @@ import { PythonEnvKernelConnectionCreator } from '../pythonEnvKernelConnectionCr
 @injectable()
 export class EnvironmentCreationCommand implements IExtensionSyncActivationService {
     activate(): void {
-        // Disabled — only Bitswan remote kernels are used.
-        return;
+        commands.registerCommand('jupyter.createPythonEnvAndSelectController', async () => {
+            const editor = window.activeNotebookEditor;
+            if (!editor) {
+                return;
+            }
+
+            const disposables = new DisposableStore();
+            const token = disposables.add(new CancellationTokenSource()).token;
+            const creator = disposables.add(new PythonEnvKernelConnectionCreator(editor.notebook, token));
+            const result = await creator.createPythonEnvFromKernelPicker();
+            if (!result || 'action' in result) {
+                return;
+            }
+
+            await commands.executeCommand('notebook.selectKernel', {
+                editor,
+                id: result.kernelConnection.id,
+                extension: JVSC_EXTENSION_ID
+            });
+
+            return result.kernelConnection.interpreter.id;
+        });
     }
 }

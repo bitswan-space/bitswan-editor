@@ -67,11 +67,10 @@ export function registerTypes(serviceManager: IServiceManager, isDevMode: boolea
         KernelEnvironmentVariablesService
     );
     serviceManager.addSingleton<IKernelFinder>(IKernelFinder, KernelFinder);
-    // Removed — only Bitswan remote kernels are used.
-    // serviceManager.addSingleton<IExtensionSyncActivationService>(
-    //     IExtensionSyncActivationService,
-    //     ContributedLocalKernelSpecFinder
-    // );
+    serviceManager.addSingleton<IExtensionSyncActivationService>(
+        IExtensionSyncActivationService,
+        ContributedLocalKernelSpecFinder
+    );
     serviceManager.addSingleton<IExtensionSyncActivationService>(
         IExtensionSyncActivationService,
         RemoteJupyterServerMruUpdate
@@ -83,8 +82,7 @@ export function registerTypes(serviceManager: IServiceManager, isDevMode: boolea
         LocalKnownPathKernelSpecFinder,
         LocalKnownPathKernelSpecFinder
     );
-    // Removed — only Bitswan remote kernels are used.
-    // serviceManager.addBinding(LocalKnownPathKernelSpecFinder, IExtensionSyncActivationService);
+    serviceManager.addBinding(LocalKnownPathKernelSpecFinder, IExtensionSyncActivationService);
 
     serviceManager.addSingleton<LocalPythonAndRelatedNonPythonKernelSpecFinder>(
         LocalPythonAndRelatedNonPythonKernelSpecFinder,
@@ -97,11 +95,10 @@ export function registerTypes(serviceManager: IServiceManager, isDevMode: boolea
 
     serviceManager.addSingleton<IKernelDependencyService>(IKernelDependencyService, KernelDependencyService);
     serviceManager.addSingleton<IExtensionSyncActivationService>(IExtensionSyncActivationService, KernelCrashMonitor);
-    // Removed — only Bitswan remote kernels are used. No kernel picker refresh needed.
-    // serviceManager.addSingleton<IExtensionSyncActivationService>(
-    //     IExtensionSyncActivationService,
-    //     KernelRefreshIndicator
-    // );
+    serviceManager.addSingleton<IExtensionSyncActivationService>(
+        IExtensionSyncActivationService,
+        KernelRefreshIndicator
+    );
     serviceManager.addSingleton<IExtensionSyncActivationService>(
         IExtensionSyncActivationService,
         KernelAutoReconnectMonitor

@@ -72,8 +72,97 @@ export class KernelSourceCommandHandler implements IExtensionSyncActivationServi
         dispose(this.localDisposables);
     }
     activate(): void {
-        // Kernel selection is managed by the Bitswan extension.
-        return;
+        if (!isWebExtension()) {
+            this.localDisposables.push(
+                notebooks.registerKernelSourceActionProvider(JupyterNotebookView, {
+                    provideNotebookKernelSourceActions: () => {
+                        return [
+                            {
+                                label: DataScience.localPythonEnvironments,
+                                documentation: Uri.parse('https://aka.ms/vscodeJupyterExtKernelPickerPythonEnv'),
+                                command: 'jupyter.kernel.selectLocalPythonEnvironment'
+                            }
+                        ];
+                    }
+                })
+            );
+            this.localDisposables.push(
+                notebooks.registerKernelSourceActionProvider(InteractiveWindowView, {
+                    provideNotebookKernelSourceActions: () => {
+                        return [
+                            {
+                                label: DataScience.localPythonEnvironments,
+                                documentation: Uri.parse('https://aka.ms/vscodeJupyterExtKernelPickerPythonEnv'),
+                                command: 'jupyter.kernel.selectLocalPythonEnvironment'
+                            }
+                        ];
+                    }
+                })
+            );
+
+            let kernelSpecActions: NotebookKernelSourceAction[] = [];
+            const kernelSpecActionChangeEmitter = new EventEmitter<void>();
+            this.localDisposables.push(
+                notebooks.registerKernelSourceActionProvider(JupyterNotebookView, {
+                    onDidChangeNotebookKernelSourceActions: kernelSpecActionChangeEmitter.event,
+                    provideNotebookKernelSourceActions: () => {
+                        return kernelSpecActions;
+                    }
+                })
+            );
+
+            this.localDisposables.push(
+                notebooks.registerKernelSourceActionProvider(InteractiveWindowView, {
+                    onDidChangeNotebookKernelSourceActions: kernelSpecActionChangeEmitter.event,
+                    provideNotebookKernelSourceActions: () => {
+                        return kernelSpecActions;
+                    }
+                })
+            );
+
+            const registerKernelSpecsSource = () => {
+                if (this.kernelSpecsSourceRegistered) {
+                    return;
+                }
+
+                if (this.kernelFinder.kernels.some((k) => isUserRegisteredKernelSpecConnection(k))) {
+                    this.kernelSpecsSourceRegistered = true;
+                    kernelSpecActions = [
+                        {
+                            label: DataScience.localKernelSpecs,
+                            documentation: Uri.parse('https://aka.ms/vscodeJupyterExtKernelPickerJupyterKernels'),
+                            command: 'jupyter.kernel.selectLocalKernelSpec'
+                        }
+                    ];
+
+                    kernelSpecActionChangeEmitter.fire();
+                }
+            };
+
+            registerKernelSpecsSource();
+            this.kernelFinder.onDidChangeKernels(() => registerKernelSpecsSource(), this, this.localDisposables);
+            this.localDisposables.push(
+                commands.registerCommand(
+                    'jupyter.kernel.selectLocalKernelSpec',
+                    this.onSelectLocalKernel.bind(this, ContributedKernelFinderKind.LocalKernelSpec),
+                    this
+                )
+            );
+            this.localDisposables.push(
+                commands.registerCommand(
+                    'jupyter.kernel.selectLocalPythonEnvironment',
+                    this.onSelectLocalKernel.bind(this, ContributedKernelFinderKind.LocalPythonEnvironment),
+                    this
+                )
+            );
+        }
+        this.localDisposables.push(
+            commands.registerCommand('jupyter.kernel.selectJupyterServerKernel', this.onSelectRemoteKernel, this)
+        );
+        const uriRegistration =
+            ServiceContainer.instance.get<IJupyterServerProviderRegistry>(IJupyterServerProviderRegistry);
+        uriRegistration.onDidChangeCollections(this.registerUriCommands, this, this.localDisposables);
+        this.registerUriCommands();
     }
     private registerUriCommands() {
         const uriRegistration =

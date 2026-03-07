@@ -44,8 +44,7 @@ import { INotebookEditorProvider, INotebookPythonEnvironmentService } from './ty
 
 export function registerTypes(serviceManager: IServiceManager, isDevMode: boolean) {
     registerControllerTypes(serviceManager, isDevMode);
-    // Removed — only Bitswan remote kernels are used. BitswanKernelAutoConnector handles auto-selection.
-    // serviceManager.addSingleton<IExtensionSyncActivationService>(IExtensionSyncActivationService, LiveKernelSwitcher);
+    serviceManager.addSingleton<IExtensionSyncActivationService>(IExtensionSyncActivationService, LiveKernelSwitcher);
     serviceManager.addSingleton<IExtensionSyncActivationService>(
         IExtensionSyncActivationService,
         BitswanKernelAutoConnector
@@ -76,11 +75,10 @@ export function registerTypes(serviceManager: IServiceManager, isDevMode: boolea
         IExtensionSyncActivationService,
         InterpreterPackageTracker
     );
-    // Removed — only Bitswan remote kernels are used.
-    // serviceManager.addSingleton<IExtensionSyncActivationService>(
-    //     IExtensionSyncActivationService,
-    //     InstallPythonControllerCommands
-    // );
+    serviceManager.addSingleton<IExtensionSyncActivationService>(
+        IExtensionSyncActivationService,
+        InstallPythonControllerCommands
+    );
 
     serviceManager.addSingleton<NotebookCellLanguageService>(NotebookCellLanguageService, NotebookCellLanguageService);
     serviceManager.addBinding(NotebookCellLanguageService, IExtensionSyncActivationService);
