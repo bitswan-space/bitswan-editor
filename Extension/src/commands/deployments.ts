@@ -462,10 +462,14 @@ export async function startLiveDevServerCommand(
 
             progress.report({ increment: 50, message: "Reading automation config..." });
 
+            // Re-read automation config after image build, since the build may have
+            // updated automation.toml with the newly built image tag.
+            const updatedConfig = getAutomationDeployConfig(folderPath);
+
             // Get relative path for source mounting
             const relativePath = path.relative(workspaceFolders[0].uri.fsPath, folderPath);
 
-            outputChannel.appendLine(`Live-dev config: image=${automationConfig.image}, expose=${automationConfig.expose}, port=${automationConfig.port}, mountPath=${automationConfig.mountPath}, secretGroups=${automationConfig.secretGroups?.join(',') || 'none'}, automationId=${automationConfig.automationId || 'none'}, auth=${automationConfig.auth ?? false}`);
+            outputChannel.appendLine(`Live-dev config: image=${updatedConfig.image}, expose=${updatedConfig.expose}, port=${updatedConfig.port}, mountPath=${updatedConfig.mountPath}, secretGroups=${updatedConfig.secretGroups?.join(',') || 'none'}, automationId=${updatedConfig.automationId || 'none'}, auth=${updatedConfig.auth ?? false}`);
 
             if (token.isCancellationRequested) { return; }
 
@@ -483,15 +487,15 @@ export async function startLiveDevServerCommand(
 
             const deployUrl = urlJoin(details.deployUrl, "automations", liveDevDeploymentId, "deploy").toString();
             const deployResult = await promoteAutomation(deployUrl, details.deploySecret, 'live-dev', 'live-dev', relativePath, {
-                image: automationConfig.image,
-                expose: automationConfig.expose,
-                exposeTo: automationConfig.exposeTo,
-                port: automationConfig.port,
-                mountPath: automationConfig.mountPath,
-                secretGroups: automationConfig.secretGroups,
-                automationId: automationConfig.automationId,
-                auth: automationConfig.auth,
-                services: automationConfig.services,
+                image: updatedConfig.image,
+                expose: updatedConfig.expose,
+                exposeTo: updatedConfig.exposeTo,
+                port: updatedConfig.port,
+                mountPath: updatedConfig.mountPath,
+                secretGroups: updatedConfig.secretGroups,
+                automationId: updatedConfig.automationId,
+                auth: updatedConfig.auth,
+                services: updatedConfig.services,
             });
 
             if (deployResult.alreadyDeploying) {

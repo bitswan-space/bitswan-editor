@@ -802,6 +802,45 @@ export function activate(context: vscode.ExtensionContext) {
             }
         });
 
+    let openPostgresAdminCommand = vscode.commands.registerCommand('bitswan.openPostgresAdmin',
+        async (item: StageItem) => {
+            if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
+            const details = await getDeployDetails(context);
+            if (!details) { return; }
+            const svcStage = serviceStageFor(item.stage);
+            try {
+                const status = await getServiceStatus(details.deployUrl, details.deploySecret, 'postgres', svcStage, true);
+                const adminUi = status?.connection_info?.admin_ui;
+                if (!adminUi) {
+                    vscode.window.showWarningMessage(`PostgreSQL is not enabled or has no admin UI for stage "${item.stage}"`);
+                    return;
+                }
+                await vscode.env.openExternal(vscode.Uri.parse(adminUi));
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`Failed to get PostgreSQL status: ${err.message || err}`);
+            }
+        });
+
+    let copyPostgresPasswordCommand = vscode.commands.registerCommand('bitswan.copyPostgresPassword',
+        async (item: StageItem) => {
+            if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
+            const details = await getDeployDetails(context);
+            if (!details) { return; }
+            const svcStage = serviceStageFor(item.stage);
+            try {
+                const status = await getServiceStatus(details.deployUrl, details.deploySecret, 'postgres', svcStage, true);
+                const password = status?.connection_info?.password;
+                if (!password) {
+                    vscode.window.showWarningMessage(`PostgreSQL is not enabled for stage "${item.stage}"`);
+                    return;
+                }
+                await vscode.env.clipboard.writeText(password);
+                vscode.window.showInformationMessage('PostgreSQL admin password copied to clipboard');
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`Failed to get PostgreSQL status: ${err.message || err}`);
+            }
+        });
+
     // Register all commands
     context.subscriptions.push(deployCommand);
     context.subscriptions.push(startLiveDevServerCommand);
@@ -854,6 +893,8 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(openKafkaUICommand);
     context.subscriptions.push(copyCouchDBPasswordCommand);
     context.subscriptions.push(copyKafkaPasswordCommand);
+    context.subscriptions.push(openPostgresAdminCommand);
+    context.subscriptions.push(copyPostgresPasswordCommand);
 
     // Refresh the tree views when files change in the workspace
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');

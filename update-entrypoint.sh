@@ -260,6 +260,38 @@ if [ "$BITSWAN_DEV_MODE" = "true" ] && [ -n "$BITSWAN_EXTENSION_DEV_DIR" ] && [ 
         echo "Creating symlink: $DEV_EXT_SYMLINK -> $BITSWAN_EXTENSION_DEV_DIR"
         ln -sf "$BITSWAN_EXTENSION_DEV_DIR" "$DEV_EXT_SYMLINK"
 
+        # Update extensions.json so code-server recognizes the dev extension
+        # Without this, code-server marks the extension as "removed" because it
+        # references the old VSIX-installed version that was deleted above
+        EXTENSIONS_JSON="${EXTENSIONS_DIR}/extensions.json"
+        if [ -f "$EXTENSIONS_JSON" ]; then
+            # Remove any existing bitswan entries and add the dev extension entry
+            python3 -c "
+import json, sys, time
+with open('$EXTENSIONS_JSON', 'r') as f:
+    extensions = json.load(f)
+# Remove existing bitswan entries
+extensions = [e for e in extensions if e.get('identifier', {}).get('id', '').lower() != '${DEV_EXT_PUBLISHER,,}.${DEV_EXT_NAME}']
+# Add dev extension entry
+extensions.append({
+    'identifier': {'id': '${DEV_EXT_PUBLISHER,,}.${DEV_EXT_NAME}'},
+    'version': '${DEV_EXT_VERSION}',
+    'location': {'\$mid': 1, 'path': '${DEV_EXT_SYMLINK}', 'scheme': 'file'},
+    'relativeLocation': '${DEV_EXT_ID}',
+    'metadata': {
+        'isApplicationScoped': False,
+        'isMachineScoped': False,
+        'isBuiltin': False,
+        'installedTimestamp': int(time.time() * 1000),
+        'pinned': False,
+        'source': 'gallery'
+    }
+})
+with open('$EXTENSIONS_JSON', 'w') as f:
+    json.dump(extensions, f, indent=2)
+" && echo "Updated extensions.json with dev extension entry" || echo "Warning: Failed to update extensions.json"
+        fi
+
         # Install dependencies if node_modules doesn't exist or package.json is newer
         if [ ! -d "$BITSWAN_EXTENSION_DEV_DIR/node_modules" ] || [ "$BITSWAN_EXTENSION_DEV_DIR/package.json" -nt "$BITSWAN_EXTENSION_DEV_DIR/node_modules" ]; then
             echo "Installing extension dependencies..."
