@@ -374,6 +374,16 @@
         "command": "bitswan.copyKafkaPassword",
         "title": "Copy Kafka Password",
         "icon": "$(key)"
+      },
+      {
+        "command": "bitswan.openPostgresAdmin",
+        "title": "Open PostgreSQL Admin",
+        "icon": "$(database)"
+      },
+      {
+        "command": "bitswan.copyPostgresPassword",
+        "title": "Copy PostgreSQL Password",
+        "icon": "$(key)"
       }
     ],
     "menus": {
@@ -527,6 +537,16 @@
           "command": "bitswan.copyKafkaPassword",
           "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:kafka/",
           "group": "services@4"
+        },
+        {
+          "command": "bitswan.openPostgresAdmin",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:postgres/",
+          "group": "services@5"
+        },
+        {
+          "command": "bitswan.copyPostgresPassword",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:postgres/",
+          "group": "services@6"
         },
         {
           "command": "bitswan.createAutomationFile",
@@ -765,6 +785,14 @@
         },
         {
           "command": "bitswan.copyKafkaPassword",
+          "when": "false"
+        },
+        {
+          "command": "bitswan.openPostgresAdmin",
+          "when": "false"
+        },
+        {
+          "command": "bitswan.copyPostgresPassword",
           "when": "false"
         }
       ]
