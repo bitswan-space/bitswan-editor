@@ -384,6 +384,16 @@
         "command": "bitswan.copyPostgresPassword",
         "title": "Copy PostgreSQL Password",
         "icon": "$(key)"
+      },
+      {
+        "command": "bitswan.openMinioConsole",
+        "title": "Open MinIO Console",
+        "icon": "$(cloud)"
+      },
+      {
+        "command": "bitswan.copyMinioPassword",
+        "title": "Copy MinIO Password",
+        "icon": "$(key)"
       }
     ],
     "menus": {
@@ -547,6 +557,16 @@
           "command": "bitswan.copyPostgresPassword",
           "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:postgres/",
           "group": "services@6"
+        },
+        {
+          "command": "bitswan.openMinioConsole",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:minio/",
+          "group": "services@7"
+        },
+        {
+          "command": "bitswan.copyMinioPassword",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:minio/",
+          "group": "services@8"
         },
         {
           "command": "bitswan.createAutomationFile",
@@ -793,6 +813,14 @@
         },
         {
           "command": "bitswan.copyPostgresPassword",
+          "when": "false"
+        },
+        {
+          "command": "bitswan.openMinioConsole",
+          "when": "false"
+        },
+        {
+          "command": "bitswan.copyMinioPassword",
           "when": "false"
         }
       ]
