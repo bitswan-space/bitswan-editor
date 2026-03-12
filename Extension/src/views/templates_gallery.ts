@@ -405,32 +405,16 @@ export function openAutomationTemplates(context: vscode.ExtensionContext, busine
                 groupDir = path.join(TEMPLATES_ROOT, groupId);
             }
 
-            // Prompt for group name prefix
-            const nameInput = await vscode.window.showInputBox({
-                title: 'New Automation Group Name',
-                prompt: `Enter a prefix for your automations (will create: ${group.automations.map(a => `{prefix}-${a}`).join(', ')})`,
-                placeHolder: 'my-app',
-                validateInput: (value) => {
-                    const sanitized = sanitizeName(value || '');
-                    if (!value || !sanitized) return 'Please enter a valid name (letters, numbers, dashes).';
-                    return undefined;
-                }
-            });
-            if (!nameInput) return; // cancelled
-
-            const prefix = sanitizeName(nameInput);
-
             // Check that none of the target directories already exist
             const targetDirs: { name: string; src: string; dest: string }[] = [];
             for (const automationName of group.automations) {
-                const folderName = `${prefix}-${automationName}`;
-                const destDir = path.join(businessProcessPath, folderName);
+                const destDir = path.join(businessProcessPath, automationName);
                 if (fs.existsSync(destDir)) {
-                    vscode.window.showErrorMessage(`A folder named "${folderName}" already exists in this Business Process.`);
+                    vscode.window.showErrorMessage(`A folder named "${automationName}" already exists in this Business Process.`);
                     return;
                 }
                 targetDirs.push({
-                    name: folderName,
+                    name: automationName,
                     src: path.join(groupDir, automationName),
                     dest: destDir
                 });
