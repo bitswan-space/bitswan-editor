@@ -132,11 +132,12 @@ The new simplified TOML format for automation deployment configuration. This for
 ```toml
 [deployment]
 port = 8080  # Application port (default: 8080)
+expose = true  # Public internet access (no OAuth2)
 
-# Exposure options (mutually exclusive - use ONE of the following):
-expose = true                      # Public internet access
-# OR
-expose_to = ["admin", "users"]     # OAuth2 protected, specific Keycloak groups only
+[expose_to]
+dev = ["/Example Org/developers"]
+staging = ["/Example Org/developers", "/Example Org/qa"]
+production = ["/Example Org/admin"]
 
 [secrets]
 dev = ["dev-secrets", "dev-db"]           # Secret groups for dev stage (also used by live-dev)
@@ -150,8 +151,19 @@ production = ["prod-secrets", "prod-db"]   # Secret groups for production stage
 |--------|------|-------------|
 | `image` | string | Docker image for the automation runtime (optional if using `image/` directory) |
 | `port` | integer | Application port (default: 8080) |
-| `expose` | boolean | Expose publicly to internet |
-| `expose_to` | array | Expose to specific Keycloak groups (OAuth2 protected) |
+| `expose` | boolean | Expose publicly to internet (no OAuth2) |
+| `[expose_to]` | section | Per-stage OAuth2 access control groups (see below) |
+
+**Per-stage `[expose_to]`:**
+
+The `[expose_to]` section defines OAuth2/Keycloak groups allowed to access the automation at each stage. Setting groups for a stage automatically enables exposure with OAuth2 protection. The `live-dev` stage falls back to `dev` groups if not specified.
+
+```toml
+[expose_to]
+dev = ["/Example Org/developers"]
+staging = ["/Example Org/developers", "/Example Org/qa"]
+production = ["/Example Org/admin"]
+```
 
 ### Custom Image with `image/` Directory
 

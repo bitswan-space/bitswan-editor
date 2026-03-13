@@ -952,7 +952,34 @@ production = ["foo-prod", "bar-prod"]</code></pre>
             The automation container also receives a <code>BITSWAN_AUTOMATION_STAGE</code> environment variable indicating its current stage.
         </p>
     </div>
-    
+
+    <div style="margin-top: 40px; padding: 20px; background-color: var(--vscode-textBlockQuote-background); border-left: 4px solid var(--vscode-textBlockQuote-border); border-radius: 4px;">
+        <h2 style="margin-top: 0;">Per-Stage Access Control (expose_to)</h2>
+        <p style="line-height: 1.6;">
+            You can configure different OAuth2 access control groups for each deployment stage. This allows you to restrict
+            who can access an automation based on the environment it is running in.
+        </p>
+        <p style="line-height: 1.6;">
+            In your <code>automation.toml</code> file, define an <code>[expose_to]</code> section with stage-specific groups:
+        </p>
+        <pre style="background-color: var(--vscode-textCodeBlock-background); padding: 12px; border-radius: 4px; overflow-x: auto; margin: 10px 0;"><code>[expose_to]
+dev = ["/Example Org/developers"]
+staging = ["/Example Org/developers", "/Example Org/qa"]
+production = ["/Example Org/admin"]</code></pre>
+        <p style="line-height: 1.6;">
+            When an automation is deployed to a specific stage:
+        </p>
+        <ul style="line-height: 1.8; padding-left: 20px;">
+            <li><strong>Dev stage</strong>: Uses <code>dev</code> groups. These are also used in the <strong>live-dev</strong> stage.</li>
+            <li><strong>Staging stage</strong>: Uses <code>staging</code> groups.</li>
+            <li><strong>Production stage</strong>: Uses <code>production</code> groups.</li>
+        </ul>
+        <p style="line-height: 1.6; margin-top: 15px; margin-bottom: 0;">
+            <strong>Note:</strong> Setting <code>expose_to</code> groups for a stage automatically enables exposure with OAuth2 protection
+            for that stage. You do not need to set <code>expose = true</code> separately.
+        </p>
+    </div>
+
     <script>
         const vscode = acquireVsCodeApi();
         const deployingIds = new Set();
