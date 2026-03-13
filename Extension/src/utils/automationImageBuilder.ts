@@ -104,6 +104,8 @@ export interface AutomationDeployConfig {
   automationId?: string;
   auth?: boolean;
   services?: Record<string, { enabled: boolean }>;
+  // Per-stage expose_to from [expose_to] section in automation.toml
+  exposeToByStage?: Record<string, string[]>;
 }
 
 /**
@@ -140,6 +142,22 @@ export function getAutomationDeployConfig(automationFolderPath: string): Automat
     const liveDevSecrets = parseStringOrArray(secrets["live-dev"]);
     const ignorePatterns = parseStringOrArray(deployment.ignore);
 
+    // Parse [expose_to] section for per-stage OAuth2 group access control
+    const exposeToSection = tomlState.data.expose_to as toml.JsonMap | undefined;
+    let exposeToByStage: Record<string, string[]> | undefined;
+    if (exposeToSection) {
+      exposeToByStage = {};
+      for (const [stage, groups] of Object.entries(exposeToSection)) {
+        const parsed = parseStringOrArray(groups);
+        if (parsed) {
+          exposeToByStage[stage] = parsed;
+        }
+      }
+    }
+
+    // For live-dev: resolve expose_to (live-dev falls back to dev)
+    const liveDevExposeTo = exposeToByStage?.["live-dev"];
+
     // Parse [services.*] sections
     const servicesSection = tomlState.data.services as toml.JsonMap | undefined;
     let services: Record<string, { enabled: boolean }> | undefined;
@@ -154,7 +172,7 @@ export function getAutomationDeployConfig(automationFolderPath: string): Automat
     return {
       image: (deployment.image as string) || defaults.image,
       expose: (deployment.expose as boolean) ?? defaults.expose,
-      exposeTo: parseStringOrArray(deployment.expose_to),
+      exposeTo: liveDevExposeTo,
       port: (deployment.port as number) ?? defaults.port,
       mountPath: "/app/", // TOML format always uses /app/
       secretGroups: liveDevSecrets,
@@ -162,6 +180,7 @@ export function getAutomationDeployConfig(automationFolderPath: string): Automat
       automationId: deployment.id as string | undefined,
       auth: deployment.auth as boolean | undefined,
       services,
+      exposeToByStage,
     };
   }
 
