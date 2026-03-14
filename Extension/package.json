@@ -822,7 +822,7 @@
         {
           "command": "bitswan.copyMinioPassword",
           "when": "false"
-        },
+        }
       ]
     }
   },
