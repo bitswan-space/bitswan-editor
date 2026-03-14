@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 import urlJoin from 'proper-url-join';
 import { StageItem } from '../views/unified_business_processes_view';
 import { getDeployDetails } from '../deploy_details';
-import { promoteAutomation, getAutomationHistory, scaleAutomation, getDeployStatus } from '../lib';
+import { promoteAutomation, getAutomationHistory, scaleAutomation, getDeployStatus, getAssetDiff } from '../lib';
+import { openDiffViewerPanel } from './diff_viewer';
 import { outputChannel } from '../extension';
 import { refreshAutomationsCommand, showAutomationLogsCommand } from './automations';
 import { UnifiedBusinessProcessesViewProvider } from '../views/unified_business_processes_view';
@@ -235,6 +236,9 @@ export async function openPromotionManagerCommand(
                     } catch (err) {
                         vscode.window.showErrorMessage(`Failed to open URL: ${message.url}`);
                     }
+                    break;
+                case 'compareDiff':
+                    await openDiffViewerPanel(context, details, message.fromChecksum, message.toChecksum, message.fromLabel, message.toLabel);
                     break;
                 case 'refresh':
                     await updateWebview();
@@ -732,6 +736,13 @@ function getPromotionManagerHtml(
             <div class="deploy-status" data-deployment-id="${deploymentIds.dev}" style="display:none;"><div class="spinner"></div><span class="deploy-status-text">Deploying...</span></div>
             ${stageData.dev.automationUrl ? `<button class="button button-secondary" onclick="openExternalUrl('${stageData.dev.automationUrl}')">Open External URL</button>` : ''}
             <button class="button button-primary" data-deployment-id="${deploymentIds.dev}" onclick="promote('dev', 'staging', '${stageData.dev.version_hash || stageData.dev.versionHash || ''}')">Promote to Staging</button>
+            ${(() => {
+                const devChecksum = (histories.dev !== null && histories.dev.length > 0 && histories.dev[0].checksum) || stageData.dev.version_hash || stageData.dev.versionHash || '';
+                const stagingChecksum = stageData.staging ? ((histories.staging !== null && histories.staging.length > 0 && histories.staging[0].checksum) || stageData.staging.version_hash || stageData.staging.versionHash || '') : '';
+                return stageData.staging && devChecksum && stagingChecksum ? `
+                    <button class="button button-secondary" onclick="compareDiff('${stagingChecksum}', '${devChecksum}', 'Staging', 'Dev')">Compare with Staging</button>
+                ` : '';
+            })()}
             <button class="button button-secondary" onclick="showLogs('${deploymentIds.dev}')">Show Logs</button>
             <button class="button button-secondary" data-deployment-id="${deploymentIds.dev}" onclick="scaleDeployment('${deploymentIds.dev}', 'dev', ${histories.dev !== null && histories.dev.length > 0 && histories.dev[0].replicas ? histories.dev[0].replicas : 1})">Scale</button>
             ${histories.dev === null ? `
@@ -749,6 +760,10 @@ function getPromotionManagerHtml(
                         const checksumDisplay = item.checksum || 'N/A';
                         const replicasDisplay = item.replicas && item.replicas > 1 ? `<div class="history-checksum">Replicas: ${item.replicas}</div>` : '';
                         const itemReplicas = item.replicas || 1;
+                        const currentChecksum = histories.dev![0].checksum || '';
+                        const diffButton = index > 0 && checksum && currentChecksum
+                            ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); compareDiff('${checksum}', '${currentChecksum}', 'Dev (${checksumDisplay.substring(0, 8)})', 'Dev (current)')">View Diff</button>`
+                            : '';
                         const rollbackButton = index > 0
                             ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); rollback('${checksum}', 'dev', ${itemReplicas})">Rollback</button>`
                             : '<span style="margin-left: 10px; color: var(--vscode-descriptionForeground); font-size: 11px;">Current</span>';
@@ -759,6 +774,7 @@ function getPromotionManagerHtml(
                                 <div class="history-checksum">Checksum: ${checksumDisplay}</div>
                                 ${replicasDisplay}
                             </div>
+                            ${diffButton}
                             ${rollbackButton}
                         </div>`;
                     }).join('')}
@@ -805,6 +821,13 @@ function getPromotionManagerHtml(
             <div class="deploy-status" data-deployment-id="${deploymentIds.staging}" style="display:none;"><div class="spinner"></div><span class="deploy-status-text">Deploying...</span></div>
             ${stageData.staging.automationUrl ? `<button class="button button-secondary" onclick="openExternalUrl('${stageData.staging.automationUrl}')">Open External URL</button>` : ''}
             <button class="button button-primary" data-deployment-id="${deploymentIds.staging}" onclick="promote('staging', 'production', '${stageData.staging.version_hash || stageData.staging.versionHash || ''}')">Promote to Production</button>
+            ${(() => {
+                const stagingChecksum = (histories.staging !== null && histories.staging.length > 0 && histories.staging[0].checksum) || stageData.staging.version_hash || stageData.staging.versionHash || '';
+                const prodChecksum = stageData.production ? ((histories.production !== null && histories.production.length > 0 && histories.production[0].checksum) || stageData.production.version_hash || stageData.production.versionHash || '') : '';
+                return stageData.production && stagingChecksum && prodChecksum ? `
+                    <button class="button button-secondary" onclick="compareDiff('${prodChecksum}', '${stagingChecksum}', 'Production', 'Staging')">Compare with Production</button>
+                ` : '';
+            })()}
             <button class="button button-secondary" onclick="showLogs('${deploymentIds.staging}')">Show Logs</button>
             <button class="button button-secondary" data-deployment-id="${deploymentIds.staging}" onclick="scaleDeployment('${deploymentIds.staging}', 'staging', ${histories.staging !== null && histories.staging.length > 0 && histories.staging[0].replicas ? histories.staging[0].replicas : 1})">Scale</button>
             ${histories.staging === null ? `
@@ -822,6 +845,10 @@ function getPromotionManagerHtml(
                         const checksumDisplay = item.checksum || 'N/A';
                         const replicasDisplay = item.replicas && item.replicas > 1 ? `<div class="history-checksum">Replicas: ${item.replicas}</div>` : '';
                         const itemReplicas = item.replicas || 1;
+                        const currentChecksum = histories.staging![0].checksum || '';
+                        const diffButton = index > 0 && checksum && currentChecksum
+                            ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); compareDiff('${checksum}', '${currentChecksum}', 'Staging (${checksumDisplay.substring(0, 8)})', 'Staging (current)')">View Diff</button>`
+                            : '';
                         const rollbackButton = index > 0
                             ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); rollback('${checksum}', 'staging', ${itemReplicas})">Rollback</button>`
                             : '<span style="margin-left: 10px; color: var(--vscode-descriptionForeground); font-size: 11px;">Current</span>';
@@ -832,6 +859,7 @@ function getPromotionManagerHtml(
                                 <div class="history-checksum">Checksum: ${checksumDisplay}</div>
                                 ${replicasDisplay}
                             </div>
+                            ${diffButton}
                             ${rollbackButton}
                         </div>`;
                     }).join('')}
@@ -877,6 +905,13 @@ function getPromotionManagerHtml(
             </div>
             <div class="deploy-status" data-deployment-id="${deploymentIds.production}" style="display:none;"><div class="spinner"></div><span class="deploy-status-text">Deploying...</span></div>
             ${stageData.production.automationUrl ? `<button class="button button-secondary" onclick="openExternalUrl('${stageData.production.automationUrl}')">Open External URL</button>` : ''}
+            ${(() => {
+                const prodChecksum = (histories.production !== null && histories.production.length > 0 && histories.production[0].checksum) || stageData.production.version_hash || stageData.production.versionHash || '';
+                const stagingChecksum = stageData.staging ? ((histories.staging !== null && histories.staging.length > 0 && histories.staging[0].checksum) || stageData.staging.version_hash || stageData.staging.versionHash || '') : '';
+                return stageData.staging && prodChecksum && stagingChecksum ? `
+                    <button class="button button-secondary" onclick="compareDiff('${stagingChecksum}', '${prodChecksum}', 'Staging', 'Production')">Compare with Staging</button>
+                ` : '';
+            })()}
             <button class="button button-secondary" onclick="showLogs('${deploymentIds.production}')">Show Logs</button>
             <button class="button button-secondary" data-deployment-id="${deploymentIds.production}" onclick="scaleDeployment('${deploymentIds.production}', 'production', ${histories.production !== null && histories.production.length > 0 && histories.production[0].replicas ? histories.production[0].replicas : 1})">Scale</button>
             ${histories.production === null ? `
@@ -894,6 +929,10 @@ function getPromotionManagerHtml(
                         const checksumDisplay = item.checksum || 'N/A';
                         const replicasDisplay = item.replicas && item.replicas > 1 ? `<div class="history-checksum">Replicas: ${item.replicas}</div>` : '';
                         const itemReplicas = item.replicas || 1;
+                        const currentChecksum = histories.production![0].checksum || '';
+                        const diffButton = index > 0 && checksum && currentChecksum
+                            ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); compareDiff('${checksum}', '${currentChecksum}', 'Production (${checksumDisplay.substring(0, 8)})', 'Production (current)')">View Diff</button>`
+                            : '';
                         const rollbackButton = index > 0
                             ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); rollback('${checksum}', 'production', ${itemReplicas})">Rollback</button>`
                             : '<span style="margin-left: 10px; color: var(--vscode-descriptionForeground); font-size: 11px;">Current</span>';
@@ -904,6 +943,7 @@ function getPromotionManagerHtml(
                                 <div class="history-checksum">Checksum: ${checksumDisplay}</div>
                                 ${replicasDisplay}
                             </div>
+                            ${diffButton}
                             ${rollbackButton}
                         </div>`;
                     }).join('')}
@@ -1069,6 +1109,16 @@ production = ["/Example Org/admin"]</code></pre>
             vscode.postMessage({
                 command: 'openExternalUrl',
                 url: url
+            });
+        }
+
+        function compareDiff(fromChecksum, toChecksum, fromLabel, toLabel) {
+            vscode.postMessage({
+                command: 'compareDiff',
+                fromChecksum: fromChecksum,
+                toChecksum: toChecksum,
+                fromLabel: fromLabel,
+                toLabel: toLabel
             });
         }
     </script>
