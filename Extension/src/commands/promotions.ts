@@ -2,7 +2,10 @@ import * as vscode from 'vscode';
 import urlJoin from 'proper-url-join';
 import { StageItem } from '../views/unified_business_processes_view';
 import { getDeployDetails } from '../deploy_details';
-import { promoteAutomation, getAutomationHistory, scaleAutomation, getDeployStatus, getAssetDiff } from '../lib';
+import { promoteAutomation, getAutomationHistory, scaleAutomation, getDeployStatus, getAssetDiff, downloadAsset } from '../lib';
+import * as JSZip from 'jszip';
+import * as fs from 'fs';
+import * as path from 'path';
 import { openDiffViewerPanel } from './diff_viewer';
 import { outputChannel } from '../extension';
 import { refreshAutomationsCommand, showAutomationLogsCommand } from './automations';
@@ -239,6 +242,9 @@ export async function openPromotionManagerCommand(
                     break;
                 case 'compareDiff':
                     await openDiffViewerPanel(context, details, message.fromChecksum, message.toChecksum, message.fromLabel, message.toLabel);
+                    break;
+                case 'checkoutAsset':
+                    await handleCheckoutAsset(message.checksum, sanitizedSourceName, details);
                     break;
                 case 'refresh':
                     await updateWebview();
@@ -493,6 +499,81 @@ async function handleScale(
         const errorMessage = error.message || 'Unknown error';
         vscode.window.showErrorMessage(`Failed to scale: ${errorMessage}`);
         outputChannel.appendLine(`Scale error: ${errorMessage}`);
+    }
+}
+
+async function handleCheckoutAsset(
+    checksum: string,
+    sourceName: string,
+    details: { deployUrl: string; deploySecret: string },
+) {
+    if (!checksum) {
+        vscode.window.showErrorMessage('No checksum available for checkout');
+        return;
+    }
+
+    try {
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: `Checking out asset ${checksum.substring(0, 8)}...`,
+            cancellable: false
+        }, async (progress) => {
+            const checkoutsDir = '/workspace/workspace/checkouts';
+
+            // Ensure .gitignore exists
+            const gitignorePath = path.join(checkoutsDir, '.gitignore');
+            if (!fs.existsSync(gitignorePath)) {
+                fs.mkdirSync(checkoutsDir, { recursive: true });
+                fs.writeFileSync(gitignorePath, '*\n');
+            }
+
+            // Build checkout directory path
+            const now = new Date();
+            const compactTimestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+            const shortChecksum = checksum.substring(0, 8);
+            const checkoutName = `${sourceName}-${compactTimestamp}-${shortChecksum}`;
+            const checkoutDir = path.join(checkoutsDir, checkoutName, sourceName);
+
+            fs.mkdirSync(checkoutDir, { recursive: true });
+
+            progress.report({ increment: 30, message: 'Downloading asset...' });
+
+            // Download asset zip
+            const zipBuffer = await downloadAsset(details.deployUrl, details.deploySecret, checksum);
+
+            progress.report({ increment: 30, message: 'Extracting files...' });
+
+            // Extract using JSZip
+            const zip = await JSZip.loadAsync(zipBuffer);
+            const entries = Object.entries(zip.files);
+
+            for (const [relativePath, zipEntry] of entries) {
+                const outputPath = path.join(checkoutDir, relativePath);
+                if (zipEntry.dir) {
+                    fs.mkdirSync(outputPath, { recursive: true });
+                } else {
+                    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+                    const content = await zipEntry.async('nodebuffer');
+                    fs.writeFileSync(outputPath, content);
+                }
+            }
+
+            progress.report({ increment: 30, message: 'Revealing in explorer...' });
+
+            // Reveal in VS Code explorer
+            const checkoutUri = vscode.Uri.file(checkoutDir);
+            try {
+                await vscode.commands.executeCommand('revealInExplorer', checkoutUri);
+            } catch {
+                await vscode.commands.executeCommand('revealFileInOS', checkoutUri);
+            }
+
+            vscode.window.showInformationMessage(`Asset checked out to ${checkoutName}`);
+        });
+    } catch (error: any) {
+        const errorMessage = error.message || 'Unknown error';
+        vscode.window.showErrorMessage(`Failed to check out asset: ${errorMessage}`);
+        outputChannel.appendLine(`Checkout error: ${errorMessage}`);
     }
 }
 
@@ -764,6 +845,9 @@ function getPromotionManagerHtml(
                         const diffButton = index > 0 && checksum && currentChecksum
                             ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); compareDiff('${checksum}', '${currentChecksum}', 'Dev (${checksumDisplay.substring(0, 8)})', 'Dev (current)')">View Diff</button>`
                             : '';
+                        const checkoutButton = checksum
+                            ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); checkoutAsset('${checksum}')">Check out</button>`
+                            : '';
                         const rollbackButton = index > 0
                             ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); rollback('${checksum}', 'dev', ${itemReplicas})">Rollback</button>`
                             : '<span style="margin-left: 10px; color: var(--vscode-descriptionForeground); font-size: 11px;">Current</span>';
@@ -775,6 +859,7 @@ function getPromotionManagerHtml(
                                 ${replicasDisplay}
                             </div>
                             ${diffButton}
+                            ${checkoutButton}
                             ${rollbackButton}
                         </div>`;
                     }).join('')}
@@ -849,6 +934,9 @@ function getPromotionManagerHtml(
                         const diffButton = index > 0 && checksum && currentChecksum
                             ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); compareDiff('${checksum}', '${currentChecksum}', 'Staging (${checksumDisplay.substring(0, 8)})', 'Staging (current)')">View Diff</button>`
                             : '';
+                        const checkoutButton = checksum
+                            ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); checkoutAsset('${checksum}')">Check out</button>`
+                            : '';
                         const rollbackButton = index > 0
                             ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); rollback('${checksum}', 'staging', ${itemReplicas})">Rollback</button>`
                             : '<span style="margin-left: 10px; color: var(--vscode-descriptionForeground); font-size: 11px;">Current</span>';
@@ -860,6 +948,7 @@ function getPromotionManagerHtml(
                                 ${replicasDisplay}
                             </div>
                             ${diffButton}
+                            ${checkoutButton}
                             ${rollbackButton}
                         </div>`;
                     }).join('')}
@@ -933,6 +1022,9 @@ function getPromotionManagerHtml(
                         const diffButton = index > 0 && checksum && currentChecksum
                             ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); compareDiff('${checksum}', '${currentChecksum}', 'Production (${checksumDisplay.substring(0, 8)})', 'Production (current)')">View Diff</button>`
                             : '';
+                        const checkoutButton = checksum
+                            ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); checkoutAsset('${checksum}')">Check out</button>`
+                            : '';
                         const rollbackButton = index > 0
                             ? `<button class="button button-secondary rollback-button" onclick="event.stopPropagation(); rollback('${checksum}', 'production', ${itemReplicas})">Rollback</button>`
                             : '<span style="margin-left: 10px; color: var(--vscode-descriptionForeground); font-size: 11px;">Current</span>';
@@ -944,6 +1036,7 @@ function getPromotionManagerHtml(
                                 ${replicasDisplay}
                             </div>
                             ${diffButton}
+                            ${checkoutButton}
                             ${rollbackButton}
                         </div>`;
                     }).join('')}
@@ -1119,6 +1212,13 @@ production = ["/Example Org/admin"]</code></pre>
                 toChecksum: toChecksum,
                 fromLabel: fromLabel,
                 toLabel: toLabel
+            });
+        }
+
+        function checkoutAsset(checksum) {
+            vscode.postMessage({
+                command: 'checkoutAsset',
+                checksum: checksum
             });
         }
     </script>

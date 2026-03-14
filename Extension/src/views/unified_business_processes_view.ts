@@ -208,6 +208,36 @@ export class OtherAutomationsItem extends vscode.TreeItem {
 }
 
 /**
+ * Tree item representing the "Checkouts" category
+ */
+export class CheckoutsItem extends vscode.TreeItem {
+    constructor() {
+        super('Checkouts', vscode.TreeItemCollapsibleState.Collapsed);
+        this.id = 'checkouts';
+        this.tooltip = 'Checked-out asset versions for local inspection';
+        this.contextValue = 'checkouts';
+        this.iconPath = new vscode.ThemeIcon('desktop-download');
+    }
+}
+
+/**
+ * Tree item representing a single checkout group (e.g. backend-dev-20260314T1846-47775d35)
+ */
+export class CheckoutGroupItem extends vscode.TreeItem {
+    constructor(
+        public readonly groupName: string,
+        public readonly groupPath: string
+    ) {
+        super(groupName, vscode.TreeItemCollapsibleState.Collapsed);
+        this.id = `cg:${groupName}`;
+        this.resourceUri = vscode.Uri.file(groupPath);
+        this.tooltip = groupPath;
+        this.contextValue = 'checkoutGroup';
+        this.iconPath = new vscode.ThemeIcon('archive');
+    }
+}
+
+/**
  * Unified view provider that shows business processes as trunks with automation sources as branches,
  * and running automations as leaves under their respective automation sources
  */
@@ -233,6 +263,8 @@ type UnifiedTreeItem =
     | AutomationItem
     | OtherAutomationsItem
     | CreateAutomationItem
+    | CheckoutsItem
+    | CheckoutGroupItem
     | StageItem
     | AutomationSourceFileItem
     | AutomationSourceImagesItem
@@ -376,6 +408,14 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             return items;
         }
 
+        if (element instanceof CheckoutsItem) {
+            return this.getCheckoutGroups();
+        }
+
+        if (element instanceof CheckoutGroupItem) {
+            return this.getCheckoutGroupChildren(element);
+        }
+
         console.log(`[DEBUG] getChildren - unknown element type: ${element.constructor.name}`);
         return [];
     }
@@ -396,9 +436,9 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         }
     }
 
-    private getBusinessProcesses(): (BusinessProcessItem | OtherAutomationsItem)[] {
-        const businessProcesses: (BusinessProcessItem | OtherAutomationsItem)[] = [];
-        
+    private getBusinessProcesses(): (BusinessProcessItem | OtherAutomationsItem | CheckoutsItem)[] {
+        const businessProcesses: (BusinessProcessItem | OtherAutomationsItem | CheckoutsItem)[] = [];
+
         if (!vscode.workspace.workspaceFolders) {
             return [new OtherAutomationsItem()];
         }
@@ -409,7 +449,7 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         for (const processDir of processDirs) {
             const relativePath = path.relative(workspacePath, processDir);
             const processConfigPath = path.join(processDir, 'process.toml');
-            
+
             businessProcesses.push(new BusinessProcessItem(
                 relativePath,
                 vscode.Uri.file(processDir),
@@ -419,6 +459,20 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
         // Always include "Other automations" at the end
         businessProcesses.push(new OtherAutomationsItem());
+
+        // Include "Checkouts" if the checkouts directory exists and has entries
+        const checkoutsDir = path.join(workspacePath, '..', 'checkouts');
+        if (fs.existsSync(checkoutsDir)) {
+            try {
+                const entries = fs.readdirSync(checkoutsDir, { withFileTypes: true });
+                const hasCheckouts = entries.some(e => e.isDirectory());
+                if (hasCheckouts) {
+                    businessProcesses.push(new CheckoutsItem());
+                }
+            } catch {
+                // ignore
+            }
+        }
 
         return businessProcesses;
     }
@@ -918,6 +972,58 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             console.error(`[DEBUG] Failed to read automation source entries for "${dirPath}":`, error);
             return [];
         }
+    }
+
+    private getCheckoutGroups(): CheckoutGroupItem[] {
+        const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!workspacePath) {
+            return [];
+        }
+
+        const checkoutsDir = path.join(workspacePath, '..', 'checkouts');
+        if (!fs.existsSync(checkoutsDir)) {
+            return [];
+        }
+
+        try {
+            const entries = fs.readdirSync(checkoutsDir, { withFileTypes: true });
+            return entries
+                .filter(e => e.isDirectory())
+                .sort((a, b) => b.name.localeCompare(a.name)) // newest first (timestamp in name)
+                .map(e => new CheckoutGroupItem(e.name, path.join(checkoutsDir, e.name)));
+        } catch {
+            return [];
+        }
+    }
+
+    private getCheckoutGroupChildren(group: CheckoutGroupItem): UnifiedTreeItem[] {
+        const items: UnifiedTreeItem[] = [];
+
+        try {
+            const entries = fs.readdirSync(group.groupPath, { withFileTypes: true });
+            for (const entry of entries) {
+                if (!entry.isDirectory()) {
+                    continue;
+                }
+                const fullPath = path.join(group.groupPath, entry.name);
+                // If this subdirectory is an automation source, show it as such
+                if (fs.existsSync(path.join(fullPath, 'automation.toml')) || fs.existsSync(path.join(fullPath, 'pipelines.conf'))) {
+                    const sourceItem = new AutomationSourceItem(
+                        `checkouts/${group.groupName}/${entry.name}`,
+                        vscode.Uri.file(fullPath),
+                    );
+                    this._knownAutomationSources.push(sourceItem);
+                    items.push(sourceItem);
+                } else {
+                    // Generic directory
+                    items.push(new AutomationSourceFileItem(vscode.Uri.file(fullPath), true));
+                }
+            }
+        } catch {
+            // ignore
+        }
+
+        return items;
     }
 
     private createSeparator(parentId: string, index: number): vscode.TreeItem {
