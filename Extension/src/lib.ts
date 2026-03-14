@@ -1347,6 +1347,32 @@ export const getAutomationHistory = async (
   }
 }
 
+export const getAssetDiff = async (
+  baseUrl: string,
+  secret: string,
+  fromChecksum: string,
+  toChecksum: string,
+  wordDiff: boolean = false
+): Promise<{ diff: string; identical: boolean; from_checksum: string; to_checksum: string; truncated: boolean }> => {
+  const url = `${baseUrl}/automations/assets/diff`;
+  const response = await axios.get(url, {
+    params: {
+      from_checksum: fromChecksum,
+      to_checksum: toChecksum,
+      word_diff: wordDiff,
+    },
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  if (response.status === 200) {
+    return response.data;
+  } else {
+    throw new Error(`Failed to get asset diff: ${response.status}`);
+  }
+};
+
 export const getServiceStatus = async (
   baseUrl: string,
   secret: string,
