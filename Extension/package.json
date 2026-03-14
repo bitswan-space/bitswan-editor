@@ -261,6 +261,11 @@
         "icon": "$(output)"
       },
       {
+        "command": "bitswan.showAutomationInspect",
+        "title": "Inspect Containers",
+        "icon": "$(search)"
+      },
+      {
         "command": "bitswan.jumpToSource",
         "title": "Jump to Source",
         "icon": "$(go-to-file)"
@@ -469,6 +474,11 @@
           "group": "inline@5"
         },
         {
+          "command": "bitswan.showAutomationInspect",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automation,active/",
+          "group": "inline@6"
+        },
+        {
           "command": "bitswan.stopAutomation",
           "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,active,running( |$)/",
           "group": "inline@1"
@@ -487,6 +497,11 @@
           "command": "bitswan.showAutomationLogs",
           "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,active/",
           "group": "inline@5"
+        },
+        {
+          "command": "bitswan.showAutomationInspect",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,active/",
+          "group": "inline@6"
         },
         {
           "command": "bitswan.openExternalUrl",
@@ -652,6 +667,11 @@
           "command": "bitswan.showAutomationLogs",
           "when": "view == bitswan-automations && viewItem =~ /^automation,active/",
           "group": "inline@5"
+        },
+        {
+          "command": "bitswan.showAutomationInspect",
+          "when": "view == bitswan-automations && viewItem =~ /^automation,active/",
+          "group": "inline@6"
         },
         {
           "command": "bitswan.jumpToSource",
@@ -821,6 +841,10 @@
         },
         {
           "command": "bitswan.copyMinioPassword",
+          "when": "false"
+        },
+        {
+          "command": "bitswan.showAutomationInspect",
           "when": "false"
         }
       ]

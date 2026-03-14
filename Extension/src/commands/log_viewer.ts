@@ -3,55 +3,86 @@ import axios from 'axios';
 import urlJoin from 'proper-url-join';
 import { GitOpsItem } from '../views/workspaces_view';
 
+export interface StageInfo {
+    stage: string;        // 'live-dev' | 'dev' | 'staging' | 'production'
+    deploymentId: string; // e.g., "my-automation-dev"
+    deployed: boolean;    // whether this stage has a running automation
+}
+
 /** Manages a full-window webview panel that streams automation logs via SSE. */
 export class LogViewerPanel {
     private static panels = new Map<string, LogViewerPanel>();
 
     private panel: vscode.WebviewPanel;
     private abortController: AbortController | null = null;
+    private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     private disposed = false;
     private tailLines: number;
+    private deploymentId: string;
+    private currentStage: string;
+    private stages: StageInfo[];
 
     private constructor(
-        private readonly automationName: string,
+        private readonly baseSourceName: string,
+        deploymentId: string,
+        currentStage: string,
+        stages: StageInfo[],
         private readonly gitopsUrl: string,
         private readonly secret: string,
     ) {
+        this.deploymentId = deploymentId;
+        this.currentStage = currentStage;
+        this.stages = stages;
         this.tailLines = 200;
 
         this.panel = vscode.window.createWebviewPanel(
             'bitswan-log-viewer',
-            `Logs: ${automationName}`,
+            `Logs: ${baseSourceName}${currentStage ? ` (${currentStage})` : ''}`,
             vscode.ViewColumn.Active,
             { enableScripts: true, retainContextWhenHidden: true },
         );
 
-        this.panel.webview.html = buildLogViewerHtml(automationName);
+        this.panel.webview.html = buildLogViewerHtml(baseSourceName, stages, currentStage);
 
         this.panel.webview.onDidReceiveMessage((msg) => this.onMessage(msg));
 
         this.panel.onDidDispose(() => {
             this.disposed = true;
             this.disconnect();
-            LogViewerPanel.panels.delete(this.automationName);
+            LogViewerPanel.panels.delete(this.baseSourceName);
         });
 
         this.connect();
     }
 
     static open(
-        automationName: string,
+        baseSourceName: string,
+        deploymentId: string,
+        currentStage: string,
+        stages: StageInfo[],
         gitopsUrl: string,
         secret: string,
     ): LogViewerPanel {
-        const existing = LogViewerPanel.panels.get(automationName);
+        const existing = LogViewerPanel.panels.get(baseSourceName);
         if (existing && !existing.disposed) {
+            if (currentStage && existing.currentStage !== currentStage) {
+                existing.switchStage(deploymentId, currentStage);
+            }
             existing.panel.reveal(vscode.ViewColumn.Active);
             return existing;
         }
-        const viewer = new LogViewerPanel(automationName, gitopsUrl, secret);
-        LogViewerPanel.panels.set(automationName, viewer);
+        const viewer = new LogViewerPanel(baseSourceName, deploymentId, currentStage, stages, gitopsUrl, secret);
+        LogViewerPanel.panels.set(baseSourceName, viewer);
         return viewer;
+    }
+
+    private switchStage(newDeploymentId: string, newStage: string) {
+        this.deploymentId = newDeploymentId;
+        this.currentStage = newStage;
+        this.postMessage({ type: 'clear' });
+        this.postMessage({ type: 'stageChanged', stage: newStage });
+        this.connect();
+        this.panel.title = `Logs: ${this.baseSourceName}${newStage ? ` (${newStage})` : ''}`;
     }
 
     /* ---- SSE streaming ---- */
@@ -63,18 +94,24 @@ export class LogViewerPanel {
         this.postMessage({ type: 'status', status: retryCount > 0 ? 'reconnecting' : 'connecting' });
 
         const streamUrl = urlJoin(
-            this.gitopsUrl, 'automations', this.automationName, 'logs', 'stream',
+            this.gitopsUrl, 'automations', this.deploymentId, 'logs', 'stream',
         ).toString();
 
-        this.abortController = new AbortController();
+        const controller = new AbortController();
+        this.abortController = controller;
+
+        // Guard: only act if this controller is still current (not replaced by a newer connect/disconnect)
+        const isCurrent = () => !this.disposed && this.abortController === controller;
 
         try {
             const response = await axios.get(streamUrl, {
                 headers: { Authorization: `Bearer ${this.secret}` },
                 params: { lines: this.tailLines },
                 responseType: 'stream',
-                signal: this.abortController.signal,
+                signal: controller.signal,
             });
+
+            if (!isCurrent()) { return; }
 
             this.postMessage({ type: 'status', status: 'connected' });
 
@@ -82,6 +119,7 @@ export class LogViewerPanel {
             let buffer = '';
 
             stream.on('data', (chunk: Buffer) => {
+                if (!isCurrent()) { return; }
                 buffer += chunk.toString();
                 const parts = buffer.split('\n\n');
                 buffer = parts.pop() || '';
@@ -93,18 +131,18 @@ export class LogViewerPanel {
             });
 
             stream.on('end', () => {
-                if (!this.disposed) {
+                if (isCurrent()) {
                     this.scheduleReconnect(retryCount);
                 }
             });
 
             stream.on('error', (_err: Error) => {
-                if (!this.disposed) {
+                if (isCurrent()) {
                     this.scheduleReconnect(retryCount);
                 }
             });
         } catch (err: any) {
-            if (axios.isCancel(err) || this.disposed) { return; }
+            if (axios.isCancel(err) || !isCurrent()) { return; }
             this.scheduleReconnect(retryCount);
         }
     }
@@ -113,10 +151,18 @@ export class LogViewerPanel {
         if (this.disposed) { return; }
         const delay = Math.min(1000 * Math.pow(2, previousRetries), 30000);
         this.postMessage({ type: 'status', status: 'reconnecting' });
-        setTimeout(() => this.connect(previousRetries + 1), delay);
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            this.postMessage({ type: 'clear' });
+            this.connect(previousRetries + 1);
+        }, delay);
     }
 
     private disconnect() {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
         if (this.abortController) {
             this.abortController.abort();
             this.abortController = null;
@@ -171,6 +217,13 @@ export class LogViewerPanel {
                     vscode.window.showWarningMessage(`"${msg.query}" not found in logs`);
                 }
                 break;
+            case 'switchStage': {
+                const stageInfo = this.stages.find(s => s.stage === msg.stage);
+                if (stageInfo && stageInfo.deployed) {
+                    this.switchStage(stageInfo.deploymentId, stageInfo.stage);
+                }
+                break;
+            }
         }
     }
 
@@ -191,7 +244,23 @@ const escapeHtml = (value: string): string =>
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 
-function buildLogViewerHtml(automationName: string): string {
+function buildLogViewerHtml(automationName: string, stages: StageInfo[], currentStage: string): string {
+    const stageDisplayNames: Record<string, string> = {
+        'live-dev': 'Live Dev',
+        'dev': 'Dev',
+        'staging': 'Staging',
+        'production': 'Production',
+    };
+
+    const stageChipsHtml = stages.map(s => {
+        const displayName = stageDisplayNames[s.stage] || s.stage;
+        const classes = ['stage-chip'];
+        if (s.stage === currentStage) { classes.push('active'); }
+        if (!s.deployed) { classes.push('disabled'); }
+        return `<button class="${classes.join(' ')}" data-stage="${escapeHtml(s.stage)}">${escapeHtml(displayName)}</button>`;
+    }).join('\n            ');
+
+    const showStageBar = stages.length > 1;
     return /* html */ `
 <!DOCTYPE html>
 <html lang="en">
@@ -296,6 +365,39 @@ function buildLogViewerHtml(automationName: string): string {
         }
         .log-line.filtered { display: none; }
 
+        /* Stage bar */
+        .stage-bar {
+            display: flex; align-items: center; gap: 6px;
+            padding: 4px 16px;
+            border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.3));
+            flex-shrink: 0; flex-wrap: wrap;
+            font-size: 12px;
+        }
+        .stage-bar .stage-label {
+            color: var(--vscode-descriptionForeground);
+            margin-right: 2px;
+        }
+        .stage-chip {
+            padding: 2px 10px;
+            border: 1px solid var(--vscode-button-border, rgba(128,128,128,0.4));
+            border-radius: 12px;
+            background: transparent;
+            color: var(--vscode-foreground);
+            cursor: pointer; font-size: 11px; white-space: nowrap;
+        }
+        .stage-chip:hover:not(.disabled) {
+            background: var(--vscode-list-hoverBackground, rgba(128,128,128,0.15));
+        }
+        .stage-chip.active {
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border-color: var(--vscode-button-background);
+        }
+        .stage-chip.disabled {
+            opacity: 0.4;
+            cursor: default;
+        }
+
         /* Log area */
         #logArea {
             flex: 1; overflow-y: auto; overflow-x: auto;
@@ -319,6 +421,10 @@ function buildLogViewerHtml(automationName: string): string {
         <span id="statusText" class="status-text">Connecting...</span>
         <span id="replicaCount" class="replica-count"></span>
     </div>
+    ${showStageBar ? `<div class="stage-bar">
+        <span class="stage-label">Stage:</span>
+        ${stageChipsHtml}
+    </div>` : ''}
     <div class="controls">
         <input id="searchInput" type="text" placeholder="Search logs..." />
         <button id="searchBtn">Find</button>
@@ -469,6 +575,11 @@ function buildLogViewerHtml(automationName: string): string {
                 case 'sse:end':
                     setStatus('disconnected');
                     break;
+                case 'stageChanged':
+                    document.querySelectorAll('.stage-chip').forEach(chip => {
+                        chip.classList.toggle('active', chip.dataset.stage === msg.stage);
+                    });
+                    break;
             }
         });
 
@@ -544,6 +655,15 @@ function buildLogViewerHtml(automationName: string): string {
             } catch (err) {
                 vscode.postMessage({ type: 'copyFailure', message: String(err) });
             }
+        });
+
+        /* Stage chip click handlers */
+        document.querySelectorAll('.stage-chip:not(.disabled)').forEach(chip => {
+            chip.addEventListener('click', () => {
+                if (chip.classList.contains('active')) return;
+                const stage = chip.dataset.stage;
+                vscode.postMessage({ type: 'switchStage', stage });
+            });
         });
     </script>
 </body>

@@ -4,16 +4,47 @@ import { getAutomations } from '../lib';
 import { AutomationsViewProvider } from '../views/automations_view';
 import { refreshItemsCommand, RefreshOptions } from './items';
 import { GitOpsItem } from '../views/workspaces_view';
-import { LogViewerPanel } from './log_viewer';
+import { LogViewerPanel, StageInfo } from './log_viewer';
+import { InspectPanel } from './inspect_panel';
 
-export async function showAutomationLogsCommand(context: vscode.ExtensionContext, _treeDataProvider: AutomationsViewProvider, item: AutomationItem) {
+export interface StageContext {
+    baseSourceName: string;
+    currentStage: string;
+    stages: StageInfo[];
+}
+
+export async function showAutomationLogsCommand(
+    context: vscode.ExtensionContext,
+    _treeDataProvider: AutomationsViewProvider,
+    item: AutomationItem,
+    stageContext?: StageContext
+) {
     const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
     if (!activeInstance) {
         vscode.window.showErrorMessage('No active GitOps instance');
         return;
     }
 
-    LogViewerPanel.open(item.name, activeInstance.url, activeInstance.secret);
+    if (stageContext) {
+        LogViewerPanel.open(
+            stageContext.baseSourceName,
+            item.name,
+            stageContext.currentStage,
+            stageContext.stages,
+            activeInstance.url,
+            activeInstance.secret,
+        );
+    } else {
+        // Legacy path: single automation, no stage switching
+        LogViewerPanel.open(
+            item.name,
+            item.name,
+            '',
+            [],
+            activeInstance.url,
+            activeInstance.secret,
+        );
+    }
 }
 
 export async function refreshAutomationsCommand(context: vscode.ExtensionContext, treeDataProvider: { refresh(): void; refreshAutomations?(): void }, options?: RefreshOptions) {
@@ -21,6 +52,15 @@ export async function refreshAutomationsCommand(context: vscode.ExtensionContext
         entityType: 'automation',
         getItemsFunction: getAutomations
     }, options);
+}
+
+export async function showAutomationInspectCommand(context: vscode.ExtensionContext, item: AutomationItem) {
+    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
+    if (!activeInstance) {
+        vscode.window.showErrorMessage('No active GitOps instance');
+        return;
+    }
+    InspectPanel.open(item.name, activeInstance.url, activeInstance.secret);
 }
 
 export async function jumpToSourceCommand(context: vscode.ExtensionContext, item: any) {
