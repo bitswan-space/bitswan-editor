@@ -1400,6 +1400,26 @@ export const getServiceStatus = async (
   }
 };
 
+export const downloadAsset = async (
+  baseUrl: string,
+  secret: string,
+  checksum: string,
+): Promise<Buffer> => {
+  const url = `${baseUrl}/automations/assets/${checksum}/download`;
+  const response = await axios.get(url, {
+    responseType: 'arraybuffer',
+    headers: {
+      'Authorization': `Bearer ${secret}`,
+    },
+  });
+
+  if (response.status === 200) {
+    return Buffer.from(response.data);
+  } else {
+    throw new Error(`Failed to download asset: ${response.status}`);
+  }
+};
+
 export const listAssets = async (assetsUrl: string, secret: string) => {
   const response = await axios.get(assetsUrl, {
     headers: {
