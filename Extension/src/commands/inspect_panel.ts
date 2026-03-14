@@ -213,6 +213,29 @@ function buildBaseStyles(): string {
             padding: 20px;
             color: var(--vscode-errorForeground, #f85149);
         }
+        .env-value-cell {
+            display: flex; align-items: center; gap: 4px;
+        }
+        .env-value-text {
+            flex: 1; word-break: break-all;
+            font-family: var(--vscode-editor-font-family, monospace);
+        }
+        .env-icon-btn {
+            background: none; border: none; padding: 2px;
+            cursor: pointer; opacity: 0.6; flex-shrink: 0;
+            color: var(--vscode-foreground); display: inline-flex;
+            align-items: center; justify-content: center;
+            border-radius: 3px;
+        }
+        .env-icon-btn:hover { opacity: 1; background: var(--vscode-list-hoverBackground, rgba(128,128,128,0.15)); }
+        .env-icon-btn svg { width: 14px; height: 14px; fill: currentColor; }
+        .copy-toast {
+            position: fixed; bottom: 16px; right: 16px;
+            background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+            padding: 6px 12px; border-radius: 4px; font-size: 12px;
+            opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 100;
+        }
+        .copy-toast.show { opacity: 1; }
     `;
 }
 
@@ -337,6 +360,54 @@ function buildInspectHtml(deploymentId: string, data: any): string {
             } catch (err) {
                 vscode.postMessage({ type: 'copyFailure', message: String(err) });
             }
+        });
+
+        const eyeOpenSvg = '<svg viewBox="0 0 16 16"><path d="M8 3C4.5 3 1.7 5.1 .5 8c1.2 2.9 4 5 7.5 5s6.3-2.1 7.5-5c-1.2-2.9-4-5-7.5-5zm0 8.5A3.5 3.5 0 1 1 8 4.5a3.5 3.5 0 0 1 0 7zm0-5.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>';
+        const eyeClosedSvg = '<svg viewBox="0 0 16 16"><path d="M14.8 13.4 12 10.6A7.6 7.6 0 0 0 15.5 8 8.3 8.3 0 0 0 8 3a7.4 7.4 0 0 0-2.8.5L2.4 .7 1.6 1.5l12.4 12.4.8-.5zM5.9 4.2A6 6 0 0 1 8 3.8 7.1 7.1 0 0 1 14.4 8a6.6 6.6 0 0 1-3.1 2.8L9.8 9.3A2 2 0 0 0 10 8a2 2 0 0 0-2-2 2 2 0 0 0-1.3.5L5.9 4.2zM.5 8A8.3 8.3 0 0 1 8 3c.4 0 .8 0 1.2.1l-1 1A7.1 7.1 0 0 0 1.6 8a6.6 6.6 0 0 0 3.3 2.9l-.7.7A8.2 8.2 0 0 1 .5 8zm5.5 0a2 2 0 0 0 2 2l-2-2z"/></svg>';
+
+        // Toggle sensitive value visibility
+        document.querySelectorAll('.toggle-visibility').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const valueSpan = btn.parentElement.querySelector('.env-value-text');
+                const isHidden = btn.dataset.hidden === 'true';
+                if (isHidden) {
+                    valueSpan.textContent = valueSpan.dataset.realValue;
+                    btn.innerHTML = eyeOpenSvg;
+                    btn.dataset.hidden = 'false';
+                    btn.title = 'Hide value';
+                } else {
+                    valueSpan.textContent = '****';
+                    btn.innerHTML = eyeClosedSvg;
+                    btn.dataset.hidden = 'true';
+                    btn.title = 'Show value';
+                }
+            });
+        });
+
+        // Copy env var value
+        function showToast(msg) {
+            let toast = document.getElementById('copy-toast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'copy-toast';
+                toast.className = 'copy-toast';
+                document.body.appendChild(toast);
+            }
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 1500);
+        }
+
+        document.querySelectorAll('.copy-env').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const value = btn.dataset.value;
+                try {
+                    await navigator.clipboard.writeText(value);
+                    showToast('Copied: ' + btn.dataset.key);
+                } catch (err) {
+                    showToast('Failed to copy');
+                }
+            });
         });
     </script>
 </body>
@@ -485,13 +556,23 @@ function buildEnvironmentSection(c: any): string {
     </div>`;
     }
 
+    const eyeOpen = `<svg viewBox="0 0 16 16"><path d="M8 3C4.5 3 1.7 5.1 .5 8c1.2 2.9 4 5 7.5 5s6.3-2.1 7.5-5c-1.2-2.9-4-5-7.5-5zm0 8.5A3.5 3.5 0 1 1 8 4.5a3.5 3.5 0 0 1 0 7zm0-5.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>`;
+    const eyeClosed = `<svg viewBox="0 0 16 16"><path d="M14.8 13.4 12 10.6A7.6 7.6 0 0 0 15.5 8 8.3 8.3 0 0 0 8 3a7.4 7.4 0 0 0-2.8.5L2.4 .7 1.6 1.5l12.4 12.4.8-.5zM5.9 4.2A6 6 0 0 1 8 3.8 7.1 7.1 0 0 1 14.4 8a6.6 6.6 0 0 1-3.1 2.8L9.8 9.3A2 2 0 0 0 10 8a2 2 0 0 0-2-2 2 2 0 0 0-1.3.5L5.9 4.2zM.5 8A8.3 8.3 0 0 1 8 3c.4 0 .8 0 1.2.1l-1 1A7.1 7.1 0 0 0 1.6 8a6.6 6.6 0 0 0 3.3 2.9l-.7.7A8.2 8.2 0 0 1 .5 8zm5.5 0a2 2 0 0 0 2 2l-2-2z"/></svg>`;
+    const copyIcon = `<svg viewBox="0 0 16 16"><path d="M4 4v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2v2a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2zm2 0h4a2 2 0 0 1 2 2v4h0a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H6a1 1 0 0 0-1 1v2zm-2 1H2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H4z"/></svg>`;
+
     let rows = '';
     for (const env of envVars) {
-        const masked = maskSensitiveValue(env);
-        const eqIdx = masked.indexOf('=');
-        const key = eqIdx >= 0 ? masked.substring(0, eqIdx) : masked;
-        const value = eqIdx >= 0 ? masked.substring(eqIdx + 1) : '';
-        rows += `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(value)}</td></tr>`;
+        const eqIdx = env.indexOf('=');
+        const key = eqIdx >= 0 ? env.substring(0, eqIdx) : env;
+        const value = eqIdx >= 0 ? env.substring(eqIdx + 1) : '';
+        const isSensitive = SENSITIVE_PATTERNS.test(key);
+        const displayValue = isSensitive ? '****' : value;
+        const realValueAttr = isSensitive ? ` data-real-value="${escapeHtml(value)}"` : '';
+        const toggleBtn = isSensitive
+            ? `<button class="env-icon-btn toggle-visibility" data-hidden="true" title="Show value">${eyeClosed}</button>`
+            : '';
+
+        rows += `<tr><th>${escapeHtml(key)}</th><td><div class="env-value-cell"><span class="env-value-text"${realValueAttr}>${escapeHtml(displayValue)}</span>${toggleBtn}<button class="env-icon-btn copy-env" data-key="${escapeHtml(key)}" data-value="${escapeHtml(value)}" title="Copy value">${copyIcon}</button></div></td></tr>`;
     }
 
     return `
