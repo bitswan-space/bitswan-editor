@@ -12,6 +12,18 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 
 /**
+ * Check if a file or directory is readable by the current process.
+ */
+function isReadable(filePath: string): boolean {
+  try {
+    fs.accessSync(filePath, fs.constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Check if a path should be ignored based on glob patterns.
  * @param relativePath - The relative path to check (e.g., "node_modules" or "src/file.ts")
  * @param ignorePatterns - Array of glob patterns to match against
@@ -341,7 +353,7 @@ function calculateGitTreeHashRecursive(
   // Use synchronous fs.readdirSync instead of vscode.workspace.fs which can hang
   const dirEntries = fs.readdirSync(dirPath, { withFileTypes: true });
 
-  // Convert to format compatible with sorting, filter .git, symlinks, and ignored patterns
+  // Convert to format compatible with sorting, filter .git, symlinks, unreadable, and ignored patterns
   const sortedEntries = dirEntries
     .filter(entry => {
       if (entry.name === '.git') {
@@ -357,6 +369,15 @@ function calculateGitTreeHashRecursive(
       }
       // Only include regular files and directories
       if (!entry.isFile() && !entry.isDirectory()) {
+        return false;
+      }
+      // Skip unreadable files/directories (e.g. root-owned __pycache__ from containers)
+      const fullPath = path.join(dirPath, entry.name);
+      if (!isReadable(fullPath)) {
+        const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+        if (outputChannel) {
+          outputChannel.appendLine(`Skipping unreadable: ${entryRelativePath}`);
+        }
         return false;
       }
       const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
@@ -558,6 +579,15 @@ function calculateMergedGitTreeHashRecursive(
       if (!entry.isFile() && !entry.isDirectory()) {
         continue;
       }
+      // Skip unreadable files/directories (e.g. root-owned __pycache__ from containers)
+      const entryFullPath = path.join(fullDirPath, entry.name);
+      if (!isReadable(entryFullPath)) {
+        const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+        if (outputChannel) {
+          outputChannel.appendLine(`Skipping unreadable: ${entryRelativePath}`);
+        }
+        continue;
+      }
       const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
       if (shouldIgnore(entryRelativePath, ignorePatterns)) {
         if (outputChannel) {
@@ -566,7 +596,7 @@ function calculateMergedGitTreeHashRecursive(
         continue;
       }
       entryMap.set(entry.name, {
-        sourcePath: path.join(fullDirPath, entry.name),
+        sourcePath: entryFullPath,
         isDirectory: entry.isDirectory()
       });
     }
@@ -646,6 +676,12 @@ export const zipDirectory = async (dirPath: string, relativePath: string = '', z
 
     if (shouldIgnore(zipPath, ignorePatterns)) {
       outputChannel.appendLine(`Ignoring: ${zipPath}`);
+      continue;
+    }
+
+    // Skip unreadable files/directories (e.g. root-owned __pycache__ from containers)
+    if (!isReadable(fullPath)) {
+      outputChannel.appendLine(`Skipping unreadable: ${zipPath}`);
       continue;
     }
 
@@ -806,17 +842,23 @@ export const createStreamingZip = (
           outputChannel.appendLine(`Skipping symlink: ${relativePath ? `${relativePath}/${entry.name}` : entry.name}`);
           continue;
         }
+        // Only include regular files and directories
+        if (!entry.isFile() && !entry.isDirectory()) {
+          continue;
+        }
+        // Skip unreadable files/directories (e.g. root-owned __pycache__ from containers)
+        const entryFullPath = path.join(fullDirPath, entry.name);
+        if (!isReadable(entryFullPath)) {
+          outputChannel.appendLine(`Skipping unreadable: ${relativePath ? `${relativePath}/${entry.name}` : entry.name}`);
+          continue;
+        }
         const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
         if (shouldIgnore(entryRelativePath, ignorePatterns)) {
           outputChannel.appendLine(`Ignoring: ${entryRelativePath}`);
           continue;
         }
-        // Only include regular files and directories
-        if (!entry.isFile() && !entry.isDirectory()) {
-          continue;
-        }
         fileMap.set(entry.name, {
-          sourcePath: path.join(fullDirPath, entry.name),
+          sourcePath: entryFullPath,
           isDirectory: entry.isDirectory()
         });
       }
