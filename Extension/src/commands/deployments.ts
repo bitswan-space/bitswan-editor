@@ -10,6 +10,7 @@ import axios from 'axios';
 import { FolderItem } from '../views/sources_view';
 import { activateDeployment, deploy, zip2stream, zipDirectory, createStreamingZip, uploadAsset, uploadAssetStream, promoteAutomation, calculateGitTreeHash, calculateMergedGitTreeHash, getImages, getAutomations, getDeployStatus, DeployResponse } from '../lib';
 import { getDeployDetails } from '../deploy_details';
+import { getUserEmail } from '../services/user_info';
 import { outputChannel } from '../extension';
 import { AutomationSourcesViewProvider } from '../views/automation_sources_view';
 import { UnifiedBusinessProcessesViewProvider } from '../views/unified_business_processes_view';
@@ -232,7 +233,8 @@ export async function deployCommandAbstract(
 
                 // Deploy to dev stage with -dev suffix
                 const devDeployUrl = urlJoin(details.deployUrl, "automations", devDeploymentId, "deploy").toString();
-                const deployResult = await promoteAutomation(devDeployUrl, details.deploySecret, checksum, 'dev', relativePath);
+                const deployedBy = await getUserEmail(context);
+                const deployResult = await promoteAutomation(devDeployUrl, details.deploySecret, checksum, 'dev', relativePath, undefined, undefined, deployedBy);
 
                 if (deployResult.alreadyDeploying) {
                     vscode.window.showWarningMessage(`Deployment ${devDeploymentId} is already in progress`);
@@ -486,6 +488,7 @@ export async function startLiveDevServerCommand(
             }
 
             const deployUrl = urlJoin(details.deployUrl, "automations", liveDevDeploymentId, "deploy").toString();
+            const deployedBy = await getUserEmail(context);
             const deployResult = await promoteAutomation(deployUrl, details.deploySecret, 'live-dev', 'live-dev', relativePath, {
                 image: updatedConfig.image,
                 expose: updatedConfig.expose,
@@ -496,7 +499,7 @@ export async function startLiveDevServerCommand(
                 automationId: updatedConfig.automationId,
                 auth: updatedConfig.auth,
                 services: updatedConfig.services,
-            });
+            }, undefined, deployedBy);
 
             if (deployResult.alreadyDeploying) {
                 vscode.window.showWarningMessage(`Deployment ${liveDevDeploymentId} is already in progress`);
