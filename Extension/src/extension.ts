@@ -33,6 +33,7 @@ import { Jupyter } from '@vscode/jupyter-extension';
 import { getJupyterServers } from './commands/jupyter-server';
 import { startBitswanKernel, stopBitswanKernel, checkAndUpdateKernelStatus, updateKernelStatusContext } from './commands/kernel';
 import * as filesystemCommands from './commands/filesystem';
+import { initUserInfo } from './services/user_info';
 
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
@@ -103,6 +104,9 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Add console.log for debugging in Debug Console
     console.log('BitSwan Extension Activating - Debug Console Test');
+
+    // Eagerly fetch the authenticated user's email from the OAuth2 proxy
+    initUserInfo(context);
 
     if (process.env.BITSWAN_DEPLOY_URL || process.env.BITSWAN_DEPLOY_SECRET) {
         vscode.commands.executeCommand('bitswan-workspaces.removeView');

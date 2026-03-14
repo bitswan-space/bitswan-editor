@@ -3,6 +3,7 @@ import urlJoin from 'proper-url-join';
 import { StageItem } from '../views/unified_business_processes_view';
 import { getDeployDetails } from '../deploy_details';
 import { promoteAutomation, getAutomationHistory, scaleAutomation, getDeployStatus, getAssetDiff, downloadAsset } from '../lib';
+import { getUserEmail } from '../services/user_info';
 import * as JSZip from 'jszip';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -65,7 +66,8 @@ export async function promoteStageCommand(
             progress.report({ increment: 50, message: `Promoting to ${targetStage}...` });
 
             const deployUrl = urlJoin(details.deployUrl, "automations", targetDeploymentId, "deploy").toString();
-            const deployResult = await promoteAutomation(deployUrl, details.deploySecret, checksum, targetStage);
+            const deployedBy = await getUserEmail(context);
+            const deployResult = await promoteAutomation(deployUrl, details.deploySecret, checksum, targetStage, undefined, undefined, undefined, deployedBy);
 
             if (deployResult.alreadyDeploying) {
                 vscode.window.showWarningMessage(`Deployment ${targetDeploymentId} is already in progress`);
@@ -297,7 +299,8 @@ async function handlePromote(
         }, async (progress) => {
             try {
                 progress.report({ increment: 50, message: `Promoting to ${toStage}...` });
-                const deployResult = await promoteAutomation(deployUrl, details.deploySecret, checksum!, toStage);
+                const deployedBy = await getUserEmail(context);
+                const deployResult = await promoteAutomation(deployUrl, details.deploySecret, checksum!, toStage, undefined, undefined, undefined, deployedBy);
 
                 if (deployResult.alreadyDeploying) {
                     vscode.window.showWarningMessage(`Deployment ${toDeploymentId} is already in progress`);
@@ -391,9 +394,10 @@ async function handleRollback(
         }, async (progress) => {
             try {
                 progress.report({ increment: 50, message: `Rolling back...` });
+                const deployedBy = await getUserEmail(context);
                 const deployResult = await promoteAutomation(
                     deployUrl, details.deploySecret, checksum, normalizedStage,
-                    undefined, undefined, replicas
+                    undefined, undefined, replicas, deployedBy
                 );
 
                 if (deployResult.alreadyDeploying) {
@@ -840,6 +844,7 @@ function getPromotionManagerHtml(
                         const message = item.message || 'No message';
                         const checksumDisplay = item.checksum || 'N/A';
                         const replicasDisplay = item.replicas && item.replicas > 1 ? `<div class="history-checksum">Replicas: ${item.replicas}</div>` : '';
+                        const deployedBySuffix = item.author_email && item.author_email !== 'info@bitswan.space' ? ` — ${item.author_email}` : '';
                         const itemReplicas = item.replicas || 1;
                         const currentChecksum = histories.dev![0].checksum || '';
                         const diffButton = index > 0 && checksum && currentChecksum
@@ -853,7 +858,7 @@ function getPromotionManagerHtml(
                             : '<span style="margin-left: 10px; color: var(--vscode-descriptionForeground); font-size: 11px;">Current</span>';
                         return `<div class="history-item" onclick="rollback('${checksum}', 'dev', ${itemReplicas})">
                             <div class="history-item-content">
-                                <div class="history-item-date">${date}</div>
+                                <div class="history-item-date">${date}${deployedBySuffix}</div>
                                 <div class="history-item-message">${message}</div>
                                 <div class="history-checksum">Checksum: ${checksumDisplay}</div>
                                 ${replicasDisplay}
@@ -929,6 +934,7 @@ function getPromotionManagerHtml(
                         const message = item.message || 'No message';
                         const checksumDisplay = item.checksum || 'N/A';
                         const replicasDisplay = item.replicas && item.replicas > 1 ? `<div class="history-checksum">Replicas: ${item.replicas}</div>` : '';
+                        const deployedBySuffix = item.author_email && item.author_email !== 'info@bitswan.space' ? ` — ${item.author_email}` : '';
                         const itemReplicas = item.replicas || 1;
                         const currentChecksum = histories.staging![0].checksum || '';
                         const diffButton = index > 0 && checksum && currentChecksum
@@ -942,7 +948,7 @@ function getPromotionManagerHtml(
                             : '<span style="margin-left: 10px; color: var(--vscode-descriptionForeground); font-size: 11px;">Current</span>';
                         return `<div class="history-item" onclick="rollback('${checksum}', 'staging', ${itemReplicas})">
                             <div class="history-item-content">
-                                <div class="history-item-date">${date}</div>
+                                <div class="history-item-date">${date}${deployedBySuffix}</div>
                                 <div class="history-item-message">${message}</div>
                                 <div class="history-checksum">Checksum: ${checksumDisplay}</div>
                                 ${replicasDisplay}
@@ -1017,6 +1023,7 @@ function getPromotionManagerHtml(
                         const message = item.message || 'No message';
                         const checksumDisplay = item.checksum || 'N/A';
                         const replicasDisplay = item.replicas && item.replicas > 1 ? `<div class="history-checksum">Replicas: ${item.replicas}</div>` : '';
+                        const deployedBySuffix = item.author_email && item.author_email !== 'info@bitswan.space' ? ` — ${item.author_email}` : '';
                         const itemReplicas = item.replicas || 1;
                         const currentChecksum = histories.production![0].checksum || '';
                         const diffButton = index > 0 && checksum && currentChecksum
@@ -1030,7 +1037,7 @@ function getPromotionManagerHtml(
                             : '<span style="margin-left: 10px; color: var(--vscode-descriptionForeground); font-size: 11px;">Current</span>';
                         return `<div class="history-item" onclick="rollback('${checksum}', 'production', ${itemReplicas})">
                             <div class="history-item-content">
-                                <div class="history-item-date">${date}</div>
+                                <div class="history-item-date">${date}${deployedBySuffix}</div>
                                 <div class="history-item-message">${message}</div>
                                 <div class="history-checksum">Checksum: ${checksumDisplay}</div>
                                 ${replicasDisplay}
