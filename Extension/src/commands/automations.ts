@@ -5,8 +5,6 @@ import { AutomationsViewProvider } from '../views/automations_view';
 import { refreshItemsCommand, RefreshOptions } from './items';
 import { GitOpsItem } from '../views/workspaces_view';
 import { LogViewerPanel, StageInfo } from './log_viewer';
-import { InspectPanel } from './inspect_panel';
-
 export interface StageContext {
     baseSourceName: string;
     currentStage: string;
@@ -52,15 +50,6 @@ export async function refreshAutomationsCommand(context: vscode.ExtensionContext
         entityType: 'automation',
         getItemsFunction: getAutomations
     }, options);
-}
-
-export async function showAutomationInspectCommand(context: vscode.ExtensionContext, item: AutomationItem) {
-    const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
-    if (!activeInstance) {
-        vscode.window.showErrorMessage('No active GitOps instance');
-        return;
-    }
-    InspectPanel.open(item.name, activeInstance.url, activeInstance.secret);
 }
 
 export async function jumpToSourceCommand(context: vscode.ExtensionContext, item: any) {

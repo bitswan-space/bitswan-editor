@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import axios from 'axios';
 import urlJoin from 'proper-url-join';
 import { GitOpsItem } from '../views/workspaces_view';
+import { InspectPanel } from './inspect_panel';
 
 export interface StageInfo {
     stage: string;        // 'live-dev' | 'dev' | 'staging' | 'production'
@@ -224,6 +225,9 @@ export class LogViewerPanel {
                 }
                 break;
             }
+            case 'requestInspect':
+                InspectPanel.open(this.deploymentId, this.gitopsUrl, this.secret);
+                break;
         }
     }
 
@@ -431,6 +435,7 @@ function buildLogViewerHtml(automationName: string, stages: StageInfo[], current
         <div class="spacer"></div>
         <label><input id="autoScrollToggle" type="checkbox" checked /> Auto-scroll</label>
         <button id="loadMoreBtn">Load More</button>
+        <button id="inspectBtn">Inspect</button>
         <button id="copyBtn" class="primary">Copy All</button>
     </div>
     <div id="filterBar" class="filter-bar">
@@ -655,6 +660,11 @@ function buildLogViewerHtml(automationName: string, stages: StageInfo[], current
             } catch (err) {
                 vscode.postMessage({ type: 'copyFailure', message: String(err) });
             }
+        });
+
+        /* Inspect */
+        document.getElementById('inspectBtn').addEventListener('click', () => {
+            vscode.postMessage({ type: 'requestInspect' });
         });
 
         /* Stage chip click handlers */

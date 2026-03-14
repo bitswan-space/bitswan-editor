@@ -504,13 +504,6 @@ export function activate(context: vscode.ExtensionContext) {
             }
         });
 
-    let showAutomationInspectCommand = vscode.commands.registerCommand('bitswan.showAutomationInspect',
-        async (item: AutomationItem | StageItem) => {
-            if (!item) { return; }
-            const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
-            await automationCommands.showAutomationInspectCommand(context, automationItem);
-        });
-
     let jumpToSourceCommand = vscode.commands.registerCommand('bitswan.jumpToSource',
         async (item: AutomationItem) => { if (!item) { return; } return automationCommands.jumpToSourceCommand(context, item); });
 
@@ -933,7 +926,6 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(startAutomationCommand);
     context.subscriptions.push(stopAutomationCommand);
     context.subscriptions.push(showAutomationLogsCommand);
-    context.subscriptions.push(showAutomationInspectCommand);
     context.subscriptions.push(showImageLogsCommand);
     context.subscriptions.push(showOrphanedImageLogsCommand);
     context.subscriptions.push(openImageDetailsCommand);
