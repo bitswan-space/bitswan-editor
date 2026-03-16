@@ -156,7 +156,7 @@ export function getAutomationDeployConfig(automationFolderPath: string): Automat
     }
 
     // For live-dev: resolve expose_to (live-dev falls back to dev)
-    const liveDevExposeTo = exposeToByStage?.["live-dev"];
+    const liveDevExposeTo = exposeToByStage?.["dev"];
 
     // Parse [services.*] sections
     const servicesSection = tomlState.data.services as toml.JsonMap | undefined;
