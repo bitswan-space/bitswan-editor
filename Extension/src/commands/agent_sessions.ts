@@ -16,13 +16,27 @@ interface SessionMeta {
     logged: boolean;
 }
 
+interface ActiveSession {
+    id: string;
+    worktree: string;
+    userEmail: string;
+    startedAt: string;
+    anon: boolean;
+    terminalName: string;
+}
+
 const SESSIONS_DIR = '/workspace/agent-sessions';
 const WORKTREES_DIR = '/workspace/worktrees';
 
-/**
- * Start an SSH terminal session to the coding agent for a given worktree.
- * Can be called from the panel or directly.
- */
+// Track active agent terminals globally
+const activeSessions: ActiveSession[] = [];
+
+function notifyPanel() {
+    if (AgentSessionPanel.instance) {
+        AgentSessionPanel.instance.sendActiveSessions();
+    }
+}
+
 export function isAnonMode(context: vscode.ExtensionContext): boolean {
     return context.globalState.get<boolean>('agentAnonMode', false);
 }
@@ -34,7 +48,6 @@ export async function startAgentSession(
     const workspaceName = process.env.HOSTNAME?.replace('-editor', '') || 'workspace';
     const agentHost = `${workspaceName}-coding-agent`;
 
-    // Check if the coding agent container is reachable
     const reachable = await new Promise<boolean>((resolve) => {
         cp.exec(`getent hosts ${agentHost}`, (err) => resolve(!err));
     });
@@ -47,7 +60,6 @@ export async function startAgentSession(
         }, async (progress) => {
             const details = await getDeployDetails(context);
             if (!details) { return false; }
-
             try {
                 const url = urlJoin(details.deployUrl, 'worktrees', 'coding-agent', 'ensure');
                 await axios.post(url, {}, {
@@ -59,7 +71,6 @@ export async function startAgentSession(
                 vscode.window.showErrorMessage(`Failed to start coding agent: ${msg}`);
                 return false;
             }
-
             progress.report({ message: 'Waiting for SSH to become ready...' });
             for (let i = 0; i < 15; i++) {
                 await new Promise(r => setTimeout(r, 2000));
@@ -68,18 +79,18 @@ export async function startAgentSession(
                 });
                 if (ready) { return true; }
             }
-
-            vscode.window.showErrorMessage('Coding agent started but SSH is not reachable yet. Try again in a few seconds.');
+            vscode.window.showErrorMessage('Coding agent started but SSH is not reachable yet.');
             return false;
         });
-
         if (!started) { return; }
     }
 
     const userEmail = await getUserEmail(context) || 'unknown';
+    const anon = isAnonMode(context);
+    const terminalName = `Agent: ${worktreeName}`;
 
     const terminal = vscode.window.createTerminal({
-        name: `Agent: ${worktreeName}`,
+        name: terminalName,
         shellPath: '/usr/bin/ssh',
         shellArgs: [
             '-i', '/workspace/.ssh/id_ed25519',
@@ -90,20 +101,42 @@ export async function startAgentSession(
         ],
         env: {
             SSH_USER_EMAIL: userEmail,
-            SSH_LOGGED: isAnonMode(context) ? 'false' : 'true',
+            SSH_LOGGED: anon ? 'false' : 'true',
             SSH_WORKTREE: worktreeName,
         },
     });
     terminal.show(true);
+
+    // Track active session
+    const session: ActiveSession = {
+        id: `${Date.now()}-${worktreeName}`,
+        worktree: worktreeName,
+        userEmail,
+        startedAt: new Date().toISOString(),
+        anon,
+        terminalName,
+    };
+    activeSessions.push(session);
+    notifyPanel();
+
+    // Remove on terminal close
+    const disposable = vscode.window.onDidCloseTerminal((t) => {
+        if (t === terminal) {
+            const idx = activeSessions.findIndex(s => s.id === session.id);
+            if (idx >= 0) { activeSessions.splice(idx, 1); }
+            notifyPanel();
+            disposable.dispose();
+        }
+    });
 }
 
 export class AgentSessionPanel {
     private static currentPanel: AgentSessionPanel | undefined;
+    static get instance(): AgentSessionPanel | undefined { return AgentSessionPanel.currentPanel; }
 
     private readonly panel: vscode.WebviewPanel;
     private readonly context: vscode.ExtensionContext;
     private disposed = false;
-    private sessionWatcher: fs.FSWatcher | undefined;
 
     private constructor(context: vscode.ExtensionContext) {
         this.context = context;
@@ -141,27 +174,10 @@ export class AgentSessionPanel {
 
         this.panel.onDidDispose(() => {
             this.disposed = true;
-            if (this.sessionWatcher) {
-                this.sessionWatcher.close();
-                this.sessionWatcher = undefined;
-            }
             AgentSessionPanel.currentPanel = undefined;
         });
 
         this.loadAndSendSessions();
-
-        // Watch sessions directory for new/changed files
-        if (fs.existsSync(SESSIONS_DIR)) {
-            try {
-                let debounce: ReturnType<typeof setTimeout> | undefined;
-                this.sessionWatcher = fs.watch(SESSIONS_DIR, () => {
-                    if (debounce) { clearTimeout(debounce); }
-                    debounce = setTimeout(() => {
-                        if (!this.disposed) { this.loadAndSendSessions(); }
-                    }, 1000);
-                });
-            } catch { /* ignore watch errors */ }
-        }
     }
 
     public static createOrShow(context: vscode.ExtensionContext): void {
@@ -172,6 +188,10 @@ export class AgentSessionPanel {
         AgentSessionPanel.currentPanel = new AgentSessionPanel(context);
     }
 
+    public sendActiveSessions(): void {
+        this.postMessage({ type: 'activeSessions', sessions: activeSessions });
+    }
+
     private async onMessage(msg: any): Promise<void> {
         if (!msg || !msg.type) { return; }
 
@@ -179,16 +199,12 @@ export class AgentSessionPanel {
             case 'ready':
                 this.sendWorktrees();
                 await this.loadAndSendSessions();
+                this.sendActiveSessions();
                 this.postMessage({ type: 'anonMode', enabled: isAnonMode(this.context) });
                 break;
-            case 'toggleAnon': {
-                const current = isAnonMode(this.context);
-                await this.context.globalState.update('agentAnonMode', !current);
-                this.postMessage({ type: 'anonMode', enabled: !current });
-                break;
-            }
             case 'loadSessions':
                 await this.loadAndSendSessions();
+                this.sendActiveSessions();
                 break;
             case 'startSession': {
                 const worktree = msg.worktree;
@@ -199,6 +215,18 @@ export class AgentSessionPanel {
             case 'createWorktree': {
                 await vscode.commands.executeCommand('bitswan.createWorktree');
                 this.sendWorktrees();
+                break;
+            }
+            case 'toggleAnon': {
+                const current = isAnonMode(this.context);
+                await this.context.globalState.update('agentAnonMode', !current);
+                this.postMessage({ type: 'anonMode', enabled: !current });
+                break;
+            }
+            case 'focusTerminal': {
+                const termName = msg.terminalName;
+                const t = vscode.window.terminals.find(t => t.name === termName);
+                if (t) { t.show(true); }
                 break;
             }
             case 'playSession': {
@@ -312,6 +340,24 @@ export class AgentSessionPanel {
             display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; align-items: center;
         }
         .spacer { flex: 1; }
+        .btn {
+            padding: 6px 14px;
+            border: 1px solid var(--vscode-button-border, transparent);
+            border-radius: 6px;
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            cursor: pointer; font-size: 12px; white-space: nowrap;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn-secondary {
+            background: var(--vscode-button-secondaryBackground, rgba(128,128,128,0.2));
+            color: var(--vscode-button-secondaryForeground, inherit);
+        }
+        .btn-focus {
+            background: var(--vscode-button-secondaryBackground, rgba(128,128,128,0.2));
+            color: var(--vscode-button-secondaryForeground, inherit);
+            padding: 3px 10px; font-size: 11px;
+        }
         .anon-toggle {
             display: flex; align-items: center; gap: 8px; cursor: pointer;
             font-size: 11px; color: var(--vscode-descriptionForeground); user-select: none;
@@ -329,25 +375,19 @@ export class AgentSessionPanel {
             transition: left 0.2s;
         }
         .toggle-track.on .toggle-knob { left: 18px; }
-        .btn {
-            padding: 6px 14px;
-            border: 1px solid var(--vscode-button-border, transparent);
-            border-radius: 6px;
-            background: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            cursor: pointer; font-size: 12px; white-space: nowrap;
-        }
-        .btn:hover { opacity: 0.9; }
-        .btn-secondary {
-            background: var(--vscode-button-secondaryBackground, rgba(128,128,128,0.2));
-            color: var(--vscode-button-secondaryForeground, inherit);
-        }
         .section-label {
             font-size: 11px; font-weight: 600; text-transform: uppercase;
             color: var(--vscode-descriptionForeground);
             padding: 12px 16px 4px; letter-spacing: 0.5px;
         }
         .content { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+        .active-session {
+            display: flex; align-items: center; gap: 10px;
+            padding: 6px 16px; font-size: 12px;
+        }
+        .active-dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; flex-shrink: 0; }
+        .active-info { flex: 1; }
+        .active-anon { opacity: 0.6; font-style: italic; }
         table { width: 100%; border-collapse: collapse; }
         th {
             text-align: left; padding: 8px 12px;
@@ -379,9 +419,7 @@ export class AgentSessionPanel {
             flex: 1; overflow: auto; padding: 8px;
             min-height: 400px;
         }
-        #player-wrapper .ap-wrapper {
-            width: 100% !important;
-        }
+        #player-wrapper .ap-wrapper { width: 100% !important; }
         .session-list { display: block; }
         .session-list.hidden { display: none; }
         .placeholder { padding: 24px 16px; text-align: center; color: var(--vscode-descriptionForeground); }
@@ -390,10 +428,11 @@ export class AgentSessionPanel {
 </head>
 <body>
     <div class="header"><h2>Coding Agents</h2></div>
-
     <div class="worktree-buttons" id="worktreeButtons"></div>
 
     <div class="content">
+        <div id="activeSection"></div>
+
         <div class="session-list" id="sessionList">
             <div class="section-label">Session History</div>
             <table>
@@ -425,6 +464,7 @@ export class AgentSessionPanel {
         const sessionsBody = document.getElementById('sessionsBody');
         const placeholder = document.getElementById('placeholder');
         const sessionList = document.getElementById('sessionList');
+        const activeSection = document.getElementById('activeSection');
         const playerContainer = document.getElementById('playerContainer');
         const playerWrapper = document.getElementById('player-wrapper');
         const playerTitle = document.getElementById('playerTitle');
@@ -432,6 +472,8 @@ export class AgentSessionPanel {
         const worktreeButtons = document.getElementById('worktreeButtons');
 
         let allSessions = [];
+        let activeSessionsList = [];
+        let anonEnabled = false;
 
         function escapeHtml(str) {
             const div = document.createElement('div');
@@ -439,7 +481,35 @@ export class AgentSessionPanel {
             return div.innerHTML;
         }
 
-        var anonEnabled = false;
+        function renderActiveSessions() {
+            activeSection.innerHTML = '';
+            if (activeSessionsList.length === 0) return;
+
+            var label = document.createElement('div');
+            label.className = 'section-label';
+            label.textContent = 'Active Sessions';
+            activeSection.appendChild(label);
+
+            activeSessionsList.forEach(function(s) {
+                var row = document.createElement('div');
+                row.className = 'active-session';
+                var dot = document.createElement('div');
+                dot.className = 'active-dot';
+                row.appendChild(dot);
+                var info = document.createElement('div');
+                info.className = 'active-info' + (s.anon ? ' active-anon' : '');
+                info.textContent = s.worktree + (s.anon ? ' (anon)' : '') + ' — ' + s.userEmail;
+                row.appendChild(info);
+                var btn = document.createElement('button');
+                btn.className = 'btn-focus';
+                btn.textContent = 'Focus';
+                btn.addEventListener('click', function() {
+                    vscodeApi.postMessage({ type: 'focusTerminal', terminalName: s.terminalName });
+                });
+                row.appendChild(btn);
+                activeSection.appendChild(row);
+            });
+        }
 
         function renderWorktreeButtons(worktrees) {
             worktreeButtons.innerHTML = '';
@@ -460,12 +530,10 @@ export class AgentSessionPanel {
             });
             worktreeButtons.appendChild(createBtn);
 
-            // Spacer pushes anon toggle to the right
             var spacer = document.createElement('div');
             spacer.className = 'spacer';
             worktreeButtons.appendChild(spacer);
 
-            // Anon toggle (slide switch)
             var toggle = document.createElement('div');
             toggle.className = 'anon-toggle';
             toggle.title = 'Toggle session recording';
@@ -518,6 +586,7 @@ export class AgentSessionPanel {
             var castFile = btn.dataset.cast;
             if (castFile) {
                 sessionList.classList.add('hidden');
+                activeSection.style.display = 'none';
                 playerContainer.classList.add('active');
                 playerTitle.textContent = 'Loading...';
                 vscodeApi.postMessage({ type: 'playSession', castFile: castFile });
@@ -527,6 +596,7 @@ export class AgentSessionPanel {
         backBtn.addEventListener('click', function() {
             playerContainer.classList.remove('active');
             sessionList.classList.remove('hidden');
+            activeSection.style.display = '';
             playerWrapper.innerHTML = '';
         });
 
@@ -543,6 +613,10 @@ export class AgentSessionPanel {
                     break;
                 case 'worktrees':
                     renderWorktreeButtons(msg.worktrees || []);
+                    break;
+                case 'activeSessions':
+                    activeSessionsList = msg.sessions || [];
+                    renderActiveSessions();
                     break;
                 case 'sessions':
                     allSessions = msg.sessions || [];
