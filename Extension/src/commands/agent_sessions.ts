@@ -295,14 +295,22 @@ export class AgentSessionPanel {
         }
         .spacer { flex: 1; }
         .anon-toggle {
-            display: flex; align-items: center; gap: 6px; cursor: pointer;
+            display: flex; align-items: center; gap: 8px; cursor: pointer;
             font-size: 11px; color: var(--vscode-descriptionForeground); user-select: none;
-            padding: 4px 10px; border-radius: 6px;
-            border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.3));
         }
-        .anon-toggle:hover { border-color: var(--vscode-focusBorder); }
-        .anon-toggle.active { color: var(--vscode-foreground); background: var(--vscode-button-secondaryBackground, rgba(128,128,128,0.2)); }
-        .anon-toggle svg { width: 14px; height: 14px; }
+        .anon-toggle:hover { color: var(--vscode-foreground); }
+        .toggle-track {
+            width: 32px; height: 16px; border-radius: 8px; position: relative;
+            background: var(--vscode-editorWidget-border, rgba(128,128,128,0.4));
+            transition: background 0.2s;
+        }
+        .toggle-track.on { background: var(--vscode-focusBorder, #007acc); }
+        .toggle-knob {
+            width: 12px; height: 12px; border-radius: 50%; position: absolute;
+            top: 2px; left: 2px; background: #fff;
+            transition: left 0.2s;
+        }
+        .toggle-track.on .toggle-knob { left: 18px; }
         .btn {
             padding: 6px 14px;
             border: 1px solid var(--vscode-button-border, transparent);
@@ -439,12 +447,21 @@ export class AgentSessionPanel {
             spacer.className = 'spacer';
             worktreeButtons.appendChild(spacer);
 
-            // Anon toggle
+            // Anon toggle (slide switch)
             var toggle = document.createElement('div');
-            toggle.className = 'anon-toggle' + (anonEnabled ? ' active' : '');
-            toggle.title = 'Anonymous mode: sessions are not recorded';
-            toggle.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>' +
-                (anonEnabled ? ' Anon' : ' Record');
+            toggle.className = 'anon-toggle';
+            toggle.title = 'Toggle session recording';
+            var label = document.createElement('span');
+            label.textContent = anonEnabled ? 'Anon' : 'Record';
+            label.id = 'anonLabel';
+            toggle.appendChild(label);
+            var track = document.createElement('div');
+            track.className = 'toggle-track' + (anonEnabled ? '' : ' on');
+            track.id = 'anonTrack';
+            var knob = document.createElement('div');
+            knob.className = 'toggle-knob';
+            track.appendChild(knob);
+            toggle.appendChild(track);
             toggle.addEventListener('click', function() {
                 vscodeApi.postMessage({ type: 'toggleAnon' });
             });
@@ -466,7 +483,7 @@ export class AgentSessionPanel {
                 if (session.castFile) {
                     actionHtml = '<button class="play-btn" data-cast="' + escapeHtml(session.castFile) + '">Play</button>';
                 } else {
-                    actionHtml = '<span title="Anonymous session (not recorded)" style="font-size:16px;opacity:0.5;cursor:default;">&#x1F576;</span>';
+                    actionHtml = '<span title="Anonymous session (not recorded)" style="font-size:16px;opacity:0.5;cursor:default;">&#x1F3AD;</span>';
                 }
                 tr.innerHTML =
                     '<td>' + escapeHtml(session.timestamp || 'N/A') + '</td>' +
@@ -501,12 +518,10 @@ export class AgentSessionPanel {
             switch (msg.type) {
                 case 'anonMode':
                     anonEnabled = msg.enabled;
-                    var existingToggle = document.querySelector('.anon-toggle');
-                    if (existingToggle) {
-                        existingToggle.className = 'anon-toggle' + (anonEnabled ? ' active' : '');
-                        existingToggle.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>' +
-                            (anonEnabled ? ' Anon' : ' Record');
-                    }
+                    var anonTrack = document.getElementById('anonTrack');
+                    var anonLabel = document.getElementById('anonLabel');
+                    if (anonTrack) anonTrack.className = 'toggle-track' + (anonEnabled ? '' : ' on');
+                    if (anonLabel) anonLabel.textContent = anonEnabled ? 'Anon' : 'Record';
                     break;
                 case 'worktrees':
                     renderWorktreeButtons(msg.worktrees || []);
