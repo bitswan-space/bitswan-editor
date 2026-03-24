@@ -107,17 +107,41 @@ export async function startAgentSession(
     });
     terminal.show(true);
 
+    const startedAt = new Date().toISOString();
+
+    // For anon sessions, write the meta.json from the editor side since the
+    // agent container's wrapper script may not have been rebuilt yet
+    if (anon && fs.existsSync(SESSIONS_DIR)) {
+        const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15).replace(/(\d{8})(\d{6})/, '$1_$2');
+        const sessionId = `${ts}_${userEmail}_${worktreeName}`;
+        const metaPath = path.join(SESSIONS_DIR, `${sessionId}.meta.json`);
+        try {
+            fs.writeFileSync(metaPath, JSON.stringify({
+                id: sessionId,
+                user_email: userEmail,
+                worktree: worktreeName,
+                started_at: startedAt,
+                logged: false,
+            }, null, 2));
+        } catch { /* ignore write errors */ }
+    }
+
     // Track active session
     const session: ActiveSession = {
         id: `${Date.now()}-${worktreeName}`,
         worktree: worktreeName,
         userEmail,
-        startedAt: new Date().toISOString(),
+        startedAt,
         anon,
         terminalName,
     };
     activeSessions.push(session);
     notifyPanel();
+
+    // Refresh session history so new entries appear immediately
+    if (AgentSessionPanel.instance) {
+        AgentSessionPanel.instance.refreshHistory();
+    }
 
     // Remove on terminal close
     const disposable = vscode.window.onDidCloseTerminal((t) => {
@@ -190,6 +214,10 @@ export class AgentSessionPanel {
 
     public sendActiveSessions(): void {
         this.postMessage({ type: 'activeSessions', sessions: activeSessions });
+    }
+
+    public refreshHistory(): void {
+        this.loadAndSendSessions();
     }
 
     private async onMessage(msg: any): Promise<void> {
