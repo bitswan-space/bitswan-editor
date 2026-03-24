@@ -186,16 +186,8 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('bitswan.openSessionBrowser', () => AgentSessionPanel.createOrShow(context)),
         vscode.commands.registerCommand('bitswan.openRequirementsEditor', () => RequirementsPanel.createOrShow(context)),
         vscode.commands.registerCommand('bitswan.refreshWorktrees', () => worktreesProvider.refresh()),
-        vscode.commands.registerCommand('bitswan.selectWorktree', async () => {
-            const worktrees = await worktreesProvider.getChildren();
-            const items: vscode.QuickPickItem[] = [
-                { label: 'Main', description: 'Main workspace tree' },
-                ...worktrees.map(wt => ({ label: wt.name, description: wt.branch })),
-            ];
-            const picked = await vscode.window.showQuickPick(items, { placeHolder: 'Select workspace or worktree' });
-            if (picked) {
-                unifiedBusinessProcessesProvider.selectWorktree(picked.label === 'Main' ? undefined : picked.label);
-            }
+        vscode.commands.registerCommand('bitswan.selectWorktree', (name?: string) => {
+            unifiedBusinessProcessesProvider.selectWorktree(name);
         }),
     );
 

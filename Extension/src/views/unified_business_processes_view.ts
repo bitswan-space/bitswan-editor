@@ -482,7 +482,16 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
         if (element instanceof WorktreesSectionItem) {
             if (this._worktreesProvider) {
-                return this._worktreesProvider.getChildren();
+                const items = await this._worktreesProvider.getChildren();
+                // Add click-to-select command on each worktree item
+                for (const item of items) {
+                    item.command = {
+                        command: 'bitswan.selectWorktree',
+                        title: 'Select Worktree',
+                        arguments: [item.name],
+                    };
+                }
+                return items;
             }
             return [];
         }
@@ -521,6 +530,12 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
     private getBusinessProcesses(): UnifiedTreeItem[] {
         const businessProcesses: UnifiedTreeItem[] = [];
+
+        // "Back to Main" button when viewing a worktree
+        if (this._selectedWorktree) {
+            const backItem = new ActionButtonItem('Back to Main', 'bitswan.selectWorktree', 'arrow-left', 'action:back-to-main');
+            businessProcesses.push(backItem);
+        }
 
         const scanRoot = this.getEffectiveScanRoot();
         if (!scanRoot) {
