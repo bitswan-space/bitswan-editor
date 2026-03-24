@@ -273,7 +273,7 @@ export class RequirementsPanel {
     <meta charset="UTF-8">
     <style>
         :root { color-scheme: light dark; font-family: var(--vscode-font-family, sans-serif);
-            --status-pass: #3fb950; --status-fail: #f85149; --status-pending: #d29922; --border: var(--vscode-editorWidget-border, rgba(128,128,128,0.3)); }
+            --status-pass: #3fb950; --status-fail: #f85149; --status-pending: #d29922; --status-retest: #a371f7; --border: var(--vscode-editorWidget-border, rgba(128,128,128,0.3)); }
         * { box-sizing: border-box; }
         body { margin:0; padding:0; font-size:13px; color:var(--vscode-foreground); background:var(--vscode-editor-background); display:flex; flex-direction:column; height:100vh; overflow:hidden; }
         .header { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--border); flex-shrink:0; }
@@ -305,6 +305,7 @@ export class RequirementsPanel {
         .status-badge.pass { background:var(--status-pass); color:#fff; }
         .status-badge.fail { background:var(--status-fail); color:#fff; }
         .status-badge.pending { background:var(--status-pending); color:#fff; }
+        .status-badge.retest { background:var(--status-retest); color:#fff; }
         .req-desc { font-size:12px; line-height:1.4; white-space:pre-wrap; cursor:text; padding:4px 0 2px; min-height:16px; }
         .req-desc:hover { background:var(--vscode-list-hoverBackground, rgba(128,128,128,0.08)); border-radius:4px; }
         .req-desc textarea { width:100%; min-height:40px; padding:4px 6px; background:var(--vscode-input-background); color:var(--vscode-input-foreground); border:1px solid var(--vscode-focusBorder); border-radius:4px; font-size:12px; font-family:inherit; resize:vertical; }
@@ -345,7 +346,7 @@ export class RequirementsPanel {
         var requirements = [];
         var mode = 'navigate'; // 'navigate' | 'editing' | 'adding'
 
-        function cycleStatus(s) { var o=['pending','pass','fail']; return o[(o.indexOf(s)+1)%o.length]; }
+        function cycleStatus(s) { var o=['pending','pass','fail','retest']; return o[(o.indexOf(s)+1)%o.length]; }
 
         function setMode(m) {
             mode = m;
