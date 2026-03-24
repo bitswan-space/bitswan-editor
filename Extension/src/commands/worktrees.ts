@@ -315,9 +315,13 @@ export async function viewWorktreeDiffCommand(
                 const response = await axios.get(url, {
                     headers: { Authorization: `Bearer ${details.deploySecret}` },
                 });
-                const diffContent = response.data?.diff || (typeof response.data === 'string' ? response.data : JSON.stringify(response.data, null, 2));
-                const doc = await vscode.workspace.openTextDocument({ content: diffContent, language: 'diff' });
-                await vscode.window.showTextDocument(doc, { preview: true });
+                const diffContent = typeof response.data?.diff === 'string' ? response.data.diff : (typeof response.data === 'string' ? response.data : '');
+                if (!diffContent.trim()) {
+                    vscode.window.showInformationMessage(`Worktree "${item.name}" has no uncommitted changes.`);
+                } else {
+                    const doc = await vscode.workspace.openTextDocument({ content: diffContent, language: 'diff' });
+                    await vscode.window.showTextDocument(doc, { preview: true });
+                }
                 return;
             } catch (apiErr: any) {
                 if (apiErr?.response?.status !== 404) {
@@ -331,8 +335,12 @@ export async function viewWorktreeDiffCommand(
         // Fallback: local git — diff the worktree against current HEAD
         const worktreePath = path.join(WORKTREES_DIR, item.name);
         const { stdout: diffContent } = await runGit(['diff', 'HEAD', '--', '.'], worktreePath);
-        const doc = await vscode.workspace.openTextDocument({ content: diffContent || '(no differences)', language: 'diff' });
-        await vscode.window.showTextDocument(doc, { preview: true });
+        if (!diffContent.trim()) {
+            vscode.window.showInformationMessage(`Worktree "${item.name}" has no uncommitted changes.`);
+        } else {
+            const doc = await vscode.workspace.openTextDocument({ content: diffContent, language: 'diff' });
+            await vscode.window.showTextDocument(doc, { preview: true });
+        }
     } catch (error: any) {
         vscode.window.showErrorMessage(`Failed to get worktree diff: ${error?.message || error}`);
     }
