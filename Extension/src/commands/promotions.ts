@@ -44,12 +44,16 @@ export async function promoteStageCommand(
         return;
     }
 
-    // Determine target deployment_id
-    const automationSourceName = item.automationSourceName.split('/').pop() || item.automationSourceName;
+    // Determine target deployment_id with BP context
+    const sourcePathParts = item.automationSourceName.split('/');
+    const automationSourceName = sourcePathParts.pop() || item.automationSourceName;
+    const bpName = sourcePathParts.length > 0 ? sourcePathParts[0] : '';
     const sanitizedSourceName = automationSourceName.toLowerCase().replace(/[^a-z0-9\-]/g, '').replace(/^[,\.\-]+/g, '');
+    const sanitizedBpName = bpName ? bpName.toLowerCase().replace(/[^a-z0-9\-]/g, '').replace(/^[,\.\-]+/g, '') : '';
+    const bpPrefix = sanitizedBpName ? `${sanitizedBpName}-` : '';
     const targetDeploymentId = targetStage === 'production'
-        ? sanitizedSourceName
-        : `${sanitizedSourceName}-${targetStage}`;
+        ? `${sanitizedSourceName}-${sanitizedBpName || 'production'}`
+        : `${sanitizedSourceName}-${bpPrefix}${targetStage}`;
 
     // Guard: check if already deploying
     if (deployState.isDeploying(targetDeploymentId)) {
@@ -125,14 +129,18 @@ export async function openPromotionManagerCommand(
         return;
     }
 
-    // Extract sanitized source name
-    const sourceName = automationSourceName.split('/').pop() || automationSourceName;
+    // Extract sanitized source name and BP context
+    const pmPathParts = automationSourceName.split('/');
+    const sourceName = pmPathParts.pop() || automationSourceName;
+    const pmBpName = pmPathParts.length > 0 ? pmPathParts[0] : '';
     const sanitizedSourceName = sourceName.toLowerCase().replace(/[^a-z0-9\-]/g, '').replace(/^[,\.\-]+/g, '');
-    
+    const pmSanitizedBp = pmBpName ? pmBpName.toLowerCase().replace(/[^a-z0-9\-]/g, '').replace(/^[,\.\-]+/g, '') : '';
+    const pmBpPrefix = pmSanitizedBp ? `${pmSanitizedBp}-` : '';
+
     const deploymentIds = {
-        dev: `${sanitizedSourceName}-dev`,
-        staging: `${sanitizedSourceName}-staging`,
-        production: sanitizedSourceName
+        dev: `${sanitizedSourceName}-${pmBpPrefix}dev`,
+        staging: `${sanitizedSourceName}-${pmBpPrefix}staging`,
+        production: `${sanitizedSourceName}-${pmSanitizedBp || 'production'}`
     };
 
     const getStageData = () => {
