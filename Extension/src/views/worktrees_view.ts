@@ -99,7 +99,7 @@ export class WorktreesViewProvider implements vscode.TreeDataProvider<WorktreeIt
         const items: WorktreeItem[] = [];
 
         for (const entry of entries) {
-            if (!entry.isDirectory()) {
+            if (!entry.isDirectory() || entry.name === 'worktrees') {
                 continue;
             }
 
