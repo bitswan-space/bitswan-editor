@@ -328,9 +328,9 @@ export async function viewWorktreeDiffCommand(
             }
         }
 
-        // Fallback: local git
-        const { stdout: currentBranch } = await runGit(['rev-parse', '--abbrev-ref', 'HEAD']);
-        const { stdout: diffContent } = await runGit(['diff', `${currentBranch}...${item.name}`]);
+        // Fallback: local git — diff the worktree against current HEAD
+        const worktreePath = path.join(WORKTREES_DIR, item.name);
+        const { stdout: diffContent } = await runGit(['diff', 'HEAD', '--', '.'], worktreePath);
         const doc = await vscode.workspace.openTextDocument({ content: diffContent || '(no differences)', language: 'diff' });
         await vscode.window.showTextDocument(doc, { preview: true });
     } catch (error: any) {
