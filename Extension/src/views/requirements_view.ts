@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as cp from 'child_process';
+import * as toml from '@iarna/toml';
 
 const REQUIREMENTS_FILENAME = 'testable-requirements.toml';
 const WORKSPACE_DIR = '/workspace/workspace';
@@ -26,49 +27,30 @@ interface BPEntry {
 }
 
 function parseRequirementsToml(content: string): Requirement[] {
-    const reqs: Requirement[] = [];
-    let current: Partial<Requirement> & { notes?: string } | null = null;
-
-    const pushCurrent = () => {
-        if (current && current.id) {
-            reqs.push({
-                id: current.id,
-                description: current.description || '',
-                status: (current.status as any) || 'pending',
-                parent: current.parent || '',
-            });
-        }
-    };
-
-    for (const rawLine of content.split('\n')) {
-        const line = rawLine.trim();
-        if (line === '[[requirement]]') {
-            pushCurrent();
-            current = {};
-            continue;
-        }
-        if (!current) { continue; }
-
-        const match = line.match(/^(\w+)\s*=\s*"((?:[^"\\]|\\.)*)"$/);
-        if (match) {
-            const key = match[1];
-            const value = match[2].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-            (current as any)[key] = value;
-        }
+    try {
+        const data = toml.parse(content) as any;
+        const raw: any[] = data.requirement || [];
+        return raw.map(r => ({
+            id: String(r.id || ''),
+            description: String(r.description || ''),
+            status: (r.status as any) || 'pending',
+            parent: String(r.parent || ''),
+        }));
+    } catch {
+        return [];
     }
-    pushCurrent();
-    return reqs;
 }
 
 function serializeRequirementsToml(reqs: Requirement[]): string {
-    const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    return reqs.map(r => [
-        '[[requirement]]',
-        `id = "${esc(r.id)}"`,
-        `parent = "${esc(r.parent)}"`,
-        `description = "${esc(r.description)}"`,
-        `status = "${esc(r.status)}"`,
-    ].join('\n')).join('\n\n') + '\n';
+    const data = {
+        requirement: reqs.map(r => ({
+            id: r.id,
+            parent: r.parent,
+            description: r.description,
+            status: r.status,
+        })),
+    };
+    return toml.stringify(data as any);
 }
 
 function getCurrentBranch(cwd: string): string {
@@ -307,16 +289,14 @@ export class RequirementsPanel {
         .subtab.active { color:var(--vscode-foreground); border-bottom-color:var(--vscode-focusBorder, #007acc); }
         /* Content */
         .content { flex:1; overflow-y:auto; padding:12px 16px; }
-        .add-form { display:flex; gap:8px; margin-bottom:12px; align-items:flex-end; }
-        .add-form textarea { padding:8px; background:var(--vscode-input-background); color:var(--vscode-input-foreground); border:1px solid var(--vscode-input-border, rgba(128,128,128,0.4)); border-radius:6px; font-size:12px; font-family:inherit; flex:1; min-height:40px; resize:vertical; }
         .btn { padding:6px 14px; border:1px solid var(--vscode-button-border, transparent); border-radius:6px; background:var(--vscode-button-background); color:var(--vscode-button-foreground); cursor:pointer; font-size:12px; white-space:nowrap; }
         .btn:hover { opacity:0.9; }
         .btn-sm { padding:2px 8px; font-size:11px; border-radius:4px; }
         .btn-ghost { background:transparent; color:var(--vscode-descriptionForeground); border:none; }
         .btn-ghost:hover { background:var(--status-fail); color:#fff; }
         /* Tree cards */
-        .req-node { margin-bottom:6px; }
-        .req-card { border:1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.25)); border-radius:6px; padding:8px 12px; background:var(--vscode-editor-background); }
+        .req-node { margin-bottom:6px; position:relative; }
+        .req-card { border:1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.25)); border-radius:6px; padding:8px 12px; background:var(--vscode-editor-background); position:relative; }
         .req-card:hover { border-color:var(--vscode-focusBorder, rgba(128,128,128,0.5)); }
         .req-card-header { display:flex; align-items:center; gap:8px; }
         .req-id { font-weight:600; font-size:11px; color:var(--vscode-descriptionForeground); }
@@ -329,6 +309,10 @@ export class RequirementsPanel {
         .req-desc textarea { width:100%; min-height:40px; padding:4px 6px; background:var(--vscode-input-background); color:var(--vscode-input-foreground); border:1px solid var(--vscode-focusBorder); border-radius:4px; font-size:12px; font-family:inherit; resize:vertical; }
         .req-actions { display:flex; gap:6px; align-items:center; margin-left:auto; }
         .req-children { margin-left:20px; margin-top:4px; }
+        .add-child-btn { display:block; margin:4px auto 0; padding:1px 12px; border:1px dashed var(--vscode-editorWidget-border, rgba(128,128,128,0.4)); border-radius:4px; background:transparent; color:var(--vscode-descriptionForeground); cursor:pointer; font-size:11px; }
+        .add-child-btn:hover { border-color:var(--vscode-focusBorder); color:var(--vscode-foreground); }
+        .add-root-btn { display:block; margin:8px auto; padding:4px 16px; border:1px dashed var(--vscode-editorWidget-border, rgba(128,128,128,0.4)); border-radius:6px; background:transparent; color:var(--vscode-descriptionForeground); cursor:pointer; font-size:12px; }
+        .add-root-btn:hover { border-color:var(--vscode-focusBorder); color:var(--vscode-foreground); }
         .placeholder { padding:32px 16px; text-align:center; color:var(--vscode-descriptionForeground); }
     </style>
 </head>
@@ -400,45 +384,33 @@ export class RequirementsPanel {
             }
         }
 
+        function promptAndAdd(parentId) {
+            var desc = prompt(parentId ? 'Child requirement description:' : 'New requirement description:');
+            if (desc && desc.trim()) {
+                vscodeApi.postMessage({ type: 'addRequirement', key: currentBpKey, requirement: { description: desc.trim(), status: 'pending', parent: parentId } });
+            }
+        }
+
         function renderContent() {
             content.innerHTML = '';
             if (!currentBpKey) {
                 content.innerHTML = '<div class="placeholder">Select a business process tab above.</div>';
                 return;
             }
-            // Add form
-            var form = document.createElement('div');
-            form.className = 'add-form';
-            var ta = document.createElement('textarea');
-            ta.placeholder = 'New requirement...';
-            ta.rows = 1;
-            ta.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doAdd(''); }
-            });
-            form.appendChild(ta);
-            var addBtn = document.createElement('button');
-            addBtn.className = 'btn';
-            addBtn.textContent = 'Add';
-            addBtn.addEventListener('click', function() { doAdd(''); });
-            form.appendChild(addBtn);
-            content.appendChild(form);
-
-            function doAdd(parentId) {
-                var desc = ta.value.trim();
-                if (!desc) return;
-                vscodeApi.postMessage({ type: 'addRequirement', key: currentBpKey, requirement: { description: desc, status: 'pending', parent: parentId } });
-                ta.value = '';
-            }
 
             if (requirements.length === 0) {
-                content.appendChild(mkEl('div', 'placeholder', 'No requirements yet. Add one above.'));
-                return;
+                content.innerHTML = '<div class="placeholder">No requirements yet.</div>';
+            } else {
+                var tree = buildTree(requirements);
+                var list = document.createElement('div');
+                renderTree(tree, list);
+                content.appendChild(list);
             }
 
-            var tree = buildTree(requirements);
-            var list = document.createElement('div');
-            renderTree(tree, list);
-            content.appendChild(list);
+            // Add root-level requirement button at bottom
+            var addRoot = mkEl('button', 'add-root-btn', '+ Add Requirement');
+            addRoot.addEventListener('click', function() { promptAndAdd(''); });
+            content.appendChild(addRoot);
         }
 
         function mkEl(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
@@ -460,15 +432,6 @@ export class RequirementsPanel {
                 header.appendChild(badge);
 
                 var actions = mkEl('div', 'req-actions');
-                var addChildBtn = mkEl('button', 'btn btn-sm', '+ Child');
-                addChildBtn.addEventListener('click', function() {
-                    var desc = prompt('Child requirement description:');
-                    if (desc && desc.trim()) {
-                        vscodeApi.postMessage({ type: 'addRequirement', key: currentBpKey,
-                            requirement: { description: desc.trim(), status: 'pending', parent: node.req.id } });
-                    }
-                });
-                actions.appendChild(addChildBtn);
                 var delBtn = mkEl('button', 'btn-ghost btn-sm', 'Delete');
                 delBtn.addEventListener('click', function() {
                     vscodeApi.postMessage({ type: 'deleteRequirement', key: currentBpKey, requirementId: node.req.id });
@@ -499,6 +462,14 @@ export class RequirementsPanel {
                     editTa.addEventListener('keydown', function(e) { if (e.key === 'Escape') { editingId = null; desc.textContent = node.req.description || ''; } });
                 });
                 card.appendChild(desc);
+
+                // + button at bottom center of card
+                var addChildBtn = mkEl('button', 'add-child-btn', '+');
+                (function(id) {
+                    addChildBtn.addEventListener('click', function() { promptAndAdd(id); });
+                })(node.req.id);
+                card.appendChild(addChildBtn);
+
                 wrapper.appendChild(card);
 
                 // Children
