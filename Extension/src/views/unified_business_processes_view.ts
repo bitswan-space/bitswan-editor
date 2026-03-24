@@ -5,6 +5,7 @@ import urlJoin from 'proper-url-join';
 import { FolderItem } from './sources_view';
 import { AutomationItem } from './automations_view';
 import { ImageItem } from './unified_images_view';
+import { WorktreeItem } from './worktrees_view';
 import { isImageMatchingSource } from '../utils/imageMatching';
 import { sanitizeName } from '../utils/nameUtils';
 import { getAutomationDeployConfig } from '../utils/automationImageBuilder';
@@ -263,6 +264,39 @@ export class CreateAutomationItem extends vscode.TreeItem {
     }
 }
 
+/**
+ * Section header for worktrees in the BP sidebar
+ */
+export class WorktreesSectionItem extends vscode.TreeItem {
+    constructor() {
+        super('Worktrees', vscode.TreeItemCollapsibleState.Collapsed);
+        this.id = 'worktrees-section';
+        this.contextValue = 'worktreesSection';
+        this.iconPath = new vscode.ThemeIcon('git-branch');
+    }
+}
+
+/**
+ * Action button that appears at the bottom of the BP sidebar
+ */
+export class ActionButtonItem extends vscode.TreeItem {
+    constructor(
+        label: string,
+        public readonly actionCommand: string,
+        icon: string,
+        id: string
+    ) {
+        super(label, vscode.TreeItemCollapsibleState.None);
+        this.id = id;
+        this.contextValue = 'actionButton';
+        this.iconPath = new vscode.ThemeIcon(icon);
+        this.command = {
+            command: actionCommand,
+            title: label,
+        };
+    }
+}
+
 type UnifiedTreeItem =
     | BusinessProcessItem
     | AutomationSourceItem
@@ -272,6 +306,9 @@ type UnifiedTreeItem =
     | CreateAutomationItem
     | CheckoutsItem
     | CheckoutGroupItem
+    | WorktreesSectionItem
+    | WorktreeItem
+    | ActionButtonItem
     | StageItem
     | AutomationSourceFileItem
     | AutomationSourceImagesItem
@@ -288,10 +325,15 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
     // Worktree mode: undefined = main tree, string = worktree name
     private _selectedWorktree: string | undefined;
     private _view: vscode.TreeView<UnifiedTreeItem> | undefined;
+    private _worktreesProvider: { getChildren(): Promise<WorktreeItem[]> } | undefined;
 
     get selectedWorktree(): string | undefined { return this._selectedWorktree; }
 
     setView(view: vscode.TreeView<UnifiedTreeItem>): void { this._view = view; }
+
+    setWorktreesProvider(provider: { getChildren(): Promise<WorktreeItem[]> }): void {
+        this._worktreesProvider = provider;
+    }
 
     selectWorktree(name: string | undefined): void {
         this._selectedWorktree = name;
@@ -438,6 +480,13 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             return this.getCheckoutGroupChildren(element);
         }
 
+        if (element instanceof WorktreesSectionItem) {
+            if (this._worktreesProvider) {
+                return this._worktreesProvider.getChildren();
+            }
+            return [];
+        }
+
         console.log(`[DEBUG] getChildren - unknown element type: ${element.constructor.name}`);
         return [];
     }
@@ -470,8 +519,8 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     }
 
-    private getBusinessProcesses(): (BusinessProcessItem | OtherAutomationsItem | CheckoutsItem)[] {
-        const businessProcesses: (BusinessProcessItem | OtherAutomationsItem | CheckoutsItem)[] = [];
+    private getBusinessProcesses(): UnifiedTreeItem[] {
+        const businessProcesses: UnifiedTreeItem[] = [];
 
         const scanRoot = this.getEffectiveScanRoot();
         if (!scanRoot) {
@@ -512,6 +561,17 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                 }
             }
         }
+
+        // Worktrees section (only in main mode)
+        if (!this._selectedWorktree && this._worktreesProvider) {
+            businessProcesses.push(new WorktreesSectionItem());
+        }
+
+        // Action buttons at the bottom
+        businessProcesses.push(
+            new ActionButtonItem('Agent Sessions', 'bitswan.openSessionBrowser', 'terminal', 'action:agent-sessions'),
+            new ActionButtonItem('Requirements Editor', 'bitswan.openRequirementsEditor', 'checklist', 'action:requirements'),
+        );
 
         return businessProcesses;
     }
