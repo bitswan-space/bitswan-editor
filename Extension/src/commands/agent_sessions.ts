@@ -214,7 +214,7 @@ export class AgentSessionPanel {
                     sessions.push({
                         fileName: metaFile,
                         castFile,
-                        timestamp: meta.timestamp || meta.start_time || '',
+                        timestamp: meta.timestamp || meta.started_at || meta.start_time || '',
                         userEmail: meta.user_email || meta.userEmail || '',
                         worktree: meta.worktree || '',
                         logged: meta.logged !== false,
@@ -241,6 +241,7 @@ export class AgentSessionPanel {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://unpkg.com; script-src 'unsafe-inline' https://unpkg.com; connect-src https://unpkg.com;">
     <style>
         :root {
             color-scheme: light dark;
