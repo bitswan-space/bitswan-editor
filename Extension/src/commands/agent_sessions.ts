@@ -103,6 +103,7 @@ export class AgentSessionPanel {
     private readonly panel: vscode.WebviewPanel;
     private readonly context: vscode.ExtensionContext;
     private disposed = false;
+    private sessionWatcher: fs.FSWatcher | undefined;
 
     private constructor(context: vscode.ExtensionContext) {
         this.context = context;
@@ -140,10 +141,27 @@ export class AgentSessionPanel {
 
         this.panel.onDidDispose(() => {
             this.disposed = true;
+            if (this.sessionWatcher) {
+                this.sessionWatcher.close();
+                this.sessionWatcher = undefined;
+            }
             AgentSessionPanel.currentPanel = undefined;
         });
 
         this.loadAndSendSessions();
+
+        // Watch sessions directory for new/changed files
+        if (fs.existsSync(SESSIONS_DIR)) {
+            try {
+                let debounce: ReturnType<typeof setTimeout> | undefined;
+                this.sessionWatcher = fs.watch(SESSIONS_DIR, () => {
+                    if (debounce) { clearTimeout(debounce); }
+                    debounce = setTimeout(() => {
+                        if (!this.disposed) { this.loadAndSendSessions(); }
+                    }, 1000);
+                });
+            } catch { /* ignore watch errors */ }
+        }
     }
 
     public static createOrShow(context: vscode.ExtensionContext): void {
