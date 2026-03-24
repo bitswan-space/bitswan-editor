@@ -315,6 +315,8 @@ export class RequirementsPanel {
         .add-root-btn { display:block; margin:8px auto; padding:4px 16px; border:1px dashed var(--vscode-editorWidget-border, rgba(128,128,128,0.4)); border-radius:6px; background:transparent; color:var(--vscode-descriptionForeground); cursor:pointer; font-size:12px; }
         .add-root-btn:hover { border-color:var(--vscode-focusBorder); color:var(--vscode-foreground); }
         .placeholder { padding:32px 16px; text-align:center; color:var(--vscode-descriptionForeground); }
+        .keyhints { display:flex; flex-wrap:wrap; gap:12px; padding:6px 16px; border-top:1px solid var(--border); flex-shrink:0; font-size:11px; color:var(--vscode-descriptionForeground); }
+        .keyhints kbd { padding:1px 5px; border:1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.4)); border-radius:3px; font-size:10px; font-family:inherit; background:var(--vscode-sideBar-background, rgba(128,128,128,0.1)); }
     </style>
 </head>
 <body>
@@ -323,6 +325,15 @@ export class RequirementsPanel {
     <div class="subtab-bar" id="subtabBar"></div>
     <div class="content" id="content">
         <div class="placeholder" id="placeholder">Loading...</div>
+    </div>
+    <div class="keyhints">
+        <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+        <span><kbd>Enter</kbd> Edit</span>
+        <span><kbd>Shift+Enter</kbd> Add sibling</span>
+        <span><kbd>Tab</kbd> Add child</span>
+        <span><kbd>Space</kbd> Cycle status</span>
+        <span><kbd>Delete</kbd> Remove</span>
+        <span><kbd>Esc</kbd> Cancel</span>
     </div>
     <script>
         var vscodeApi = acquireVsCodeApi();
@@ -480,16 +491,31 @@ export class RequirementsPanel {
                         if (e.target !== c) return; // only when card itself is focused
                         if (e.key === 'ArrowDown') { e.preventDefault(); focusCardByOffset(1); }
                         else if (e.key === 'ArrowUp') { e.preventDefault(); focusCardByOffset(-1); }
-                        else if (e.key === 'Enter') {
+                        else if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
                             var descEl = c.querySelector('.req-desc');
-                            if (descEl) descEl.click(); // trigger inline edit
+                            if (descEl) descEl.click(); // edit description
+                        }
+                        else if (e.key === 'Enter' && e.shiftKey) {
+                            e.preventDefault();
+                            // add sibling after this card
+                            var addBtn = c.querySelector('.add-child-btn');
+                            if (addBtn) showAddInput(n.req.parent || '', addBtn);
+                        }
+                        else if (e.key === 'Tab' && !e.shiftKey) {
+                            e.preventDefault();
+                            // add child requirement
+                            var addBtn = c.querySelector('.add-child-btn');
+                            if (addBtn) showAddInput(n.req.id, addBtn);
                         }
                         else if (e.key === ' ') {
                             e.preventDefault();
-                            // cycle status
                             vscodeApi.postMessage({ type: 'updateRequirement', key: currentBpKey,
                                 requirement: Object.assign({}, n.req, { status: cycleStatus(n.req.status || 'pending') }) });
+                        }
+                        else if (e.key === 'Delete' || e.key === 'Backspace') {
+                            e.preventDefault();
+                            vscodeApi.postMessage({ type: 'deleteRequirement', key: currentBpKey, requirementId: n.req.id });
                         }
                     });
                 })(node, card);
@@ -576,6 +602,16 @@ export class RequirementsPanel {
                         renderContent();
                     }
                     break;
+            }
+        });
+
+        // Global: Enter when nothing is focused/editing adds a root requirement
+        document.addEventListener('keydown', function(e) {
+            if (e.target !== document.body) return;
+            if (e.key === 'Enter' && currentBpKey) {
+                e.preventDefault();
+                var addRoot = content.querySelector('.add-root-btn');
+                if (addRoot) showAddInput('', addRoot);
             }
         });
 
