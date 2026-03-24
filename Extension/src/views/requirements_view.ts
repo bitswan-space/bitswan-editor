@@ -490,6 +490,12 @@ export class RequirementsPanel {
         }
 
         function renderContent() {
+            // Remember focused card to restore after re-render
+            var focusedId = null;
+            var focused = document.activeElement;
+            if (focused && focused.classList && focused.classList.contains('req-card')) {
+                focusedId = focused.getAttribute('data-req-id');
+            }
             content.innerHTML = '';
             setMode('navigate');
             if (!currentBpKey) {
@@ -507,6 +513,12 @@ export class RequirementsPanel {
             var addRoot = mkEl('button', 'add-root-btn', '+ Add Requirement');
             addRoot.addEventListener('click', function() { showAddInput('', addRoot); });
             content.appendChild(addRoot);
+
+            // Restore focus to previously focused card
+            if (focusedId) {
+                var toFocus = content.querySelector('.req-card[data-req-id="' + focusedId + '"]');
+                if (toFocus) toFocus.focus();
+            }
         }
 
         function mkEl(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
@@ -569,6 +581,19 @@ export class RequirementsPanel {
             var isCard = card && card.classList && card.classList.contains('req-card');
 
             if (!isCard && currentBpKey) {
+                // Arrow keys with no card focused: focus first/last card
+                if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    var first = content.querySelector('.req-card');
+                    if (first) focusCard(first);
+                    return;
+                }
+                if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    var all = content.querySelectorAll('.req-card');
+                    if (all.length > 0) focusCard(all[all.length - 1]);
+                    return;
+                }
                 // N with no card focused: add root
                 if (e.key === 'n' || e.key === 'N') {
                     e.preventDefault();
