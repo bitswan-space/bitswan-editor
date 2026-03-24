@@ -174,6 +174,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.createTreeView('bitswanWorktrees', {
         treeDataProvider: worktreesProvider,
     });
+    unifiedBusinessProcessesProvider.setWorktreesProvider(worktreesProvider);
 
     // Register worktree and agent commands
     context.subscriptions.push(
