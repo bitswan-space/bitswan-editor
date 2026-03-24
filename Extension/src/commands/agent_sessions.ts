@@ -103,14 +103,30 @@ export class AgentSessionPanel {
     private constructor(context: vscode.ExtensionContext) {
         this.context = context;
 
+        const asciinemaDir = vscode.Uri.file(
+            path.join(context.extensionPath, 'node_modules', 'asciinema-player', 'dist', 'bundle')
+        );
+
         this.panel = vscode.window.createWebviewPanel(
             'bitswan-agent-sessions',
             'Coding Agents',
             vscode.ViewColumn.Active,
-            { enableScripts: true, retainContextWhenHidden: true },
+            {
+                enableScripts: true,
+                retainContextWhenHidden: true,
+                localResourceRoots: [asciinemaDir],
+            },
         );
 
-        this.panel.webview.html = this._getHtmlForWebview();
+        const webview = this.panel.webview;
+        const playerJsUri = webview.asWebviewUri(vscode.Uri.file(
+            path.join(context.extensionPath, 'node_modules', 'asciinema-player', 'dist', 'bundle', 'asciinema-player.min.js')
+        ));
+        const playerCssUri = webview.asWebviewUri(vscode.Uri.file(
+            path.join(context.extensionPath, 'node_modules', 'asciinema-player', 'dist', 'bundle', 'asciinema-player.css')
+        ));
+
+        this.panel.webview.html = this._getHtmlForWebview(playerJsUri, playerCssUri);
 
         this.panel.webview.onDidReceiveMessage(
             (msg) => this.onMessage(msg),
@@ -235,13 +251,14 @@ export class AgentSessionPanel {
         if (!this.disposed) { this.panel.webview.postMessage(msg); }
     }
 
-    private _getHtmlForWebview(): string {
+    private _getHtmlForWebview(playerJsUri: vscode.Uri, playerCssUri: vscode.Uri): string {
+        const cspSource = this.panel.webview.cspSource;
         return /* html */`
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://unpkg.com; script-src 'unsafe-inline' https://unpkg.com; connect-src https://unpkg.com;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${cspSource}; script-src 'unsafe-inline' ${cspSource};">
     <style>
         :root {
             color-scheme: light dark;
@@ -321,7 +338,7 @@ export class AgentSessionPanel {
         .session-list.hidden { display: none; }
         .placeholder { padding: 24px 16px; text-align: center; color: var(--vscode-descriptionForeground); }
     </style>
-    <link rel="stylesheet" type="text/css" href="https://unpkg.com/asciinema-player@3.8.0/dist/bundle/asciinema-player.css" />
+    <link rel="stylesheet" type="text/css" href="${playerCssUri}" />
 </head>
 <body>
     <div class="header"><h2>Coding Agents</h2></div>
@@ -354,7 +371,7 @@ export class AgentSessionPanel {
         </div>
     </div>
 
-    <script src="https://unpkg.com/asciinema-player@3.8.0/dist/bundle/asciinema-player.min.js"></script>
+    <script src="${playerJsUri}"></script>
     <script>
         const vscodeApi = acquireVsCodeApi();
         const sessionsBody = document.getElementById('sessionsBody');
