@@ -384,11 +384,34 @@ export class RequirementsPanel {
             }
         }
 
-        function promptAndAdd(parentId) {
-            var desc = prompt(parentId ? 'Child requirement description:' : 'New requirement description:');
-            if (desc && desc.trim()) {
-                vscodeApi.postMessage({ type: 'addRequirement', key: currentBpKey, requirement: { description: desc.trim(), status: 'pending', parent: parentId } });
-            }
+        function showAddInput(parentId, afterElement) {
+            // Remove any existing add input
+            var existing = document.querySelector('.add-input-row');
+            if (existing) existing.remove();
+
+            var row = document.createElement('div');
+            row.className = 'add-input-row';
+            row.style.cssText = 'display:flex; gap:6px; margin:6px 0; align-items:flex-start;';
+            var ta = document.createElement('textarea');
+            ta.style.cssText = 'flex:1; padding:6px 8px; min-height:36px; background:var(--vscode-input-background); color:var(--vscode-input-foreground); border:1px solid var(--vscode-focusBorder); border-radius:4px; font-size:12px; font-family:inherit; resize:vertical;';
+            ta.placeholder = parentId ? 'Child requirement...' : 'New requirement...';
+            row.appendChild(ta);
+            var okBtn = mkEl('button', 'btn btn-sm', 'Add');
+            okBtn.style.marginTop = '4px';
+            okBtn.addEventListener('click', function() {
+                var desc = ta.value.trim();
+                if (desc) {
+                    vscodeApi.postMessage({ type: 'addRequirement', key: currentBpKey, requirement: { description: desc, status: 'pending', parent: parentId } });
+                }
+                row.remove();
+            });
+            row.appendChild(okBtn);
+            var cancelBtn = mkEl('button', 'btn-ghost btn-sm', 'Cancel');
+            cancelBtn.style.marginTop = '4px';
+            cancelBtn.addEventListener('click', function() { row.remove(); });
+            row.appendChild(cancelBtn);
+            afterElement.insertAdjacentElement('afterend', row);
+            ta.focus();
         }
 
         function renderContent() {
@@ -409,7 +432,7 @@ export class RequirementsPanel {
 
             // Add root-level requirement button at bottom
             var addRoot = mkEl('button', 'add-root-btn', '+ Add Requirement');
-            addRoot.addEventListener('click', function() { promptAndAdd(''); });
+            addRoot.addEventListener('click', function() { showAddInput('', addRoot); });
             content.appendChild(addRoot);
         }
 
@@ -465,9 +488,9 @@ export class RequirementsPanel {
 
                 // + button at bottom center of card
                 var addChildBtn = mkEl('button', 'add-child-btn', '+');
-                (function(id) {
-                    addChildBtn.addEventListener('click', function() { promptAndAdd(id); });
-                })(node.req.id);
+                (function(id, btn) {
+                    btn.addEventListener('click', function() { showAddInput(id, btn); });
+                })(node.req.id, addChildBtn);
                 card.appendChild(addChildBtn);
 
                 wrapper.appendChild(card);
