@@ -23,6 +23,10 @@ const WORKTREES_DIR = '/workspace/worktrees';
  * Start an SSH terminal session to the coding agent for a given worktree.
  * Can be called from the panel or directly.
  */
+export function isAnonMode(context: vscode.ExtensionContext): boolean {
+    return context.globalState.get<boolean>('agentAnonMode', false);
+}
+
 export async function startAgentSession(
     context: vscode.ExtensionContext,
     worktreeName: string,
@@ -86,7 +90,7 @@ export async function startAgentSession(
         ],
         env: {
             SSH_USER_EMAIL: userEmail,
-            SSH_LOGGED: 'true',
+            SSH_LOGGED: isAnonMode(context) ? 'false' : 'true',
             SSH_WORKTREE: worktreeName,
         },
     });
@@ -157,7 +161,14 @@ export class AgentSessionPanel {
             case 'ready':
                 this.sendWorktrees();
                 await this.loadAndSendSessions();
+                this.postMessage({ type: 'anonMode', enabled: isAnonMode(this.context) });
                 break;
+            case 'toggleAnon': {
+                const current = isAnonMode(this.context);
+                await this.context.globalState.update('agentAnonMode', !current);
+                this.postMessage({ type: 'anonMode', enabled: !current });
+                break;
+            }
             case 'loadSessions':
                 await this.loadAndSendSessions();
                 break;
@@ -225,11 +236,11 @@ export class AgentSessionPanel {
                     const meta = JSON.parse(content);
                     const baseName = metaFile.replace('.meta.json', '');
                     const castFile = baseName + '.cast';
-                    if (!fs.existsSync(path.join(SESSIONS_DIR, castFile))) { continue; }
+                    const hasCast = fs.existsSync(path.join(SESSIONS_DIR, castFile));
 
                     sessions.push({
                         fileName: metaFile,
-                        castFile,
+                        castFile: hasCast ? castFile : '',
                         timestamp: meta.timestamp || meta.started_at || meta.start_time || '',
                         userEmail: meta.user_email || meta.userEmail || '',
                         worktree: meta.worktree || '',
@@ -280,8 +291,18 @@ export class AgentSessionPanel {
         .worktree-buttons {
             padding: 12px 16px;
             border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.3));
-            display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0;
+            display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; align-items: center;
         }
+        .spacer { flex: 1; }
+        .anon-toggle {
+            display: flex; align-items: center; gap: 6px; cursor: pointer;
+            font-size: 11px; color: var(--vscode-descriptionForeground); user-select: none;
+            padding: 4px 10px; border-radius: 6px;
+            border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.3));
+        }
+        .anon-toggle:hover { border-color: var(--vscode-focusBorder); }
+        .anon-toggle.active { color: var(--vscode-foreground); background: var(--vscode-button-secondaryBackground, rgba(128,128,128,0.2)); }
+        .anon-toggle svg { width: 14px; height: 14px; }
         .btn {
             padding: 6px 14px;
             border: 1px solid var(--vscode-button-border, transparent);
@@ -392,6 +413,8 @@ export class AgentSessionPanel {
             return div.innerHTML;
         }
 
+        var anonEnabled = false;
+
         function renderWorktreeButtons(worktrees) {
             worktreeButtons.innerHTML = '';
             worktrees.forEach(function(wt) {
@@ -410,6 +433,22 @@ export class AgentSessionPanel {
                 vscodeApi.postMessage({ type: 'createWorktree' });
             });
             worktreeButtons.appendChild(createBtn);
+
+            // Spacer pushes anon toggle to the right
+            var spacer = document.createElement('div');
+            spacer.className = 'spacer';
+            worktreeButtons.appendChild(spacer);
+
+            // Anon toggle
+            var toggle = document.createElement('div');
+            toggle.className = 'anon-toggle' + (anonEnabled ? ' active' : '');
+            toggle.title = 'Anonymous mode: sessions are not recorded';
+            toggle.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>' +
+                (anonEnabled ? ' Anon' : ' Record');
+            toggle.addEventListener('click', function() {
+                vscodeApi.postMessage({ type: 'toggleAnon' });
+            });
+            worktreeButtons.appendChild(toggle);
         }
 
         function renderSessions() {
@@ -423,11 +462,17 @@ export class AgentSessionPanel {
 
             allSessions.forEach(function(session) {
                 var tr = document.createElement('tr');
+                var actionHtml;
+                if (session.castFile) {
+                    actionHtml = '<button class="play-btn" data-cast="' + escapeHtml(session.castFile) + '">Play</button>';
+                } else {
+                    actionHtml = '<span title="Anonymous session (not recorded)" style="font-size:16px;opacity:0.5;cursor:default;">&#x1F576;</span>';
+                }
                 tr.innerHTML =
                     '<td>' + escapeHtml(session.timestamp || 'N/A') + '</td>' +
                     '<td>' + escapeHtml(session.userEmail || 'N/A') + '</td>' +
                     '<td>' + escapeHtml(session.worktree || 'N/A') + '</td>' +
-                    '<td><button class="play-btn" data-cast="' + escapeHtml(session.castFile) + '">Play</button></td>';
+                    '<td>' + actionHtml + '</td>';
                 sessionsBody.appendChild(tr);
             });
         }
@@ -454,6 +499,15 @@ export class AgentSessionPanel {
             var msg = event.data;
             if (!msg || !msg.type) return;
             switch (msg.type) {
+                case 'anonMode':
+                    anonEnabled = msg.enabled;
+                    var existingToggle = document.querySelector('.anon-toggle');
+                    if (existingToggle) {
+                        existingToggle.className = 'anon-toggle' + (anonEnabled ? ' active' : '');
+                        existingToggle.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>' +
+                            (anonEnabled ? ' Anon' : ' Record');
+                    }
+                    break;
                 case 'worktrees':
                     renderWorktreeButtons(msg.worktrees || []);
                     break;
