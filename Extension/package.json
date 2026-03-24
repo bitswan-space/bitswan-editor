@@ -89,6 +89,11 @@
           "id": "bitswan-secrets",
           "title": "Secrets",
           "icon": "media/secrets.svg"
+        },
+        {
+          "id": "bitswan-worktrees",
+          "title": "Worktrees",
+          "icon": "media/worktrees.svg"
         }
       ]
     },
@@ -117,6 +122,12 @@
         {
           "id": "bitswan-secrets-manager",
           "name": "Secrets Manager"
+        }
+      ],
+      "bitswan-worktrees": [
+        {
+          "id": "bitswanWorktrees",
+          "name": "Worktrees"
         }
       ]
     },
@@ -394,6 +405,58 @@
         "command": "bitswan.copyMinioPassword",
         "title": "Copy MinIO Password",
         "icon": "$(key)"
+      },
+      {
+        "command": "bitswan.createWorktree",
+        "title": "Create Worktree",
+        "icon": "$(add)",
+        "category": "BitSwan"
+      },
+      {
+        "command": "bitswan.deleteWorktree",
+        "title": "Delete Worktree",
+        "icon": "$(trash)",
+        "category": "BitSwan"
+      },
+      {
+        "command": "bitswan.mergeWorktree",
+        "title": "Merge Worktree",
+        "icon": "$(git-merge)",
+        "category": "BitSwan"
+      },
+      {
+        "command": "bitswan.openAgentTerminal",
+        "title": "Open Agent Terminal",
+        "icon": "$(terminal)",
+        "category": "BitSwan"
+      },
+      {
+        "command": "bitswan.viewWorktreeDiff",
+        "title": "View Worktree Diff",
+        "icon": "$(diff)",
+        "category": "BitSwan"
+      },
+      {
+        "command": "bitswan.openSessionBrowser",
+        "title": "Open Agent Session Browser",
+        "category": "BitSwan"
+      },
+      {
+        "command": "bitswan.openRequirementsEditor",
+        "title": "Open Requirements Editor",
+        "category": "BitSwan"
+      },
+      {
+        "command": "bitswan.refreshWorktrees",
+        "title": "Refresh Worktrees",
+        "icon": "$(refresh)",
+        "category": "BitSwan"
+      },
+      {
+        "command": "bitswan.selectWorktree",
+        "title": "Select Worktree",
+        "icon": "$(git-branch)",
+        "category": "BitSwan"
       }
     ],
     "menus": {
@@ -505,17 +568,17 @@
         },
         {
           "command": "bitswan.promoteToDev",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,live-dev,deployed/",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,live-dev,deployed(?!.*worktreeLiveDev)/",
           "group": "inline@8"
         },
         {
           "command": "bitswan.promoteToStaging",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,dev,deployed/",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,dev,deployed(?!.*worktreeLiveDev)/",
           "group": "inline@8"
         },
         {
           "command": "bitswan.promoteToProduction",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,staging,deployed/",
+          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,staging,deployed(?!.*worktreeLiveDev)/",
           "group": "inline@8"
         },
         {
@@ -717,6 +780,26 @@
           "command": "bitswan.openSecretGroup",
           "when": "view == bitswan-secrets-manager && viewItem == secretGroup",
           "group": "navigation@2"
+        },
+        {
+          "command": "bitswan.openAgentTerminal",
+          "when": "viewItem == worktreeItem",
+          "group": "1_terminal"
+        },
+        {
+          "command": "bitswan.viewWorktreeDiff",
+          "when": "viewItem == worktreeItem",
+          "group": "3_git"
+        },
+        {
+          "command": "bitswan.mergeWorktree",
+          "when": "viewItem == worktreeItem",
+          "group": "4_management"
+        },
+        {
+          "command": "bitswan.deleteWorktree",
+          "when": "viewItem == worktreeItem",
+          "group": "5_danger"
         }
       ],
       "view/title": [
@@ -734,6 +817,11 @@
           "command": "bitswan.refreshImages",
           "when": "view == bitswan-orphaned-images",
           "group": "navigation@1"
+        },
+        {
+          "command": "bitswan.selectWorktree",
+          "when": "view == bitswan-unified-business-processes",
+          "group": "navigation@0"
         },
         {
           "command": "bitswan.refreshBusinessProcesses",
@@ -764,6 +852,26 @@
           "command": "bitswan.addGitOps",
           "when": "view == bitswan-workspaces",
           "group": "navigation@1"
+        },
+        {
+          "command": "bitswan.createWorktree",
+          "when": "view == bitswanWorktrees",
+          "group": "navigation@1"
+        },
+        {
+          "command": "bitswan.refreshWorktrees",
+          "when": "view == bitswanWorktrees",
+          "group": "navigation@2"
+        },
+        {
+          "command": "bitswan.openSessionBrowser",
+          "when": "view == bitswanWorktrees",
+          "group": "navigation@3"
+        },
+        {
+          "command": "bitswan.openRequirementsEditor",
+          "when": "view == bitswanWorktrees",
+          "group": "navigation@4"
         }
       ],
       "notebook/toolbar": [

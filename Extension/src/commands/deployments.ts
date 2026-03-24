@@ -409,7 +409,8 @@ export async function deployCommand(
 export async function startLiveDevServerCommand(
     context: vscode.ExtensionContext,
     folderPath: string,
-    businessProcessesProvider?: UnifiedBusinessProcessesViewProvider
+    businessProcessesProvider?: UnifiedBusinessProcessesViewProvider,
+    worktreeName?: string
 ) {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders || workspaceFolders.length === 0) {
@@ -469,7 +470,12 @@ export async function startLiveDevServerCommand(
             const updatedConfig = getAutomationDeployConfig(folderPath);
 
             // Get relative path for source mounting
-            const relativePath = path.relative(workspaceFolders[0].uri.fsPath, folderPath);
+            // For worktree stages, construct the path explicitly so the gitops server
+            // mounts from {workspace}/worktrees/{name}/... (matching the editor mount)
+            const relativePath = worktreeName
+                ? path.join('worktrees', worktreeName, path.relative(
+                    path.join('/workspace/worktrees', worktreeName), folderPath))
+                : path.relative(workspaceFolders[0].uri.fsPath, folderPath);
 
             outputChannel.appendLine(`Live-dev config: image=${updatedConfig.image}, expose=${updatedConfig.expose}, port=${updatedConfig.port}, mountPath=${updatedConfig.mountPath}, secretGroups=${updatedConfig.secretGroups?.join(',') || 'none'}, automationId=${updatedConfig.automationId || 'none'}, auth=${updatedConfig.auth ?? false}`);
 
@@ -480,7 +486,9 @@ export async function startLiveDevServerCommand(
             // Deploy to live-dev stage
             // For live-dev, we use a placeholder checksum since the source is mounted directly
             // and changes are reflected immediately without redeployment
-            const liveDevDeploymentId = `${normalizedFolderName}-live-dev`;
+            const liveDevDeploymentId = worktreeName
+                ? `${normalizedFolderName}-wt-${worktreeName}-live-dev`
+                : `${normalizedFolderName}-live-dev`;
 
             if (deployState.isDeploying(liveDevDeploymentId)) {
                 vscode.window.showWarningMessage(`Deployment ${liveDevDeploymentId} is already in progress`);
