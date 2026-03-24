@@ -143,12 +143,15 @@ export async function startAgentSession(
         AgentSessionPanel.instance.refreshHistory();
     }
 
-    // Remove on terminal close
+    // Remove on terminal close and refresh history (new .cast file may have appeared)
     const disposable = vscode.window.onDidCloseTerminal((t) => {
         if (t === terminal) {
             const idx = activeSessions.findIndex(s => s.id === session.id);
             if (idx >= 0) { activeSessions.splice(idx, 1); }
             notifyPanel();
+            if (AgentSessionPanel.instance) {
+                AgentSessionPanel.instance.refreshHistory();
+            }
             disposable.dispose();
         }
     });
