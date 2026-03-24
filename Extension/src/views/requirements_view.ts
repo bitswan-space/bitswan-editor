@@ -11,7 +11,7 @@ const WORKTREES_DIR = '/workspace/workspace/worktrees';
 interface Requirement {
     id: string;
     description: string;
-    status: 'pass' | 'fail' | 'pending';
+    status: 'pass' | 'fail' | 'pending' | 'retest' | 'proposed';
     parent: string; // parent requirement ID, "" = root level
 }
 
@@ -69,6 +69,8 @@ export class RequirementsPanel {
     private disposed = false;
     /** Map from key → absolute dir path for quick lookup */
     private bpMap = new Map<string, string>();
+    private fileWatcher: vscode.FileSystemWatcher | undefined;
+    private currentKey = '';
 
     private constructor(context: vscode.ExtensionContext) {
         this.context = context;
@@ -88,8 +90,14 @@ export class RequirementsPanel {
             context.subscriptions,
         );
 
+        // Watch for changes to testable-requirements.toml files
+        this.fileWatcher = vscode.workspace.createFileSystemWatcher('**/testable-requirements.toml');
+        this.fileWatcher.onDidChange(() => this._reloadCurrentKey());
+        this.fileWatcher.onDidCreate(() => this._reloadCurrentKey());
+
         this.panel.onDidDispose(() => {
             this.disposed = true;
+            if (this.fileWatcher) { this.fileWatcher.dispose(); }
             RequirementsPanel.currentPanel = undefined;
         });
     }
@@ -206,6 +214,7 @@ export class RequirementsPanel {
     // ---- CRUD ----
 
     private async loadRequirements(key: string): Promise<void> {
+        this.currentKey = key;
         if (!key) {
             this.postMessage({ type: 'requirements', key: '', requirements: [] });
             return;
@@ -218,6 +227,12 @@ export class RequirementsPanel {
         this.postMessage({ type: 'requirements', key, requirements: this._readLocalReqs(dirPath) });
     }
 
+    private _reloadCurrentKey(): void {
+        if (!this.disposed && this.currentKey) {
+            this.loadRequirements(this.currentKey);
+        }
+    }
+
     private async addRequirement(key: string, requirement: Omit<Requirement, 'id'>): Promise<void> {
         const dirPath = this._resolveDir(key);
         if (!dirPath) { return; }
@@ -226,7 +241,8 @@ export class RequirementsPanel {
             const m = r.id.match(/\d+$/);
             return m ? Math.max(max, parseInt(m[0], 10)) : max;
         }, 0);
-        const newId = 'REQ-' + (maxNum + 1).toString().padStart(3, '0');
+        const prefix = requirement.status === 'proposed' ? 'AI-' : 'REQ-';
+        const newId = prefix + (maxNum + 1).toString().padStart(3, '0');
         existing.push({ id: newId, ...requirement } as Requirement);
         this._writeLocalReqs(dirPath, existing);
         vscode.window.showInformationMessage(`Requirement ${newId} added.`);
@@ -273,7 +289,7 @@ export class RequirementsPanel {
     <meta charset="UTF-8">
     <style>
         :root { color-scheme: light dark; font-family: var(--vscode-font-family, sans-serif);
-            --status-pass: #3fb950; --status-fail: #f85149; --status-pending: #d29922; --status-retest: #a371f7; --border: var(--vscode-editorWidget-border, rgba(128,128,128,0.3)); }
+            --status-pass: #3fb950; --status-fail: #f85149; --status-pending: #d29922; --status-retest: #a371f7; --status-proposed: #768390; --border: var(--vscode-editorWidget-border, rgba(128,128,128,0.3)); }
         * { box-sizing: border-box; }
         body { margin:0; padding:0; font-size:13px; color:var(--vscode-foreground); background:var(--vscode-editor-background); display:flex; flex-direction:column; height:100vh; overflow:hidden; }
         .header { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--border); flex-shrink:0; }
@@ -306,6 +322,7 @@ export class RequirementsPanel {
         .status-badge.fail { background:var(--status-fail); color:#fff; }
         .status-badge.pending { background:var(--status-pending); color:#fff; }
         .status-badge.retest { background:var(--status-retest); color:#fff; }
+        .status-badge.proposed { background:var(--status-proposed); color:#fff; font-style:italic; }
         .req-desc { font-size:12px; line-height:1.4; white-space:pre-wrap; cursor:text; padding:4px 0 2px; min-height:16px; }
         .req-desc:hover { background:var(--vscode-list-hoverBackground, rgba(128,128,128,0.08)); border-radius:4px; }
         .req-desc textarea { width:100%; min-height:40px; padding:4px 6px; background:var(--vscode-input-background); color:var(--vscode-input-foreground); border:1px solid var(--vscode-focusBorder); border-radius:4px; font-size:12px; font-family:inherit; resize:vertical; }
@@ -346,7 +363,7 @@ export class RequirementsPanel {
         var requirements = [];
         var mode = 'navigate'; // 'navigate' | 'editing' | 'adding'
 
-        function cycleStatus(s) { var o=['pending','pass','fail','retest']; return o[(o.indexOf(s)+1)%o.length]; }
+        function cycleStatus(s) { var o=['pending','pass','fail','retest','proposed']; return o[(o.indexOf(s)+1)%o.length]; }
 
         function setMode(m) {
             mode = m;
