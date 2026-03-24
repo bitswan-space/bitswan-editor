@@ -178,7 +178,7 @@ export class AgentSessionPanel {
         if (fs.existsSync(WORKTREES_DIR)) {
             try {
                 for (const entry of fs.readdirSync(WORKTREES_DIR, { withFileTypes: true })) {
-                    if (entry.isDirectory() && !entry.name.startsWith('.')) {
+                    if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'worktrees') {
                         worktrees.push(entry.name);
                     }
                 }

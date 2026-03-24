@@ -995,6 +995,7 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                 // Recursively check subdirectories
                 for (const entry of entries) {
                     if (entry.isDirectory()) {
+                        if (entry.name === 'worktrees') { continue; }
                         const fullPath = path.join(dirPath, entry.name);
                         findAutomationSources(fullPath);
                     }
