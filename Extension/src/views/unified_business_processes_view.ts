@@ -684,9 +684,13 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
     private async getStagesForSource(sourceName: string): Promise<StageItem[]> {
         const automations = this.context.globalState.get<any[]>('automations', []);
 
-        // Extract just the automation source name from the full path
-        const automationSourceName = sourceName.split('/').pop() || sourceName;
+        // Extract automation name and business process name from sourceName
+        // sourceName is like "Test/backend" or just "backend"
+        const pathParts = sourceName.split('/');
+        const automationSourceName = pathParts.pop() || sourceName;
+        const bpName = pathParts.length > 0 ? pathParts[0] : '';
         const sanitizedSourceName = sanitizeName(automationSourceName);
+        const sanitizedBpName = bpName ? sanitizeName(bpName) : '';
         const scanRoot = this.getEffectiveScanRoot();
         const sourceUri = scanRoot
             ? vscode.Uri.file(path.join(scanRoot, sourceName))
@@ -714,7 +718,10 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         if (this._selectedWorktree) {
             // Worktree mode: only live-dev stage
             const wtName = this._selectedWorktree;
-            const deploymentId = `${sanitizedSourceName}-wt-${wtName}-live-dev`;
+            const context = sanitizedBpName
+                ? `${sanitizedBpName}-wt-${wtName}-live-dev`
+                : `wt-${wtName}-live-dev`;
+            const deploymentId = `${sanitizedSourceName}-${context}`;
             const wtSourceUri = sourceUri; // already points into the worktree via scanRoot
 
             const automation = automations.find(a =>
@@ -738,11 +745,13 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             }
         } else {
             // Main mode: standard 4 stages
+            // Deployment ID = {automationName}-{context} where context = {bp}-{stage}
+            const bpPrefix = sanitizedBpName ? `${sanitizedBpName}-` : '';
             const stageDeploymentIds: Record<'live-dev' | 'dev' | 'staging' | 'production', string> = {
-                'live-dev': `${sanitizedSourceName}-live-dev`,
-                dev: `${sanitizedSourceName}-dev`,
-                staging: `${sanitizedSourceName}-staging`,
-                production: sanitizedSourceName
+                'live-dev': `${sanitizedSourceName}-${bpPrefix}live-dev`,
+                dev: `${sanitizedSourceName}-${bpPrefix}dev`,
+                staging: `${sanitizedSourceName}-${bpPrefix}staging`,
+                production: `${sanitizedSourceName}-${sanitizedBpName || 'production'}`
             };
 
             const stagesList: Array<'live-dev' | 'dev' | 'staging' | 'production'> = ['live-dev', 'dev', 'staging', 'production'];

@@ -222,8 +222,11 @@ export async function deployCommandAbstract(
                 // For automations, use the promotion workflow
                 const relativePath = path.relative(workspaceFolders[0].uri.fsPath, folderPath);
 
-                // Guard: check if already deploying
-                const devDeploymentId = `${normalizedFolderName}-dev`;
+                // Extract BP name for deployment context
+                const devRelParts = relativePath.replace(/\\/g, '/').split('/');
+                const devBpName = devRelParts.length >= 2 ? sanitizeName(devRelParts[0]) : '';
+                const devBpPrefix = devBpName ? `${devBpName}-` : '';
+                const devDeploymentId = `${normalizedFolderName}-${devBpPrefix}dev`;
                 if (deployState.isDeploying(devDeploymentId)) {
                     vscode.window.showWarningMessage(`Deployment ${devDeploymentId} is already in progress`);
                     return;
@@ -484,11 +487,16 @@ export async function startLiveDevServerCommand(
             progress.report({ increment: 70, message: "Starting live dev server..." });
 
             // Deploy to live-dev stage
-            // For live-dev, we use a placeholder checksum since the source is mounted directly
-            // and changes are reflected immediately without redeployment
+            // Extract BP name from relative path (e.g., "Test/backend" → "test")
+            const relParts = relativePath.replace(/\\/g, '/').split('/');
+            // Strip "worktrees/{name}/" prefix if present
+            const contentParts = relParts[0] === 'worktrees' && relParts.length >= 3
+                ? relParts.slice(2) : relParts;
+            const bpName = contentParts.length >= 2 ? sanitizeName(contentParts[0]) : '';
+            const bpPrefix = bpName ? `${bpName}-` : '';
             const liveDevDeploymentId = worktreeName
-                ? `${normalizedFolderName}-wt-${worktreeName}-live-dev`
-                : `${normalizedFolderName}-live-dev`;
+                ? `${normalizedFolderName}-${bpPrefix}wt-${worktreeName}-live-dev`
+                : `${normalizedFolderName}-${bpPrefix}live-dev`;
 
             if (deployState.isDeploying(liveDevDeploymentId)) {
                 vscode.window.showWarningMessage(`Deployment ${liveDevDeploymentId} is already in progress`);
