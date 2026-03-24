@@ -454,7 +454,15 @@ export class RequirementsPanel {
                 else if (e.key === 'Escape') { row.remove(); setMode('navigate'); }
             });
             row.appendChild(ta);
-            afterElement.insertAdjacentElement('afterend', row);
+
+            // For sibling insertion, place after the entire .req-node wrapper
+            // (which includes children), not just after the card
+            var insertTarget = afterElement;
+            if (afterElement.classList && afterElement.classList.contains('req-card')) {
+                var wrapper = afterElement.closest('.req-node');
+                if (wrapper) insertTarget = wrapper;
+            }
+            insertTarget.insertAdjacentElement('afterend', row);
             ta.focus();
         }
 
