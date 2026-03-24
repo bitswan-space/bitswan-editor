@@ -497,17 +497,9 @@ export async function startLiveDevServerCommand(
 
             const deployUrl = urlJoin(details.deployUrl, "automations", liveDevDeploymentId, "deploy").toString();
             const deployedBy = await getUserEmail(context);
-            const deployResult = await promoteAutomation(deployUrl, details.deploySecret, 'live-dev', 'live-dev', relativePath, {
-                image: updatedConfig.image,
-                expose: updatedConfig.expose,
-                exposeTo: updatedConfig.exposeTo,
-                port: updatedConfig.port,
-                mountPath: updatedConfig.mountPath,
-                secretGroups: updatedConfig.secretGroups,
-                automationId: updatedConfig.automationId,
-                auth: updatedConfig.auth,
-                services: updatedConfig.services,
-            }, undefined, deployedBy);
+            // For live-dev, the gitops server reads automation.toml directly from
+            // the workspace filesystem. We only need to send stage and relative_path.
+            const deployResult = await promoteAutomation(deployUrl, details.deploySecret, 'live-dev', 'live-dev', relativePath, undefined, undefined, deployedBy);
 
             if (deployResult.alreadyDeploying) {
                 vscode.window.showWarningMessage(`Deployment ${liveDevDeploymentId} is already in progress`);
