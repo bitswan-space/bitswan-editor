@@ -270,8 +270,10 @@ export function activate(context: vscode.ExtensionContext) {
                 worktreeName = item.worktreeName;
             } else if (item instanceof AutomationSourceItem) {
                 folderPath = item.resourceUri.fsPath;
+                worktreeName = unifiedBusinessProcessesProvider.selectedWorktree;
             } else {
                 folderPath = item.resourceUri.fsPath;
+                worktreeName = unifiedBusinessProcessesProvider.selectedWorktree;
             }
             return deploymentCommands.startLiveDevServerCommand(context, folderPath, unifiedBusinessProcessesProvider, worktreeName);
         });
