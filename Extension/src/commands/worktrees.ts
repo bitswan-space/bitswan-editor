@@ -154,58 +154,7 @@ export async function deleteWorktreeCommand(
     }
 }
 
-export async function mergeWorktreeCommand(
-    context: vscode.ExtensionContext,
-    item: WorktreeItem,
-    worktreesProvider: WorktreesViewProvider
-): Promise<void> {
-    if (!item?.name) {
-        vscode.window.showErrorMessage('No worktree selected.');
-        return;
-    }
 
-    const confirmation = await vscode.window.showWarningMessage(
-        `Merge worktree "${item.name}" into the current branch?`,
-        { modal: true },
-        'Merge'
-    );
-    if (confirmation !== 'Merge') {
-        return;
-    }
-
-    try {
-        const details = await getDeployDetails(context);
-        if (details) {
-            try {
-                const url = urlJoin(details.deployUrl, 'worktrees', item.name, 'merge');
-                const response = await axios.post(url, {}, {
-                    headers: { Authorization: `Bearer ${details.deploySecret}` },
-                });
-                const resultMsg = response.data?.message || 'Merge completed successfully.';
-                vscode.window.showInformationMessage(`Worktree "${item.name}": ${resultMsg}`);
-                worktreesProvider.refresh();
-                return;
-            } catch (apiErr: any) {
-                if (apiErr?.response?.status !== 404) {
-                    const msg = apiErr?.response?.data?.detail || apiErr?.message || apiErr;
-                    vscode.window.showErrorMessage(`Failed to merge worktree: ${msg}`);
-                    return;
-                }
-            }
-        }
-
-        // Fallback: local git
-        const { stdout: currentBranch } = await runGit(['rev-parse', '--abbrev-ref', 'HEAD']);
-        await runGit(['merge', item.name]);
-        const worktreePath = path.join(WORKTREES_DIR, item.name);
-        await runGit(['worktree', 'remove', worktreePath]).catch(() => {});
-        await runGit(['branch', '-d', item.name]).catch(() => {});
-        vscode.window.showInformationMessage(`Branch "${item.name}" merged into "${currentBranch}" and worktree removed.`);
-        worktreesProvider.refresh();
-    } catch (error: any) {
-        vscode.window.showErrorMessage(`Failed to merge worktree: ${error?.message || error}`);
-    }
-}
 
 export async function openAgentTerminalCommand(
     context: vscode.ExtensionContext,
