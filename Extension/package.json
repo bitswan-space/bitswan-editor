@@ -408,12 +408,6 @@
         "category": "BitSwan"
       },
       {
-        "command": "bitswan.mergeWorktree",
-        "title": "Merge Worktree",
-        "icon": "$(git-merge)",
-        "category": "BitSwan"
-      },
-      {
         "command": "bitswan.openAgentTerminal",
         "title": "Open Agent Terminal",
         "icon": "$(terminal)",
@@ -779,11 +773,6 @@
           "command": "bitswan.viewWorktreeDiff",
           "when": "viewItem == worktreeItem",
           "group": "3_git"
-        },
-        {
-          "command": "bitswan.mergeWorktree",
-          "when": "viewItem == worktreeItem",
-          "group": "4_management"
         },
         {
           "command": "bitswan.deleteWorktree",
