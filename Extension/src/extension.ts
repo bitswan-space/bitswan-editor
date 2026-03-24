@@ -36,7 +36,7 @@ import * as filesystemCommands from './commands/filesystem';
 import { initUserInfo } from './services/user_info';
 import { WorktreesViewProvider } from './views/worktrees_view';
 import { createWorktreeCommand as createWorktreeCmd, deleteWorktreeCommand as deleteWorktreeCmd, mergeWorktreeCommand as mergeWorktreeCmd, openAgentTerminalCommand as openAgentTerminalCmd, viewWorktreeDiffCommand as viewWorktreeDiffCmd } from './commands/worktrees';
-import { AgentSessionPanel } from './commands/agent_sessions';
+import { AgentSessionPanel, startAgentSession } from './commands/agent_sessions';
 import { RequirementsPanel } from './views/requirements_view';
 
 // Defining logging channel
@@ -181,7 +181,11 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('bitswan.createWorktree', () => createWorktreeCmd(context, worktreesProvider)),
         vscode.commands.registerCommand('bitswan.deleteWorktree', (item) => deleteWorktreeCmd(context, item, worktreesProvider)),
         vscode.commands.registerCommand('bitswan.mergeWorktree', (item) => mergeWorktreeCmd(context, item, worktreesProvider)),
-        vscode.commands.registerCommand('bitswan.openAgentTerminal', (item) => openAgentTerminalCmd(context, item)),
+        vscode.commands.registerCommand('bitswan.openAgentTerminal', (item) => {
+            if (item?.name) {
+                return startAgentSession(context, item.name);
+            }
+        }),
         vscode.commands.registerCommand('bitswan.viewWorktreeDiff', (item) => viewWorktreeDiffCmd(context, item)),
         vscode.commands.registerCommand('bitswan.openSessionBrowser', () => AgentSessionPanel.createOrShow(context)),
         vscode.commands.registerCommand('bitswan.openRequirementsEditor', () => RequirementsPanel.createOrShow(context)),

@@ -584,7 +584,7 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
         // Action buttons at the bottom
         businessProcesses.push(
-            new ActionButtonItem('Agent Sessions', 'bitswan.openSessionBrowser', 'terminal', 'action:agent-sessions'),
+            new ActionButtonItem('Coding Agents', 'bitswan.openSessionBrowser', 'terminal', 'action:coding-agents'),
             new ActionButtonItem('Requirements Editor', 'bitswan.openRequirementsEditor', 'checklist', 'action:requirements'),
         );
 
