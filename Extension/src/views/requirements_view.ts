@@ -296,8 +296,9 @@ export class RequirementsPanel {
         .btn-ghost:hover { background:var(--status-fail); color:#fff; }
         /* Tree cards */
         .req-node { margin-bottom:6px; position:relative; }
-        .req-card { border:1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.25)); border-radius:6px; padding:8px 12px; background:var(--vscode-editor-background); position:relative; }
-        .req-card:hover { border-color:var(--vscode-focusBorder, rgba(128,128,128,0.5)); }
+        .req-card { border:1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.25)); border-radius:6px; padding:8px 12px; background:var(--vscode-editor-background); position:relative; outline:none; }
+        .req-card:hover, .req-card:focus { border-color:var(--vscode-focusBorder, rgba(128,128,128,0.5)); }
+        .req-card:focus { box-shadow:0 0 0 1px var(--vscode-focusBorder, #007acc); }
         .req-card-header { display:flex; align-items:center; gap:8px; }
         .req-id { font-weight:600; font-size:11px; color:var(--vscode-descriptionForeground); }
         .status-badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:10px; font-weight:600; text-transform:uppercase; cursor:pointer; user-select:none; }
@@ -385,7 +386,6 @@ export class RequirementsPanel {
         }
 
         function showAddInput(parentId, afterElement) {
-            // Remove any existing add input
             var existing = document.querySelector('.add-input-row');
             if (existing) existing.remove();
 
@@ -395,6 +395,18 @@ export class RequirementsPanel {
             var ta = document.createElement('textarea');
             ta.style.cssText = 'flex:1; padding:6px 8px; min-height:36px; background:var(--vscode-input-background); color:var(--vscode-input-foreground); border:1px solid var(--vscode-focusBorder); border-radius:4px; font-size:12px; font-family:inherit; resize:vertical;';
             ta.placeholder = parentId ? 'Child requirement...' : 'New requirement...';
+            ta.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    var desc = ta.value.trim();
+                    if (desc) {
+                        vscodeApi.postMessage({ type: 'addRequirement', key: currentBpKey, requirement: { description: desc, status: 'pending', parent: parentId } });
+                    }
+                    row.remove();
+                } else if (e.key === 'Escape') {
+                    row.remove();
+                }
+            });
             row.appendChild(ta);
             var okBtn = mkEl('button', 'btn btn-sm', 'Add');
             okBtn.style.marginTop = '4px';
@@ -412,6 +424,23 @@ export class RequirementsPanel {
             row.appendChild(cancelBtn);
             afterElement.insertAdjacentElement('afterend', row);
             ta.focus();
+        }
+
+        // Keyboard navigation: get all focusable cards in DOM order
+        function getAllCards() {
+            return Array.from(content.querySelectorAll('.req-card'));
+        }
+
+        function focusCardByOffset(offset) {
+            var cards = getAllCards();
+            if (cards.length === 0) return;
+            var current = document.activeElement;
+            var idx = cards.indexOf(current);
+            if (idx === -1) idx = offset > 0 ? -1 : cards.length;
+            var next = idx + offset;
+            if (next >= 0 && next < cards.length) {
+                cards[next].focus();
+            }
         }
 
         function renderContent() {
@@ -442,6 +471,28 @@ export class RequirementsPanel {
             nodes.forEach(function(node) {
                 var wrapper = mkEl('div', 'req-node');
                 var card = mkEl('div', 'req-card');
+                card.setAttribute('tabindex', '0');
+                card.setAttribute('data-req-id', node.req.id);
+
+                // Keyboard: Enter to edit description, arrows to navigate
+                (function(n, c) {
+                    c.addEventListener('keydown', function(e) {
+                        if (e.target !== c) return; // only when card itself is focused
+                        if (e.key === 'ArrowDown') { e.preventDefault(); focusCardByOffset(1); }
+                        else if (e.key === 'ArrowUp') { e.preventDefault(); focusCardByOffset(-1); }
+                        else if (e.key === 'Enter') {
+                            e.preventDefault();
+                            var descEl = c.querySelector('.req-desc');
+                            if (descEl) descEl.click(); // trigger inline edit
+                        }
+                        else if (e.key === ' ') {
+                            e.preventDefault();
+                            // cycle status
+                            vscodeApi.postMessage({ type: 'updateRequirement', key: currentBpKey,
+                                requirement: Object.assign({}, n.req, { status: cycleStatus(n.req.status || 'pending') }) });
+                        }
+                    });
+                })(node, card);
 
                 // Header row
                 var header = mkEl('div', 'req-card-header');
@@ -482,7 +533,10 @@ export class RequirementsPanel {
                         } else { desc.textContent = node.req.description || ''; }
                     }
                     editTa.addEventListener('blur', commit);
-                    editTa.addEventListener('keydown', function(e) { if (e.key === 'Escape') { editingId = null; desc.textContent = node.req.description || ''; } });
+                    editTa.addEventListener('keydown', function(e) {
+                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); editTa.blur(); }
+                        else if (e.key === 'Escape') { editingId = null; desc.textContent = node.req.description || ''; card.focus(); }
+                    });
                 });
                 card.appendChild(desc);
 
