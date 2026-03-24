@@ -147,11 +147,13 @@ export class AgentSessionPanel {
                 break;
             case 'startSession': {
                 const worktree = msg.worktree;
-                if (!worktree) {
-                    vscode.window.showErrorMessage('Please select a worktree.');
-                    return;
-                }
+                if (!worktree) { return; }
                 await startAgentSession(this.context, worktree);
+                break;
+            }
+            case 'createWorktree': {
+                await vscode.commands.executeCommand('bitswan.createWorktree');
+                this.sendWorktrees();
                 break;
             }
             case 'playSession': {
@@ -259,17 +261,10 @@ export class AgentSessionPanel {
             flex-shrink: 0;
         }
         .header h2 { margin: 0; font-size: 16px; }
-        .start-section {
+        .worktree-buttons {
             padding: 12px 16px;
             border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.3));
-            display: flex; align-items: center; gap: 10px; flex-shrink: 0;
-        }
-        .start-section select {
-            padding: 5px 8px;
-            background: var(--vscode-input-background);
-            color: var(--vscode-input-foreground);
-            border: 1px solid var(--vscode-input-border, rgba(128,128,128,0.4));
-            border-radius: 6px; font-size: 12px; min-width: 180px;
+            display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0;
         }
         .btn {
             padding: 6px 14px;
@@ -330,10 +325,7 @@ export class AgentSessionPanel {
 <body>
     <div class="header"><h2>Coding Agents</h2></div>
 
-    <div class="start-section">
-        <select id="worktreeSelect"><option value="">Select worktree...</option></select>
-        <button class="btn" id="startBtn">Start Session</button>
-    </div>
+    <div class="worktree-buttons" id="worktreeButtons"></div>
 
     <div class="content">
         <div class="session-list" id="sessionList">
@@ -371,8 +363,7 @@ export class AgentSessionPanel {
         const playerWrapper = document.getElementById('player-wrapper');
         const playerTitle = document.getElementById('playerTitle');
         const backBtn = document.getElementById('backBtn');
-        const worktreeSelect = document.getElementById('worktreeSelect');
-        const startBtn = document.getElementById('startBtn');
+        const worktreeButtons = document.getElementById('worktreeButtons');
 
         let allSessions = [];
 
@@ -380,6 +371,26 @@ export class AgentSessionPanel {
             const div = document.createElement('div');
             div.textContent = str;
             return div.innerHTML;
+        }
+
+        function renderWorktreeButtons(worktrees) {
+            worktreeButtons.innerHTML = '';
+            worktrees.forEach(function(wt) {
+                var btn = document.createElement('button');
+                btn.className = 'btn';
+                btn.textContent = wt;
+                btn.addEventListener('click', function() {
+                    vscodeApi.postMessage({ type: 'startSession', worktree: wt });
+                });
+                worktreeButtons.appendChild(btn);
+            });
+            var createBtn = document.createElement('button');
+            createBtn.className = 'btn btn-secondary';
+            createBtn.textContent = '+ New Worktree';
+            createBtn.addEventListener('click', function() {
+                vscodeApi.postMessage({ type: 'createWorktree' });
+            });
+            worktreeButtons.appendChild(createBtn);
         }
 
         function renderSessions() {
@@ -401,14 +412,6 @@ export class AgentSessionPanel {
                 sessionsBody.appendChild(tr);
             });
         }
-
-        startBtn.addEventListener('click', function() {
-            var wt = worktreeSelect.value;
-            if (!wt) {
-                return;
-            }
-            vscodeApi.postMessage({ type: 'startSession', worktree: wt });
-        });
 
         sessionsBody.addEventListener('click', function(e) {
             var btn = e.target.closest('.play-btn');
@@ -433,13 +436,7 @@ export class AgentSessionPanel {
             if (!msg || !msg.type) return;
             switch (msg.type) {
                 case 'worktrees':
-                    worktreeSelect.innerHTML = '<option value="">Select worktree...</option>';
-                    (msg.worktrees || []).forEach(function(wt) {
-                        var opt = document.createElement('option');
-                        opt.value = wt;
-                        opt.textContent = wt;
-                        worktreeSelect.appendChild(opt);
-                    });
+                    renderWorktreeButtons(msg.worktrees || []);
                     break;
                 case 'sessions':
                     allSessions = msg.sessions || [];
