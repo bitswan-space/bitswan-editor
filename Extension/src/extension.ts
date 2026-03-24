@@ -34,6 +34,10 @@ import { getJupyterServers } from './commands/jupyter-server';
 import { startBitswanKernel, stopBitswanKernel, checkAndUpdateKernelStatus, updateKernelStatusContext } from './commands/kernel';
 import * as filesystemCommands from './commands/filesystem';
 import { initUserInfo } from './services/user_info';
+import { WorktreesViewProvider } from './views/worktrees_view';
+import { createWorktreeCommand as createWorktreeCmd, deleteWorktreeCommand as deleteWorktreeCmd, mergeWorktreeCommand as mergeWorktreeCmd, openAgentTerminalCommand as openAgentTerminalCmd, viewWorktreeDiffCommand as viewWorktreeDiffCmd } from './commands/worktrees';
+import { AgentSessionPanel } from './commands/agent_sessions';
+import { RequirementsPanel } from './views/requirements_view';
 
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
@@ -141,9 +145,10 @@ export function activate(context: vscode.ExtensionContext) {
     const secretsTreeProvider = new SecretsTreeViewProvider(context);
 
     // Register Business Processes views
-    vscode.window.createTreeView('bitswan-unified-business-processes', {
+    const bpTreeView = vscode.window.createTreeView('bitswan-unified-business-processes', {
         treeDataProvider: unifiedBusinessProcessesProvider,
     });
+    unifiedBusinessProcessesProvider.setView(bpTreeView);
 
     vscode.window.createTreeView('bitswan-workspaces', {
         treeDataProvider: workspacesProvider,
@@ -163,6 +168,35 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     context.subscriptions.push(secretsTreeProvider);
+
+    // Register Worktrees view
+    const worktreesProvider = new WorktreesViewProvider(context);
+    vscode.window.createTreeView('bitswanWorktrees', {
+        treeDataProvider: worktreesProvider,
+    });
+
+    // Register worktree and agent commands
+    context.subscriptions.push(
+        vscode.commands.registerCommand('bitswan.createWorktree', () => createWorktreeCmd(context, worktreesProvider)),
+        vscode.commands.registerCommand('bitswan.deleteWorktree', (item) => deleteWorktreeCmd(context, item, worktreesProvider)),
+        vscode.commands.registerCommand('bitswan.mergeWorktree', (item) => mergeWorktreeCmd(context, item, worktreesProvider)),
+        vscode.commands.registerCommand('bitswan.openAgentTerminal', (item) => openAgentTerminalCmd(context, item)),
+        vscode.commands.registerCommand('bitswan.viewWorktreeDiff', (item) => viewWorktreeDiffCmd(context, item)),
+        vscode.commands.registerCommand('bitswan.openSessionBrowser', () => AgentSessionPanel.createOrShow(context)),
+        vscode.commands.registerCommand('bitswan.openRequirementsEditor', () => RequirementsPanel.createOrShow(context)),
+        vscode.commands.registerCommand('bitswan.refreshWorktrees', () => worktreesProvider.refresh()),
+        vscode.commands.registerCommand('bitswan.selectWorktree', async () => {
+            const worktrees = await worktreesProvider.getChildren();
+            const items: vscode.QuickPickItem[] = [
+                { label: 'Main', description: 'Main workspace tree' },
+                ...worktrees.map(wt => ({ label: wt.name, description: wt.branch })),
+            ];
+            const picked = await vscode.window.showQuickPick(items, { placeHolder: 'Select workspace or worktree' });
+            if (picked) {
+                unifiedBusinessProcessesProvider.selectWorktree(picked.label === 'Main' ? undefined : picked.label);
+            }
+        }),
+    );
 
     let deployFromToolbarCommand = vscode.commands.registerCommand('bitswan.deployAutomationFromToolbar', 
         async (item: string) => deploymentCommands.deployFromNotebookToolbarCommand(context, item, "automations", unifiedBusinessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider));
@@ -232,6 +266,7 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
             let folderPath: string;
+            let worktreeName: string | undefined;
             if (item instanceof StageItem) {
                 // StageItem has sourceUri which points to the automation source directory
                 if (!item.sourceUri) {
@@ -239,12 +274,13 @@ export function activate(context: vscode.ExtensionContext) {
                     return;
                 }
                 folderPath = item.sourceUri.fsPath;
+                worktreeName = item.worktreeName;
             } else if (item instanceof AutomationSourceItem) {
                 folderPath = item.resourceUri.fsPath;
             } else {
                 folderPath = item.resourceUri.fsPath;
             }
-            return deploymentCommands.startLiveDevServerCommand(context, folderPath, unifiedBusinessProcessesProvider);
+            return deploymentCommands.startLiveDevServerCommand(context, folderPath, unifiedBusinessProcessesProvider, worktreeName);
         });
 
     let buildImageFromToolbarCommand = vscode.commands.registerCommand('bitswan.buildImageFromToolbar', 

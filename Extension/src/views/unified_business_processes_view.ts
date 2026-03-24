@@ -101,16 +101,23 @@ export class StageItem extends vscode.TreeItem {
         public readonly deploymentId: string, // The actual deployment_id (e.g., "my-automation-dev")
         public readonly checksum: string | null = null,
         public readonly sourceUri?: vscode.Uri, // Filesystem path for the automation source
-        public readonly serviceNames: string[] = [] // Service dependencies from automation.toml (e.g., ['kafka', 'couchdb'])
+        public readonly serviceNames: string[] = [], // Service dependencies from automation.toml (e.g., ['kafka', 'couchdb'])
+        public readonly worktreeName?: string // Set for worktree live-dev stages
     ) {
         // Display name: "Live Dev" for live-dev, capitalized for others
-        const stageDisplayName = stage === 'live-dev' ? 'Live Dev' : stage.charAt(0).toUpperCase() + stage.slice(1);
+        const stageDisplayName = worktreeName
+            ? `Live Dev (${worktreeName})`
+            : stage === 'live-dev' ? 'Live Dev' : stage.charAt(0).toUpperCase() + stage.slice(1);
         super(stageDisplayName, vscode.TreeItemCollapsibleState.None);
-        this.id = `st:${automationSourceName}/${stage}`;
+        this.id = worktreeName
+            ? `st:${automationSourceName}/live-dev-wt-${worktreeName}`
+            : `st:${automationSourceName}/${stage}`;
 
         if (sourceUri) {
             this.resourceUri = sourceUri;
         }
+
+        const worktreeTag = worktreeName ? ',worktreeLiveDev' : '';
 
         if (automation) {
             // Stage is deployed - show automation details
@@ -125,13 +132,13 @@ export class StageItem extends vscode.TreeItem {
             const state = automation.state ?? 'exited';
             const urlStatus = automation.automationUrl ? 'url' : 'nourl';
             const svcTags = serviceNames.map(s => `svc:${s}`).join(',');
-            this.contextValue = `automationStage,${stage},deployed,${status},${state},urlStatus:${urlStatus}${sourceUri ? ',fsRoot' : ''}${svcTags ? ',' + svcTags : ''}`;
+            this.contextValue = `automationStage,${stage},deployed,${status},${state},urlStatus:${urlStatus}${sourceUri ? ',fsRoot' : ''}${svcTags ? ',' + svcTags : ''}${worktreeTag}`;
             this.iconPath = automation.iconPath;
         } else {
             // Stage not deployed - greyed out
             this.tooltip = `${stageDisplayName} - Not deployed`;
             this.description = 'Not deployed';
-            this.contextValue = `automationStage,${stage},notDeployed${sourceUri ? ',fsRoot' : ''}`;
+            this.contextValue = `automationStage,${stage},notDeployed${sourceUri ? ',fsRoot' : ''}${worktreeTag}`;
             this.iconPath = new vscode.ThemeIcon('circle-outline', new vscode.ThemeColor('disabledForeground'));
         }
     }
@@ -278,6 +285,21 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
     private refreshTimer: ReturnType<typeof setTimeout> | undefined;
     // Track automation source items so we can fire targeted refreshes
     private _knownAutomationSources: AutomationSourceItem[] = [];
+    // Worktree mode: undefined = main tree, string = worktree name
+    private _selectedWorktree: string | undefined;
+    private _view: vscode.TreeView<UnifiedTreeItem> | undefined;
+
+    get selectedWorktree(): string | undefined { return this._selectedWorktree; }
+
+    setView(view: vscode.TreeView<UnifiedTreeItem>): void { this._view = view; }
+
+    selectWorktree(name: string | undefined): void {
+        this._selectedWorktree = name;
+        if (this._view) {
+            this._view.message = name ? `Worktree: ${name}` : undefined;
+        }
+        this.refresh();
+    }
 
     constructor(private context: vscode.ExtensionContext) {
         this.separatorIconPaths = {
@@ -436,18 +458,30 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         }
     }
 
+    /**
+     * Returns the effective scan root for the current mode.
+     * In worktree mode, scans the worktree directory instead of the workspace.
+     */
+    private getEffectiveScanRoot(): string | undefined {
+        if (this._selectedWorktree) {
+            const wtRoot = path.join('/workspace/worktrees', this._selectedWorktree);
+            return fs.existsSync(wtRoot) ? wtRoot : undefined;
+        }
+        return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    }
+
     private getBusinessProcesses(): (BusinessProcessItem | OtherAutomationsItem | CheckoutsItem)[] {
         const businessProcesses: (BusinessProcessItem | OtherAutomationsItem | CheckoutsItem)[] = [];
 
-        if (!vscode.workspace.workspaceFolders) {
+        const scanRoot = this.getEffectiveScanRoot();
+        if (!scanRoot) {
             return [new OtherAutomationsItem()];
         }
 
-        const workspacePath = vscode.workspace.workspaceFolders[0].uri.fsPath;
-        const processDirs = this.findDirectoriesWithProcessToml(workspacePath);
+        const processDirs = this.findDirectoriesWithProcessToml(scanRoot);
 
         for (const processDir of processDirs) {
-            const relativePath = path.relative(workspacePath, processDir);
+            const relativePath = path.relative(scanRoot, processDir);
             const processConfigPath = path.join(processDir, 'process.toml');
 
             businessProcesses.push(new BusinessProcessItem(
@@ -460,17 +494,22 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         // Always include "Other automations" at the end
         businessProcesses.push(new OtherAutomationsItem());
 
-        // Include "Checkouts" if the checkouts directory exists and has entries
-        const checkoutsDir = path.join(workspacePath, '..', 'checkouts');
-        if (fs.existsSync(checkoutsDir)) {
-            try {
-                const entries = fs.readdirSync(checkoutsDir, { withFileTypes: true });
-                const hasCheckouts = entries.some(e => e.isDirectory());
-                if (hasCheckouts) {
-                    businessProcesses.push(new CheckoutsItem());
+        // Include "Checkouts" only in main mode
+        if (!this._selectedWorktree) {
+            const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (workspacePath) {
+                const checkoutsDir = path.join(workspacePath, '..', 'checkouts');
+                if (fs.existsSync(checkoutsDir)) {
+                    try {
+                        const entries = fs.readdirSync(checkoutsDir, { withFileTypes: true });
+                        const hasCheckouts = entries.some(e => e.isDirectory());
+                        if (hasCheckouts) {
+                            businessProcesses.push(new CheckoutsItem());
+                        }
+                    } catch {
+                        // ignore
+                    }
                 }
-            } catch {
-                // ignore
             }
         }
 
@@ -478,12 +517,12 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
     }
 
     private getAutomationSourcesForBusinessProcess(businessProcessName: string): (AutomationSourceItem | SubfolderItem)[] {
-        if (!vscode.workspace.workspaceFolders) {
+        const scanRoot = this.getEffectiveScanRoot();
+        if (!scanRoot) {
             return [];
         }
 
-        const workspacePath = vscode.workspace.workspaceFolders[0].uri.fsPath;
-        const businessProcessPath = path.join(workspacePath, businessProcessName);
+        const businessProcessPath = path.join(scanRoot, businessProcessName);
 
         console.log(`[DEBUG] getAutomationSourcesForBusinessProcess called for business process: "${businessProcessName}"`);
         console.log(`[DEBUG] Business process path: "${businessProcessPath}"`);
@@ -500,13 +539,13 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
     }
 
     private getOtherAutomationSources(): (AutomationSourceItem | SubfolderItem | AutomationItem)[] {
-        if (!vscode.workspace.workspaceFolders) {
+        const scanRoot = this.getEffectiveScanRoot();
+        if (!scanRoot) {
             return [];
         }
 
-        const workspacePath = vscode.workspace.workspaceFolders[0].uri.fsPath;
-        const allAutomationSources = this.getAllAutomationSources(workspacePath);
-        const businessProcessSources = this.getAllBusinessProcessSources(workspacePath);
+        const allAutomationSources = this.getAllAutomationSources(scanRoot);
+        const businessProcessSources = this.getAllBusinessProcessSources(scanRoot);
 
         // Find automation sources that don't belong to any business process
         const otherSources = allAutomationSources.filter(source =>
@@ -517,7 +556,7 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
         // Build nested tree structure for automation sources
         const sourceItems = otherSources.map(source => new AutomationSourceItem(source.name, source.resourceUri));
-        const treeItems = this.buildSubfolderTree(sourceItems, workspacePath);
+        const treeItems = this.buildSubfolderTree(sourceItems, scanRoot);
         const result: (AutomationSourceItem | SubfolderItem | AutomationItem)[] = [...treeItems];
 
         // Add orphaned automations (automations that don't belong to any automation source)
@@ -569,24 +608,20 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
     private async getStagesForSource(sourceName: string): Promise<StageItem[]> {
         const automations = this.context.globalState.get<any[]>('automations', []);
-        
+
         // Extract just the automation source name from the full path
         const automationSourceName = sourceName.split('/').pop() || sourceName;
         const sanitizedSourceName = sanitizeName(automationSourceName);
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        const sourceUri = workspaceFolder
-            ? vscode.Uri.file(path.join(workspaceFolder.uri.fsPath, sourceName))
+        const scanRoot = this.getEffectiveScanRoot();
+        const sourceUri = scanRoot
+            ? vscode.Uri.file(path.join(scanRoot, sourceName))
             : undefined;
-        
-        console.log(`[DEBUG] getStagesForSource called with sourceName: "${sourceName}"`);
-        console.log(`[DEBUG] Sanitized sourceName: "${sanitizedSourceName}"`);
 
         // Read service dependencies from automation.toml
         const serviceNames: string[] = [];
         if (sourceUri) {
             try {
                 const config = getAutomationDeployConfig(sourceUri.fsPath);
-                console.log(`[DEBUG] getStagesForSource: sourceUri="${sourceUri.fsPath}", services=`, config.services);
                 if (config.services) {
                     for (const [svcName, svcConf] of Object.entries(config.services)) {
                         if (svcConf.enabled) {
@@ -594,47 +629,24 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                         }
                     }
                 }
-                console.log(`[DEBUG] getStagesForSource: serviceNames=[${serviceNames.join(', ')}]`);
             } catch (e) {
-                console.log(`[DEBUG] getStagesForSource: error reading automation config:`, e);
+                // ignore
             }
-        } else {
-            console.log(`[DEBUG] getStagesForSource: no sourceUri, cannot read services`);
         }
 
-        // Map stages to their deployment IDs
-        const stageDeploymentIds: Record<'live-dev' | 'dev' | 'staging' | 'production', string> = {
-            'live-dev': `${sanitizedSourceName}-live-dev`,
-            dev: `${sanitizedSourceName}-dev`,
-            staging: `${sanitizedSourceName}-staging`,
-            production: sanitizedSourceName // Production uses base name without suffix
-        };
-
-        // Find automations for each stage (live-dev first for easy access during development)
         const stages: StageItem[] = [];
-        const stagesList: Array<'live-dev' | 'dev' | 'staging' | 'production'> = ['live-dev', 'dev', 'staging', 'production'];
-        
-        for (const stage of stagesList) {
-            const deploymentId = stageDeploymentIds[stage];
-            
-            // Find automation matching this deployment_id
-            const automation = automations.find(a => {
-                // Check if deployment_id matches
-                const matches = a.deployment_id === deploymentId || a.deploymentId === deploymentId;
-                
-                // Also check if relative_path matches for production (which might not have -dev/-staging suffix)
-                if (!matches && stage === 'production') {
-                    const automationSourceFromPath = a.relativePath?.split('/').pop() || '';
-                    const sanitizedAutomationSource = sanitizeName(automationSourceFromPath);
-                    return sanitizedAutomationSource === sanitizedSourceName && 
-                           (a.stage === '' || a.stage === 'production' || !a.stage);
-                }
-                
-                return matches;
-            });
-            
+
+        if (this._selectedWorktree) {
+            // Worktree mode: only live-dev stage
+            const wtName = this._selectedWorktree;
+            const deploymentId = `${sanitizedSourceName}-wt-${wtName}-live-dev`;
+            const wtSourceUri = sourceUri; // already points into the worktree via scanRoot
+
+            const automation = automations.find(a =>
+                (a.deployment_id === deploymentId || a.deploymentId === deploymentId)
+            );
+
             if (automation) {
-                // Stage is deployed
                 const automationItem = new AutomationItem(
                     automation.name,
                     automation.state,
@@ -644,17 +656,54 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                     automation.automation_url || automation.automationUrl,
                     automation.relative_path || automation.relativePath
                 );
-                
-                // Use version_hash from the automation object instead of fetching history
                 const checksum = automation.version_hash || automation.versionHash || null;
-                
-                stages.push(new StageItem(stage, sourceName, automationItem, deploymentId, checksum, sourceUri, serviceNames));
+                stages.push(new StageItem('live-dev', sourceName, automationItem, deploymentId, checksum, wtSourceUri, serviceNames, wtName));
             } else {
-                // Stage not deployed - show greyed out
-                stages.push(new StageItem(stage, sourceName, null, deploymentId, null, sourceUri, serviceNames));
+                stages.push(new StageItem('live-dev', sourceName, null, deploymentId, null, wtSourceUri, serviceNames, wtName));
+            }
+        } else {
+            // Main mode: standard 4 stages
+            const stageDeploymentIds: Record<'live-dev' | 'dev' | 'staging' | 'production', string> = {
+                'live-dev': `${sanitizedSourceName}-live-dev`,
+                dev: `${sanitizedSourceName}-dev`,
+                staging: `${sanitizedSourceName}-staging`,
+                production: sanitizedSourceName
+            };
+
+            const stagesList: Array<'live-dev' | 'dev' | 'staging' | 'production'> = ['live-dev', 'dev', 'staging', 'production'];
+
+            for (const stage of stagesList) {
+                const deploymentId = stageDeploymentIds[stage];
+
+                const automation = automations.find(a => {
+                    const matches = a.deployment_id === deploymentId || a.deploymentId === deploymentId;
+                    if (!matches && stage === 'production') {
+                        const automationSourceFromPath = a.relativePath?.split('/').pop() || '';
+                        const sanitizedAutomationSource = sanitizeName(automationSourceFromPath);
+                        return sanitizedAutomationSource === sanitizedSourceName &&
+                               (a.stage === '' || a.stage === 'production' || !a.stage);
+                    }
+                    return matches;
+                });
+
+                if (automation) {
+                    const automationItem = new AutomationItem(
+                        automation.name,
+                        automation.state,
+                        automation.status,
+                        automation.deployment_id || automation.deploymentId,
+                        automation.active,
+                        automation.automation_url || automation.automationUrl,
+                        automation.relative_path || automation.relativePath
+                    );
+                    const checksum = automation.version_hash || automation.versionHash || null;
+                    stages.push(new StageItem(stage, sourceName, automationItem, deploymentId, checksum, sourceUri, serviceNames));
+                } else {
+                    stages.push(new StageItem(stage, sourceName, null, deploymentId, null, sourceUri, serviceNames));
+                }
             }
         }
-        
+
         return stages;
     }
 
@@ -745,6 +794,8 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                 // Recursively check subdirectories
                 for (const entry of entries) {
                     if (entry.isDirectory()) {
+                        // Skip worktrees directory to avoid duplicates (it's a bind mount of the same data)
+                        if (entry.name === 'worktrees') { continue; }
                         const fullPath = path.join(dirPath, entry.name);
                         findProcessToml(fullPath);
                     }
@@ -760,6 +811,7 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
     private getAutomationSourcesInDirectory(dirPath: string, businessProcessName: string): AutomationSourceItem[] {
         const sources: AutomationSourceItem[] = [];
+        const scanRoot = this.getEffectiveScanRoot() || vscode.workspace.workspaceFolders![0].uri.fsPath;
 
         try {
             const entries = fs.readdirSync(dirPath, { withFileTypes: true });
@@ -770,12 +822,12 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                     if (entry.name === 'templates') {
                         continue;
                     }
-                    
+
                     const fullPath = path.join(dirPath, entry.name);
-                    
+
                     // Check if this directory contains automation.toml or pipelines.conf (automation source marker)
                     if (fs.existsSync(path.join(fullPath, 'automation.toml')) || fs.existsSync(path.join(fullPath, 'pipelines.conf'))) {
-                        const relativePath = path.relative(vscode.workspace.workspaceFolders![0].uri.fsPath, fullPath);
+                        const relativePath = path.relative(scanRoot, fullPath);
                         sources.push(new AutomationSourceItem(
                             relativePath,
                             vscode.Uri.file(fullPath),
@@ -793,6 +845,7 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
     private getAutomationSourcesInDirectoryRecursive(dirPath: string, businessProcessName: string): AutomationSourceItem[] {
         const sources: AutomationSourceItem[] = [];
+        const scanRoot = this.getEffectiveScanRoot() || vscode.workspace.workspaceFolders![0].uri.fsPath;
 
         const findAutomationSources = (currentPath: string): void => {
             try {
@@ -814,7 +867,7 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
                         // Check if this directory contains automation.toml or pipelines.conf
                         if (fs.existsSync(path.join(fullPath, 'automation.toml')) || fs.existsSync(path.join(fullPath, 'pipelines.conf'))) {
-                            const relativePath = path.relative(vscode.workspace.workspaceFolders![0].uri.fsPath, fullPath);
+                            const relativePath = path.relative(scanRoot, fullPath);
                             sources.push(new AutomationSourceItem(
                                 relativePath,
                                 vscode.Uri.file(fullPath),
