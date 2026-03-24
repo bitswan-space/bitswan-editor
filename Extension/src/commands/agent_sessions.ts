@@ -252,13 +252,11 @@ export class AgentSessionPanel {
     }
 
     private _getHtmlForWebview(playerJsUri: vscode.Uri, playerCssUri: vscode.Uri): string {
-        const cspSource = this.panel.webview.cspSource;
         return /* html */`
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${cspSource}; script-src 'unsafe-inline' ${cspSource};">
     <style>
         :root {
             color-scheme: light dark;
@@ -332,7 +330,10 @@ export class AgentSessionPanel {
         }
         #player-wrapper {
             flex: 1; overflow: auto; padding: 8px;
-            display: flex; justify-content: center; align-items: flex-start;
+            min-height: 400px;
+        }
+        #player-wrapper .ap-wrapper {
+            width: 100% !important;
         }
         .session-list { display: block; }
         .session-list.hidden { display: none; }
@@ -467,10 +468,10 @@ export class AgentSessionPanel {
                         AsciinemaPlayer.create(
                             { data: msg.data },
                             playerWrapper,
-                            { cols: 120, rows: 35, autoPlay: true, fit: 'width', theme: 'asciinema' }
+                            { autoPlay: true, terminalFontSize: '13px' }
                         );
                     } catch (err) {
-                        playerWrapper.textContent = 'Failed to initialize player: ' + String(err);
+                        playerWrapper.textContent = 'Player error: ' + String(err);
                     }
                     break;
             }

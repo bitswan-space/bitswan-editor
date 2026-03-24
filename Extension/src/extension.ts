@@ -169,11 +169,8 @@ export function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(secretsTreeProvider);
 
-    // Register Worktrees view
+    // Worktrees provider (used by BP sidebar's Worktrees section, no standalone view)
     const worktreesProvider = new WorktreesViewProvider(context);
-    vscode.window.createTreeView('bitswanWorktrees', {
-        treeDataProvider: worktreesProvider,
-    });
     unifiedBusinessProcessesProvider.setWorktreesProvider(worktreesProvider);
 
     // Register worktree and agent commands
