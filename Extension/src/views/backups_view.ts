@@ -158,8 +158,8 @@ export class BackupsPanel {
 <body>
     <div class="header"><h2>Backups</h2></div>
     <div class="tab-bar">
-        <div class="tab active" data-tab="config">Configuration</div>
-        <div class="tab" data-tab="snapshots">Snapshots</div>
+        <div class="tab active" data-tab="snapshots">Snapshots</div>
+        <div class="tab" data-tab="config">Configuration</div>
         <div class="tab" data-tab="key">Encryption Key</div>
     </div>
     <div class="content" id="content"></div>
@@ -167,7 +167,7 @@ export class BackupsPanel {
         const vscodeApi = acquireVsCodeApi();
         const content = document.getElementById('content');
         const tabBar = document.querySelector('.tab-bar');
-        let currentTab = 'config';
+        let currentTab = 'snapshots';
         let configData = null;
         let snapshotsData = [];
         let statusMsg = '';
@@ -328,7 +328,7 @@ export class BackupsPanel {
             }
         });
 
-        vscodeApi.postMessage({ type: 'ready' });
+        vscodeApi.postMessage({ type: 'loadSnapshots' });
     </script>
 </body>
 </html>
