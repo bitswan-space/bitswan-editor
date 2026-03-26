@@ -435,6 +435,12 @@
         "category": "BitSwan"
       },
       {
+        "command": "bitswan.openBackups",
+        "title": "Backups",
+        "icon": "$(cloud-download)",
+        "category": "BitSwan"
+      },
+      {
         "command": "bitswan.refreshWorktrees",
         "title": "Refresh Worktrees",
         "icon": "$(refresh)",
