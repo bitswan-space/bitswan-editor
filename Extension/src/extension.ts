@@ -38,6 +38,7 @@ import { WorktreesViewProvider } from './views/worktrees_view';
 import { createWorktreeCommand as createWorktreeCmd, deleteWorktreeCommand as deleteWorktreeCmd, openAgentTerminalCommand as openAgentTerminalCmd, viewWorktreeDiffCommand as viewWorktreeDiffCmd } from './commands/worktrees';
 import { AgentSessionPanel, startAgentSession } from './commands/agent_sessions';
 import { RequirementsPanel } from './views/requirements_view';
+import { BackupsPanel } from './views/backups_view';
 
 // Defining logging channel
 export let outputChannel: vscode.OutputChannel;
@@ -185,6 +186,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('bitswan.viewWorktreeDiff', (item) => viewWorktreeDiffCmd(context, item)),
         vscode.commands.registerCommand('bitswan.openSessionBrowser', () => AgentSessionPanel.createOrShow(context)),
         vscode.commands.registerCommand('bitswan.openRequirementsEditor', () => RequirementsPanel.createOrShow(context)),
+        vscode.commands.registerCommand('bitswan.openBackups', () => BackupsPanel.createOrShow(context)),
         vscode.commands.registerCommand('bitswan.refreshWorktrees', () => worktreesProvider.refresh()),
         vscode.commands.registerCommand('bitswan.selectWorktree', (name?: string) => {
             unifiedBusinessProcessesProvider.selectWorktree(name);
