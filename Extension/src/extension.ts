@@ -441,7 +441,40 @@ export function activate(context: vscode.ExtensionContext) {
                 vscode.window.showErrorMessage(`Failed to rename secret group: ${error instanceof Error ? error.message : 'Unknown error'}`);
             }
         });
- 
+
+    let deleteSecretGroupCommand = vscode.commands.registerCommand('bitswan.deleteSecretGroup',
+        async (item: SecretGroupItem) => {
+            if (!item) {
+                return;
+            }
+            const confirm = await vscode.window.showWarningMessage(
+                `Delete secret group "${item.label}"? This cannot be undone.`,
+                { modal: true },
+                'Delete'
+            );
+            if (confirm !== 'Delete') {
+                return;
+            }
+
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceFolder) {
+                vscode.window.showErrorMessage('No workspace folder found');
+                return;
+            }
+            const workspaceRoot = path.dirname(workspaceFolder);
+            const filePath = path.join(workspaceRoot, 'secrets', item.id);
+
+            try {
+                const { promises: fs } = await import('fs');
+                await fs.unlink(filePath);
+                SecretsEditorPanel.closePanel(item.id);
+                secretsTreeProvider.refresh();
+                vscode.window.showInformationMessage(`Deleted secret group "${item.label}".`);
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to delete secret group: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+        });
+
     let openExternalUrlCommand = vscode.commands.registerCommand(
         "bitswan.openExternalUrl",
         async (item: AutomationItem | StageItem) => {
@@ -956,6 +989,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(createSecretGroupCommand);
     context.subscriptions.push(openSecretGroupCommand);
     context.subscriptions.push(renameSecretGroupCommand);
+    context.subscriptions.push(deleteSecretGroupCommand);
     context.subscriptions.push(openExternalUrlCommand);
     context.subscriptions.push(restartAutomationCommand);
     context.subscriptions.push(startAutomationCommand);

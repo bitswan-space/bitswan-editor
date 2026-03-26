@@ -166,6 +166,11 @@
         "icon": "$(edit)"
       },
       {
+        "command": "bitswan.deleteSecretGroup",
+        "title": "Delete Secret Group",
+        "icon": "$(trash)"
+      },
+      {
         "command": "bitswan.addGitOps",
         "title": "Add GitOps",
         "icon": "$(add)"
@@ -758,6 +763,11 @@
           "command": "bitswan.renameSecretGroup",
           "when": "view == bitswan-secrets-manager && viewItem == secretGroup",
           "group": "navigation@1"
+        },
+        {
+          "command": "bitswan.deleteSecretGroup",
+          "when": "view == bitswan-secrets-manager && viewItem == secretGroup",
+          "group": "navigation@3"
         },
         {
           "command": "bitswan.openSecretGroup",
