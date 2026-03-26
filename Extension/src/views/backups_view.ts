@@ -72,16 +72,19 @@ export class BackupsPanel {
                     this.postMessage({ type: 'key', data: resp.data });
                     break;
                 }
-                case 'deleteKey': {
-                    await axios.delete(urlJoin(baseUrl, 'backups', 'key'), { headers });
-                    this.postMessage({ type: 'keyDeleted' });
-                    const resp = await axios.get(urlJoin(baseUrl, 'backups', 'config'), { headers });
-                    this.postMessage({ type: 'config', data: resp.data });
+                case 'checkKeyS3': {
+                    const resp = await axios.get(urlJoin(baseUrl, 'backups', 'key', 's3-status'), { headers });
+                    this.postMessage({ type: 'keyS3Status', data: resp.data });
                     break;
                 }
-                case 'restoreKey': {
-                    await axios.post(urlJoin(baseUrl, 'backups', 'key', 'restore'), { key: msg.key }, { headers });
-                    this.postMessage({ type: 'keyRestored' });
+                case 'deleteKeyFromS3': {
+                    await axios.delete(urlJoin(baseUrl, 'backups', 'key', 's3'), { headers });
+                    this.postMessage({ type: 'keyDeletedFromS3' });
+                    break;
+                }
+                case 'uploadKeyToS3': {
+                    await axios.post(urlJoin(baseUrl, 'backups', 'key', 'upload-to-s3'), {}, { headers });
+                    this.postMessage({ type: 'keyUploadedToS3' });
                     break;
                 }
                 case 'runBackup': {
@@ -258,25 +261,30 @@ export class BackupsPanel {
 
         function renderKey() {
             content.innerHTML = '<div id="statusMsg">' + statusMsg + '</div>' +
-                '<div class="info">The encryption key is required to read backups. If you delete it from the server, make sure you have downloaded and stored it securely first.</div>' +
+                '<div class="info">The encryption key lives on this server and is also stored on S3 by default. ' +
+                'Download it to a password manager for safekeeping. You can delete the S3 copy so a compromised S3 store cannot decrypt backups.</div>' +
                 '<div class="btn-row">' +
                 '<button class="btn" id="downloadKeyBtn">Download Key</button>' +
-                '<button class="btn btn-danger" id="deleteKeyBtn">Delete Key from Server</button>' +
+                '<button class="btn btn-secondary" id="checkS3Btn">Check S3 Status</button>' +
                 '</div>' +
-                '<div class="field" style="margin-top:16px;"><label>Restore Key</label><input id="restoreKeyInput" placeholder="Paste key here to restore it"></div>' +
-                '<button class="btn btn-secondary" id="restoreKeyBtn">Restore Key</button>' +
+                '<div class="btn-row" style="margin-top:8px;">' +
+                '<button class="btn btn-secondary" id="uploadS3Btn">Upload Key to S3</button>' +
+                '<button class="btn btn-danger" id="deleteS3Btn">Delete Key from S3</button>' +
+                '</div>' +
                 '<div id="keyDisplay"></div>';
             document.getElementById('downloadKeyBtn').addEventListener('click', function() {
                 vscodeApi.postMessage({ type: 'getKey' });
             });
-            document.getElementById('deleteKeyBtn').addEventListener('click', function() {
-                if (confirm('Are you SURE? If you have not downloaded the key, all backups will be unrecoverable!')) {
-                    vscodeApi.postMessage({ type: 'deleteKey' });
-                }
+            document.getElementById('checkS3Btn').addEventListener('click', function() {
+                vscodeApi.postMessage({ type: 'checkKeyS3' });
             });
-            document.getElementById('restoreKeyBtn').addEventListener('click', function() {
-                var key = document.getElementById('restoreKeyInput').value.trim();
-                if (key) vscodeApi.postMessage({ type: 'restoreKey', key: key });
+            document.getElementById('uploadS3Btn').addEventListener('click', function() {
+                vscodeApi.postMessage({ type: 'uploadKeyToS3' });
+            });
+            document.getElementById('deleteS3Btn').addEventListener('click', function() {
+                if (confirm('Delete the encryption key from S3? The local copy will remain so backups can still run. If this server is lost and you have not downloaded the key, all backups become unrecoverable.')) {
+                    vscodeApi.postMessage({ type: 'deleteKeyFromS3' });
+                }
             });
         }
 
@@ -297,12 +305,18 @@ export class BackupsPanel {
                     var kd = document.getElementById('keyDisplay');
                     if (kd) kd.innerHTML = '<div class="key-display">' + msg.data.key + '</div><div class="info">Copy this key and store it securely. You can delete it from the server after saving it.</div>';
                     break;
-                case 'keyDeleted':
-                    statusMsg = '<div class="warning">Key deleted from server.</div>';
+                case 'keyS3Status':
+                    var kd2 = document.getElementById('keyDisplay');
+                    if (kd2) kd2.innerHTML = msg.data.on_s3
+                        ? '<div class="success">Key exists on S3.</div>'
+                        : '<div class="warning">Key is NOT on S3. Only the local copy exists.</div>';
+                    break;
+                case 'keyDeletedFromS3':
+                    statusMsg = '<div class="warning">Key deleted from S3. Local copy still exists.</div>';
                     render();
                     break;
-                case 'keyRestored':
-                    statusMsg = '<div class="success">Key restored.</div>';
+                case 'keyUploadedToS3':
+                    statusMsg = '<div class="success">Key uploaded to S3.</div>';
                     render();
                     break;
                 case 'backupStarted':
