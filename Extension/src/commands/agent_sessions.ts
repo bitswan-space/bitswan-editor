@@ -26,7 +26,7 @@ interface ActiveSession {
 }
 
 const SESSIONS_DIR = '/workspace/agent-sessions';
-const WORKTREES_DIR = '/workspace/worktrees';
+const WORKTREES_DIR = '/workspace/workspace/worktrees';
 
 // Track active agent terminals globally
 const activeSessions: ActiveSession[] = [];

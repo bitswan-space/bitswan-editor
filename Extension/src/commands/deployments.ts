@@ -477,7 +477,7 @@ export async function startLiveDevServerCommand(
             // mounts from {workspace}/worktrees/{name}/... (matching the editor mount)
             const relativePath = worktreeName
                 ? path.join('worktrees', worktreeName, path.relative(
-                    path.join('/workspace/worktrees', worktreeName), folderPath))
+                    path.join(workspaceFolders[0].uri.fsPath, 'worktrees', worktreeName), folderPath))
                 : path.relative(workspaceFolders[0].uri.fsPath, folderPath);
 
             outputChannel.appendLine(`Live-dev config: image=${updatedConfig.image}, expose=${updatedConfig.expose}, port=${updatedConfig.port}, mountPath=${updatedConfig.mountPath}, secretGroups=${updatedConfig.secretGroups?.join(',') || 'none'}, automationId=${updatedConfig.automationId || 'none'}, auth=${updatedConfig.auth ?? false}`);
