@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import axios from 'axios';
 import urlJoin from 'proper-url-join';
 import { getDeployDetails } from '../deploy_details';
+import { getAutomations, deleteAutomation } from '../lib';
 import { WorktreeItem, WorktreesViewProvider } from '../views/worktrees_view';
 import { getUserEmail } from '../services/user_info';
 
@@ -113,6 +114,36 @@ export async function deleteWorktreeCommand(
 
     try {
         const details = await getDeployDetails(context);
+
+        // Stop all live-dev deployments for this worktree
+        if (details) {
+            try {
+                const automationsUrl = urlJoin(details.deployUrl, 'automations').toString();
+                const automations = await getAutomations(automationsUrl, details.deploySecret);
+                const wtSuffix = `-wt-${item.name}-live-dev`;
+                const wtDeployments = automations.filter((a: any) => {
+                    const id = a.deployment_id || a.deploymentId || '';
+                    return id.endsWith(wtSuffix);
+                });
+                for (const dep of wtDeployments) {
+                    const depId = dep.deployment_id || dep.deploymentId;
+                    try {
+                        const deleteUrl = urlJoin(details.deployUrl, 'automations', depId).toString();
+                        await deleteAutomation(deleteUrl, details.deploySecret);
+                    } catch { /* best effort */ }
+                }
+            } catch { /* best effort — continue with deletion */ }
+        }
+
+        // Close any agent terminal sessions for this worktree
+        const terminalPrefix = `Agent: ${item.name}`;
+        for (const terminal of vscode.window.terminals) {
+            if (terminal.name === terminalPrefix || terminal.name.startsWith(terminalPrefix)) {
+                terminal.dispose();
+            }
+        }
+
+        // Delete the worktree
         if (details) {
             try {
                 const url = urlJoin(details.deployUrl, 'worktrees', item.name);
