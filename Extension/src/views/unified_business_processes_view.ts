@@ -522,7 +522,9 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
      */
     private getEffectiveScanRoot(): string | undefined {
         if (this._selectedWorktree) {
-            const wtRoot = path.join('/workspace/worktrees', this._selectedWorktree);
+            // Worktrees are inside the workspace directory
+            const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '/workspace/workspace';
+            const wtRoot = path.join(workspacePath, 'worktrees', this._selectedWorktree);
             return fs.existsSync(wtRoot) ? wtRoot : undefined;
         }
         return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
