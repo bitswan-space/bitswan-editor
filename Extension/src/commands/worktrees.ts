@@ -85,18 +85,6 @@ export async function createWorktreeCommand(
         // Create worktree
         await runGit(['worktree', 'add', worktreePath, branchName]);
 
-        // Copy CLAUDE.md template if available
-        const claudeTemplate = '/etc/bitswan/CLAUDE.md';
-        const claudeInWorkspace = path.join(WORKSPACE_DIR, 'CLAUDE.md');
-        const claudeDest = path.join(worktreePath, 'CLAUDE.md');
-        if (!fs.existsSync(claudeDest)) {
-            if (fs.existsSync(claudeTemplate)) {
-                fs.copyFileSync(claudeTemplate, claudeDest);
-            } else if (fs.existsSync(claudeInWorkspace)) {
-                fs.copyFileSync(claudeInWorkspace, claudeDest);
-            }
-        }
-
         vscode.window.showInformationMessage(`Worktree created for branch "${branchName}" (based on ${baseBranch}).`);
         worktreesProvider.refresh();
     } catch (error: any) {
