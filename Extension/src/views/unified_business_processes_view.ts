@@ -538,24 +538,24 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         }
 
         const scanRoot = this.getEffectiveScanRoot();
-        if (!scanRoot) {
-            return [new OtherAutomationsItem()];
+
+        // Scan for business processes if we have a valid scan root
+        if (scanRoot) {
+            const processDirs = this.findDirectoriesWithProcessToml(scanRoot);
+
+            for (const processDir of processDirs) {
+                const relativePath = path.relative(scanRoot, processDir);
+                const processConfigPath = path.join(processDir, 'process.toml');
+
+                businessProcesses.push(new BusinessProcessItem(
+                    relativePath,
+                    vscode.Uri.file(processDir),
+                    processConfigPath
+                ));
+            }
         }
 
-        const processDirs = this.findDirectoriesWithProcessToml(scanRoot);
-
-        for (const processDir of processDirs) {
-            const relativePath = path.relative(scanRoot, processDir);
-            const processConfigPath = path.join(processDir, 'process.toml');
-
-            businessProcesses.push(new BusinessProcessItem(
-                relativePath,
-                vscode.Uri.file(processDir),
-                processConfigPath
-            ));
-        }
-
-        // Always include "Other automations" at the end
+        // Always include "Other automations"
         businessProcesses.push(new OtherAutomationsItem());
 
         // Include "Checkouts" only in main mode
@@ -582,7 +582,7 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             businessProcesses.push(new WorktreesSectionItem());
         }
 
-        // Action buttons at the bottom
+        // Action buttons at the bottom — always show regardless of scan root
         businessProcesses.push(
             new ActionButtonItem('Coding Agents', 'bitswan.openSessionBrowser', 'terminal', 'action:coding-agents'),
             new ActionButtonItem('Testable Requirements', 'bitswan.openRequirementsEditor', 'checklist', 'action:requirements'),
