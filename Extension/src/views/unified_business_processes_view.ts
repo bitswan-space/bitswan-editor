@@ -641,31 +641,26 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         console.log(`[DEBUG] getOtherAutomationSources - checking ${automations.length} automations for orphaned status`);
         console.log(`[DEBUG] Available automation sources: ${allAutomationSources.map(s => s.name).join(', ')}`);
         
-        const orphanedAutomations = automations.filter(automation => {
-            // Check if this automation belongs to any automation source
-            const belongsToSource = allAutomationSources.some(source => {
-                // Extract just the automation source name from the full path
-                const automationSourceName = source.name.split('/').pop() || source.name;
-                const sanitizedSourceName = sanitizeName(automationSourceName);
-                
-                // Extract the automation source name from the automation's relative path
-                const automationSourceFromPath = automation.relativePath?.split('/').pop() || '';
-                const sanitizedAutomationSource = sanitizeName(automationSourceFromPath);
-                
-                const matches = automation.relativePath === sanitizedSourceName || 
-                               automation.relativePath?.startsWith(sanitizedSourceName + '/') ||
-                               sanitizedAutomationSource === sanitizedSourceName;
-                console.log(`[DEBUG] Checking if automation "${automation.name}" (relativePath: "${automation.relativePath}") belongs to source "${source.name}" (sanitized: "${sanitizedSourceName}") - matches: ${matches}`);
-                console.log(`[DEBUG]   - automationSourceFromPath: "${automationSourceFromPath}"`);
-                console.log(`[DEBUG]   - sanitizedAutomationSource: "${sanitizedAutomationSource}"`);
-                return matches;
-            });
-            const isOrphaned = !belongsToSource && automation.relativePath;
-            console.log(`[DEBUG] Automation "${automation.name}" (relativePath: "${automation.relativePath}") is orphaned: ${isOrphaned}`);
-            return isOrphaned; // Only include if it has a relativePath
-        });
+        // Build a set of deployment IDs that stages actually claim (new format only).
+        // Old-format deployments will fall through to Other since stages can't match them.
+        const claimedDeploymentIds = new Set<string>();
+        for (const source of allAutomationSources) {
+            const srcName = source.name.split('/').pop() || source.name;
+            const sanitized = sanitizeName(srcName);
+            const pathParts = source.name.split('/');
+            const bp = pathParts.length >= 2 ? sanitizeName(pathParts[0]) : '';
+            const bpPfx = bp ? `${bp}-` : '';
+            claimedDeploymentIds.add(`${sanitized}-${bpPfx}live-dev`);
+            claimedDeploymentIds.add(`${sanitized}-${bpPfx}dev`);
+            claimedDeploymentIds.add(`${sanitized}-${bpPfx}staging`);
+            claimedDeploymentIds.add(`${sanitized}-${bp || 'production'}`);
+        }
 
-        console.log(`[DEBUG] Found ${orphanedAutomations.length} orphaned automations`);
+        // An automation is orphaned if its deployment_id isn't claimed by any stage
+        const orphanedAutomations = automations.filter(automation => {
+            const depId = automation.deployment_id || automation.deploymentId || '';
+            return !claimedDeploymentIds.has(depId);
+        });
 
         // Add orphaned automations directly to the result
         result.push(...orphanedAutomations.map(automation => 
