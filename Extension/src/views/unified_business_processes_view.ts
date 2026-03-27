@@ -641,7 +641,8 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         console.log(`[DEBUG] getOtherAutomationSources - checking ${automations.length} automations for orphaned status`);
         console.log(`[DEBUG] Available automation sources: ${allAutomationSources.map(s => s.name).join(', ')}`);
         
-        // Build a set of all deployment IDs that are claimed by stages
+        // Build a set of deployment IDs that stages actually claim (new format only).
+        // Old-format deployments will fall through to Other since stages can't match them.
         const claimedDeploymentIds = new Set<string>();
         for (const source of allAutomationSources) {
             const srcName = source.name.split('/').pop() || source.name;
@@ -649,16 +650,10 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             const pathParts = source.name.split('/');
             const bp = pathParts.length >= 2 ? sanitizeName(pathParts[0]) : '';
             const bpPfx = bp ? `${bp}-` : '';
-            // New format IDs
             claimedDeploymentIds.add(`${sanitized}-${bpPfx}live-dev`);
             claimedDeploymentIds.add(`${sanitized}-${bpPfx}dev`);
             claimedDeploymentIds.add(`${sanitized}-${bpPfx}staging`);
             claimedDeploymentIds.add(`${sanitized}-${bp || 'production'}`);
-            // Old format IDs (backwards compat)
-            claimedDeploymentIds.add(`${sanitized}-live-dev`);
-            claimedDeploymentIds.add(`${sanitized}-dev`);
-            claimedDeploymentIds.add(`${sanitized}-staging`);
-            claimedDeploymentIds.add(sanitized);
         }
 
         // An automation is orphaned if its deployment_id isn't claimed by any stage
