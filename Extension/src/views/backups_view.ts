@@ -181,10 +181,37 @@ export class BackupsPanel {
             currentTab = tab.dataset.tab;
             tabBar.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
+            statusMsg = '';
             render();
             if (currentTab === 'snapshots') vscodeApi.postMessage({ type: 'loadSnapshots' });
             if (currentTab === 'config') vscodeApi.postMessage({ type: 'loadConfig' });
         });
+
+        function formatBackupResult(data) {
+            var services = ['workspace', 'postgres', 'couchdb', 'minio'];
+            var allOk = true;
+            var rows = '';
+            services.forEach(function(svc) {
+                var r = data[svc];
+                if (!r) return;
+                var ok = r.success;
+                if (!ok) allOk = false;
+                var icon = ok ? '&#10003;' : '&#10007;';
+                var cls = ok ? 'color:#3fb950' : 'color:#f85149';
+                var label = svc.charAt(0).toUpperCase() + svc.slice(1);
+                var detail = (r.output || '').replace(/\\n/g, '\\n').split('\\n').filter(Boolean);
+                var summary = detail[detail.length - 1] || '';
+                rows += '<tr><td style="' + cls + ';font-weight:600;width:24px">' + icon + '</td>' +
+                    '<td style="font-weight:600">' + label + '</td>' +
+                    '<td>' + summary + '</td></tr>';
+            });
+            var ts = data.timestamp ? '<div style="margin-top:8px;font-size:11px;color:var(--vscode-descriptionForeground)">Completed at ' + data.timestamp.replace('T', ' ').substring(0, 19) + ' UTC</div>' : '';
+            var cls = allOk ? 'success' : 'warning';
+            return '<div class="' + cls + '">' +
+                '<div style="font-weight:600;margin-bottom:8px">Backup ' + (allOk ? 'completed successfully' : 'completed with errors') + '</div>' +
+                '<table style="border-collapse:collapse">' + rows + '</table>' +
+                ts + '</div>';
+        }
 
         function render() {
             if (currentTab === 'config') renderConfig();
@@ -199,6 +226,7 @@ export class BackupsPanel {
                 '<div class="field"><label>S3 Bucket</label><input id="s3Bucket" value="' + (c.s3_bucket||'') + '" placeholder="my-backups"></div>' +
                 '<div class="field"><label>Access Key</label><input id="s3AccessKey" value="' + (c.s3_access_key||'') + '"></div>' +
                 '<div class="field"><label>Secret Key</label><input id="s3SecretKey" type="password" value="" placeholder="' + (c.configured ? '(unchanged)' : '') + '"></div>' +
+                '<div class="field"><label>Region (optional)</label><input id="s3Region" value="' + (c.s3_region||'') + '" placeholder="e.g. nbg1"></div>' +
                 '<div class="field"><label>Daily Retention (days)</label><input id="retDaily" type="number" value="' + (c.retention?.daily||30) + '"></div>' +
                 '<div class="field"><label>Monthly Retention (months)</label><input id="retMonthly" type="number" value="' + (c.retention?.monthly||12) + '"></div>' +
                 '<div class="btn-row">' +
@@ -212,6 +240,7 @@ export class BackupsPanel {
                     s3_bucket: document.getElementById('s3Bucket').value,
                     s3_access_key: document.getElementById('s3AccessKey').value,
                     s3_secret_key: sk || (c.s3_secret_key || ''),
+                    s3_region: document.getElementById('s3Region').value,
                     retention_daily: parseInt(document.getElementById('retDaily').value) || 30,
                     retention_monthly: parseInt(document.getElementById('retMonthly').value) || 12,
                 }});
@@ -281,9 +310,21 @@ export class BackupsPanel {
             document.getElementById('uploadS3Btn').addEventListener('click', function() {
                 vscodeApi.postMessage({ type: 'uploadKeyToS3' });
             });
-            document.getElementById('deleteS3Btn').addEventListener('click', function() {
-                if (confirm('Delete the encryption key from S3? The local copy will remain so backups can still run. If this server is lost and you have not downloaded the key, all backups become unrecoverable.')) {
+            var deleteBtn = document.getElementById('deleteS3Btn');
+            deleteBtn.addEventListener('click', function() {
+                if (deleteBtn.dataset.armed === 'true') {
+                    deleteBtn.dataset.armed = 'false';
+                    deleteBtn.textContent = 'Delete Key from S3';
                     vscodeApi.postMessage({ type: 'deleteKeyFromS3' });
+                } else {
+                    deleteBtn.dataset.armed = 'true';
+                    deleteBtn.textContent = 'Click again to confirm deletion';
+                    setTimeout(function() {
+                        if (deleteBtn.dataset.armed === 'true') {
+                            deleteBtn.dataset.armed = 'false';
+                            deleteBtn.textContent = 'Delete Key from S3';
+                        }
+                    }, 5000);
                 }
             });
         }
@@ -291,7 +332,6 @@ export class BackupsPanel {
         window.addEventListener('message', function(event) {
             var msg = event.data;
             if (!msg || !msg.type) return;
-            statusMsg = '';
             switch (msg.type) {
                 case 'config':
                     configData = msg.data;
@@ -324,7 +364,7 @@ export class BackupsPanel {
                     render();
                     break;
                 case 'backupResult':
-                    statusMsg = '<div class="success">Backup completed: ' + JSON.stringify(msg.data) + '</div>';
+                    statusMsg = formatBackupResult(msg.data);
                     render();
                     break;
                 case 'snapshots':
