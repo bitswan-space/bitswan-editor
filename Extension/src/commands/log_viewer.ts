@@ -413,6 +413,7 @@ function buildLogViewerHtml(automationName: string, stages: StageInfo[], current
             tab-size: 4;
         }
         .log-line { min-height: 1.45em; }
+        .log-line.stderr { color: #f85149; }
         .log-line .highlight {
             background: var(--vscode-editor-findMatchHighlightBackground, rgba(255,200,0,0.3));
         }
@@ -460,9 +461,9 @@ function buildLogViewerHtml(automationName: string, stages: StageInfo[], current
         let activeFilter = null; // null = all, number = specific replica index
         let totalReplicas = 0;
 
-        function appendLine(text, replica) {
+        function appendLine(text, replica, stream) {
             const div = document.createElement('div');
-            div.className = 'log-line';
+            div.className = 'log-line' + (stream === 'stderr' ? ' stderr' : '');
             div.textContent = text;
             if (replica !== undefined && replica !== null) {
                 div.dataset.replica = String(replica);
@@ -571,7 +572,7 @@ function buildLogViewerHtml(automationName: string, stages: StageInfo[], current
                     break;
                 case 'sse:log':
                     if (msg.line !== undefined) {
-                        appendLine(msg.line, msg.replica);
+                        appendLine(msg.line, msg.replica, msg.stream);
                     }
                     break;
                 case 'sse:error':
