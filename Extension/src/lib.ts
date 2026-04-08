@@ -1297,6 +1297,8 @@ export const promoteAutomation = async (
   automationConfig?: AutomationConfigParams,
   replicas?: number,
   deployedBy?: string,
+  automationName?: string,
+  context?: string,
 ): Promise<DeployResponse> => {
   const form = new FormData();
   form.append('checksum', checksum);
@@ -1309,6 +1311,12 @@ export const promoteAutomation = async (
   }
   if (deployedBy) {
     form.append('deployed_by', deployedBy);
+  }
+  if (automationName) {
+    form.append('automation_name', automationName);
+  }
+  if (context) {
+    form.append('context', context);
   }
   // Send automation config for live-dev (so server doesn't need to read from filesystem)
   if (automationConfig) {
