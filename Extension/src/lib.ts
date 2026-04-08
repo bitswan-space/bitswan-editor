@@ -1257,7 +1257,36 @@ export interface DeployResponse {
   success: boolean;
   task_id?: string;
   deployment_id?: string;
+  url?: string;
   alreadyDeploying?: boolean;
+}
+
+export const startWorktreeLiveDev = async (
+  agentBaseUrl: string,
+  secret: string,
+  relativePath: string,
+  worktree: string,
+): Promise<DeployResponse> => {
+  const base = agentBaseUrl.replace(/\/+$/, '');
+  const url = `${base}/agent/deployments/start`;
+  const response = await axios.post(url, {
+    relative_path: relativePath,
+    worktree: worktree,
+  }, {
+    headers: { 'Authorization': `Bearer ${secret}` },
+    validateStatus: (status) => status === 200 || status === 202 || status === 409,
+  });
+
+  if (response.status === 409) {
+    return { success: false, alreadyDeploying: true };
+  }
+
+  return {
+    success: true,
+    task_id: response.data.task_id,
+    deployment_id: response.data.deployment_id,
+    url: response.data.url,
+  };
 }
 
 export const promoteAutomation = async (
