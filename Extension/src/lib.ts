@@ -1261,18 +1261,17 @@ export interface DeployResponse {
   alreadyDeploying?: boolean;
 }
 
-export const startWorktreeLiveDev = async (
+export const startLiveDev = async (
   agentBaseUrl: string,
   secret: string,
   relativePath: string,
-  worktree: string,
+  worktree?: string,
 ): Promise<DeployResponse> => {
   const base = agentBaseUrl.replace(/\/+$/, '');
   const url = `${base}/agent/deployments/start`;
-  const response = await axios.post(url, {
-    relative_path: relativePath,
-    worktree: worktree,
-  }, {
+  const body: Record<string, string> = { relative_path: relativePath };
+  if (worktree) { body.worktree = worktree; }
+  const response = await axios.post(url, body, {
     headers: { 'Authorization': `Bearer ${secret}` },
     validateStatus: (status) => status === 200 || status === 202 || status === 409,
   });

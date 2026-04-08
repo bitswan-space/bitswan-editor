@@ -8,7 +8,7 @@ import urlJoin from 'proper-url-join';
 import axios from 'axios';
 
 import { FolderItem } from '../views/sources_view';
-import { activateDeployment, deploy, zip2stream, zipDirectory, createStreamingZip, uploadAsset, uploadAssetStream, promoteAutomation, startWorktreeLiveDev, calculateGitTreeHash, calculateMergedGitTreeHash, getImages, getAutomations, getDeployStatus, DeployResponse } from '../lib';
+import { activateDeployment, deploy, zip2stream, zipDirectory, createStreamingZip, uploadAsset, uploadAssetStream, promoteAutomation, startLiveDev, calculateGitTreeHash, calculateMergedGitTreeHash, getImages, getAutomations, getDeployStatus, DeployResponse } from '../lib';
 import { getDeployDetails } from '../deploy_details';
 import { getUserEmail } from '../services/user_info';
 import { outputChannel } from '../extension';
@@ -488,33 +488,10 @@ export async function startLiveDevServerCommand(
 
             // Deploy to live-dev stage.
             // The server constructs the deployment ID — we send structured data.
-            let deployResult: DeployResponse;
-            let liveDevDeploymentId: string;
-
-            if (worktreeName) {
-                // Worktree live-dev: use structured agent API
-                deployResult = await startWorktreeLiveDev(
-                    details.deployUrl, details.deploySecret, relativePath, worktreeName
-                );
-                liveDevDeploymentId = deployResult.deployment_id || relativePath;
-            } else {
-                // Non-worktree live-dev: use existing promote flow
-                const relParts = relativePath.replace(/\\/g, '/').split('/');
-                const contentParts = relParts[0] === 'worktrees' && relParts.length >= 3
-                    ? relParts.slice(2) : relParts;
-                const bpName = contentParts.length >= 2 ? sanitizeName(contentParts[0]) : '';
-                const bpPrefix = bpName ? `${bpName}-` : '';
-                liveDevDeploymentId = `${normalizedFolderName}-${bpPrefix}live-dev`;
-
-                if (deployState.isDeploying(liveDevDeploymentId)) {
-                    vscode.window.showWarningMessage(`Deployment ${liveDevDeploymentId} is already in progress`);
-                    return;
-                }
-
-                const deployUrl = urlJoin(details.deployUrl, "automations", liveDevDeploymentId, "deploy").toString();
-                const deployedBy = await getUserEmail(context);
-                deployResult = await promoteAutomation(deployUrl, details.deploySecret, 'live-dev', 'live-dev', relativePath, undefined, undefined, deployedBy);
-            }
+            const deployResult = await startLiveDev(
+                details.deployUrl, details.deploySecret, relativePath, worktreeName
+            );
+            const liveDevDeploymentId = deployResult.deployment_id || relativePath;
 
             if (deployResult.alreadyDeploying) {
                 vscode.window.showWarningMessage(`Deployment ${liveDevDeploymentId} is already in progress`);
