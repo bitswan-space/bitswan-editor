@@ -716,15 +716,17 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         if (this._selectedWorktree) {
             // Worktree mode: only live-dev stage
             const wtName = this._selectedWorktree;
-            const context = sanitizedBpName
-                ? `${sanitizedBpName}-wt-${wtName}-live-dev`
-                : `wt-${wtName}-live-dev`;
-            const deploymentId = `${sanitizedSourceName}-${context}`;
             const wtSourceUri = sourceUri; // already points into the worktree via scanRoot
 
-            const automation = automations.find(a =>
-                (a.deployment_id === deploymentId || a.deploymentId === deploymentId)
-            );
+            // Match by relative_path — the server owns the deployment ID format
+            const expectedRelPath = `worktrees/${wtName}/${sourceName}`;
+            const automation = automations.find(a => {
+                const aPath = a.relative_path || a.relativePath || '';
+                return aPath === expectedRelPath;
+            });
+            const deploymentId = automation
+                ? (automation.deployment_id || automation.deploymentId || '')
+                : '';
 
             if (automation) {
                 const automationItem = new AutomationItem(

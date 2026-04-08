@@ -120,10 +120,10 @@ export async function deleteWorktreeCommand(
             try {
                 const automationsUrl = urlJoin(details.deployUrl, 'automations').toString();
                 const automations = await getAutomations(automationsUrl, details.deploySecret);
-                const wtSuffix = `-wt-${item.name}-live-dev`;
                 const wtDeployments = automations.filter((a: any) => {
-                    const id = a.deployment_id || a.deploymentId || '';
-                    return id.endsWith(wtSuffix);
+                    // Match by relative_path prefix for this worktree
+                    const relPath = a.relative_path || a.relativePath || '';
+                    return relPath.startsWith(`worktrees/${item.name}/`);
                 });
                 for (const dep of wtDeployments) {
                     const depId = dep.deployment_id || dep.deploymentId;
