@@ -1268,7 +1268,7 @@ export const startLiveDev = async (
   worktree?: string,
 ): Promise<DeployResponse> => {
   const base = agentBaseUrl.replace(/\/+$/, '');
-  const url = `${base}/agent/deployments/start`;
+  const url = `${base}/automations/start-live-dev`;
   const body: Record<string, string> = { relative_path: relativePath };
   if (worktree) { body.worktree = worktree; }
   const response = await axios.post(url, body, {
