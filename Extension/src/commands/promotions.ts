@@ -71,7 +71,7 @@ export async function promoteStageCommand(
 
             const deployUrl = urlJoin(details.deployUrl, "automations", targetDeploymentId, "deploy").toString();
             const deployedBy = await getUserEmail(context);
-            const deployResult = await promoteAutomation(deployUrl, details.deploySecret, checksum, targetStage, undefined, undefined, undefined, deployedBy);
+            const deployResult = await promoteAutomation(deployUrl, details.deploySecret, checksum, targetStage, undefined, undefined, undefined, deployedBy, sanitizedSourceName, sanitizedBpName);
 
             if (deployResult.alreadyDeploying) {
                 vscode.window.showWarningMessage(`Deployment ${targetDeploymentId} is already in progress`);
@@ -224,14 +224,14 @@ export async function openPromotionManagerCommand(
         async (message) => {
             switch (message.command) {
                 case 'promote':
-                    await handlePromote(message.fromStage, message.toStage, message.checksum, details, deploymentIds, sanitizedSourceName, context);
+                    await handlePromote(message.fromStage, message.toStage, message.checksum, details, deploymentIds, sanitizedSourceName, pmSanitizedBp, context);
                     await updateWebview();
                     break;
                 case 'showLogs':
                     await handleShowLogs(message.deploymentId, details, context);
                     break;
                 case 'rollback':
-                    await handleRollback(message.checksum, message.stage, message.replicas, details, deploymentIds, sanitizedSourceName, context);
+                    await handleRollback(message.checksum, message.stage, message.replicas, details, deploymentIds, sanitizedSourceName, pmSanitizedBp, context);
                     await updateWebview();
                     break;
                 case 'scale':
@@ -273,6 +273,7 @@ async function handlePromote(
     details: { deployUrl: string; deploySecret: string },
     deploymentIds: { dev: string; staging: string; production: string },
     sanitizedSourceName: string,
+    sanitizedBpName: string,
     context: vscode.ExtensionContext
 ) {
     const fromDeploymentId = deploymentIds[fromStage as keyof typeof deploymentIds];
@@ -308,7 +309,7 @@ async function handlePromote(
             try {
                 progress.report({ increment: 50, message: `Promoting to ${toStage}...` });
                 const deployedBy = await getUserEmail(context);
-                const deployResult = await promoteAutomation(deployUrl, details.deploySecret, checksum!, toStage, undefined, undefined, undefined, deployedBy);
+                const deployResult = await promoteAutomation(deployUrl, details.deploySecret, checksum!, toStage, undefined, undefined, undefined, deployedBy, sanitizedSourceName, sanitizedBpName);
 
                 if (deployResult.alreadyDeploying) {
                     vscode.window.showWarningMessage(`Deployment ${toDeploymentId} is already in progress`);
@@ -381,6 +382,7 @@ async function handleRollback(
     details: { deployUrl: string; deploySecret: string },
     deploymentIds: { dev: string; staging: string; production: string },
     sanitizedSourceName: string,
+    sanitizedBpName: string,
     context: vscode.ExtensionContext
 ) {
     const deploymentId = stage === 'production' || !stage ? sanitizedSourceName : deploymentIds[stage as keyof typeof deploymentIds];
@@ -405,7 +407,7 @@ async function handleRollback(
                 const deployedBy = await getUserEmail(context);
                 const deployResult = await promoteAutomation(
                     deployUrl, details.deploySecret, checksum, normalizedStage,
-                    undefined, undefined, replicas, deployedBy
+                    undefined, undefined, replicas, deployedBy, sanitizedSourceName, sanitizedBpName
                 );
 
                 if (deployResult.alreadyDeploying) {

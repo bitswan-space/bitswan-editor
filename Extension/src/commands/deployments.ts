@@ -237,7 +237,7 @@ export async function deployCommandAbstract(
                 // Deploy to dev stage with -dev suffix
                 const devDeployUrl = urlJoin(details.deployUrl, "automations", devDeploymentId, "deploy").toString();
                 const deployedBy = await getUserEmail(context);
-                const deployResult = await promoteAutomation(devDeployUrl, details.deploySecret, checksum, 'dev', relativePath, undefined, undefined, deployedBy);
+                const deployResult = await promoteAutomation(devDeployUrl, details.deploySecret, checksum, 'dev', relativePath, undefined, undefined, deployedBy, normalizedFolderName, devBpName);
 
                 if (deployResult.alreadyDeploying) {
                     vscode.window.showWarningMessage(`Deployment ${devDeploymentId} is already in progress`);
