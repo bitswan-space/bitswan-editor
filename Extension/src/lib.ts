@@ -783,13 +783,14 @@ export const zip2stream = (zipFile: JSZip): NodeJS.ReadableStream => {
  * Later directories in the array override files from earlier directories.
  * Returns a readable stream that can be piped directly to upload.
  */
-export const createStreamingZip = (
+export const createStreamingArchive = (
   dirPaths: string[],
   outputChannel: vscode.OutputChannel,
   ignorePatterns?: string[]
 ): NodeJS.ReadableStream => {
-  const archive = archiver('zip', {
-    zlib: { level: 6 } // Compression level
+  const archive = archiver('tar', {
+    gzip: true,
+    gzipOptions: { level: 6 },
   });
 
   // Handle archive errors
@@ -1225,7 +1226,7 @@ export const uploadAssetStream = async (
 ) => {
   const response = await axios.post(uploadUrl, stream, {
     headers: {
-      'Content-Type': 'application/zip',
+      'Content-Type': 'application/gzip',
       'X-Checksum': checksum,
       'Authorization': `Bearer ${secret}`,
       'Transfer-Encoding': 'chunked',

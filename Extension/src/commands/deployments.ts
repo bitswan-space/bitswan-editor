@@ -3,12 +3,12 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import FormData from 'form-data';
-import JSZip from 'jszip';
+// JSZip no longer needed — using tar.gz via createStreamingArchive
 import urlJoin from 'proper-url-join';
 import axios from 'axios';
 
 import { FolderItem } from '../views/sources_view';
-import { activateDeployment, deploy, zip2stream, zipDirectory, createStreamingZip, uploadAsset, uploadAssetStream, promoteAutomation, startLiveDev, calculateGitTreeHash, calculateMergedGitTreeHash, getImages, getAutomations, getDeployStatus, DeployResponse } from '../lib';
+import { activateDeployment, deploy, createStreamingArchive, uploadAsset, uploadAssetStream, promoteAutomation, startLiveDev, calculateGitTreeHash, calculateMergedGitTreeHash, getImages, getAutomations, getDeployStatus, DeployResponse } from '../lib';
 import { getDeployDetails } from '../deploy_details';
 import { getUserEmail } from '../services/user_info';
 import { outputChannel } from '../extension';
@@ -194,7 +194,7 @@ export async function deployCommandAbstract(
                     outputChannel.appendLine(`Creating streaming zip from ${dirsToMerge.length} directories...`);
 
                     // Create true streaming zip - files are compressed as the stream is consumed
-                    const stream = createStreamingZip(dirsToMerge, outputChannel, ignorePatterns);
+                    const stream = createStreamingArchive(dirsToMerge, outputChannel, ignorePatterns);
                     outputChannel.appendLine(`Streaming zip created, starting upload...`);
 
                     progress.report({ increment: 40, message: "Uploading asset..." });
@@ -306,12 +306,11 @@ export async function deployCommandAbstract(
                 // Image doesn't exist, proceed with upload
                 progress.report({ increment: 20, message: "Packing..." });
 
-                // Zip the pipeline config folder and add it to the form
-                let zip = await zipDirectory(folderPath, '', JSZip(), outputChannel);
-                const stream = zip2stream(zip);
+                // Create tar.gz archive of the pipeline config folder
+                const stream = createStreamingArchive([folderPath], outputChannel);
                 form.append('file', stream, {
-                    filename: 'deployment.zip',
-                    contentType: 'application/zip',
+                    filename: 'deployment.tar.gz',
+                    contentType: 'application/gzip',
                 });
                 // Add checksum to form
                 form.append('checksum', checksum);
