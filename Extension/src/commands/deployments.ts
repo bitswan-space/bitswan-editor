@@ -191,11 +191,10 @@ export async function deployCommandAbstract(
                 // Only create zip if we actually need to upload - stream directly from source, no copying
                 if (!assetExists) {
                     progress.report({ increment: 10, message: "Packing..." });
-                    outputChannel.appendLine(`Creating streaming zip from ${dirsToMerge.length} directories...`);
+                    outputChannel.appendLine(`Creating streaming tar.gz from ${dirsToMerge.length} directories...`);
 
-                    // Create true streaming zip - files are compressed as the stream is consumed
                     const stream = createStreamingArchive(dirsToMerge, outputChannel, ignorePatterns);
-                    outputChannel.appendLine(`Streaming zip created, starting upload...`);
+                    outputChannel.appendLine(`Archive created, starting upload...`);
 
                     progress.report({ increment: 40, message: "Uploading asset..." });
                     // Use the streaming upload endpoint that handles chunked transfer encoding
