@@ -650,7 +650,6 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             const pathParts = source.name.split('/');
             const bp = pathParts.length >= 2 ? sanitizeName(pathParts[0]) : '';
             const bpPfx = bp ? `${bp}-` : '';
-            claimedDeploymentIds.add(`${sanitized}-${bpPfx}live-dev`);
             claimedDeploymentIds.add(`${sanitized}-${bpPfx}dev`);
             claimedDeploymentIds.add(`${sanitized}-${bpPfx}staging`);
             claimedDeploymentIds.add(`${sanitized}-${bp || 'production'}`);
@@ -743,17 +742,15 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                 stages.push(new StageItem('live-dev', sourceName, null, deploymentId, null, wtSourceUri, serviceNames, wtName));
             }
         } else {
-            // Main mode: standard 4 stages
-            // Deployment ID = {automationName}-{context} where context = {bp}-{stage}
+            // Main mode: 3 stages (live-dev is worktree-only, managed in the Workspace panel)
             const bpPrefix = sanitizedBpName ? `${sanitizedBpName}-` : '';
-            const stageDeploymentIds: Record<'live-dev' | 'dev' | 'staging' | 'production', string> = {
-                'live-dev': `${sanitizedSourceName}-${bpPrefix}live-dev`,
+            const stageDeploymentIds: Record<string, string> = {
                 dev: `${sanitizedSourceName}-${bpPrefix}dev`,
                 staging: `${sanitizedSourceName}-${bpPrefix}staging`,
                 production: `${sanitizedSourceName}-${sanitizedBpName || 'production'}`
             };
 
-            const stagesList: Array<'live-dev' | 'dev' | 'staging' | 'production'> = ['live-dev', 'dev', 'staging', 'production'];
+            const stagesList: Array<'dev' | 'staging' | 'production'> = ['dev', 'staging', 'production'];
 
             for (const stage of stagesList) {
                 const deploymentId = stageDeploymentIds[stage];
