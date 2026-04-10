@@ -413,7 +413,9 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                 this._prefixTreeItemIds(items, prefix);
             }
             this._trackAutomationSources(items);
-            return [...items, new CreateAutomationItem(element.name)];
+            const createItem = new CreateAutomationItem(element.name);
+            if (prefix) { createItem.id = prefix + createItem.id; }
+            return [...items, createItem];
         }
 
         if (element instanceof AutomationSourceItem) {
@@ -444,6 +446,15 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             }
 
             items.push(imagesSection);
+
+            // Propagate worktree ID prefix to all children
+            const asPrefix = (element as any)._idPrefix || '';
+            if (asPrefix) {
+                for (const item of items) {
+                    if (item.id) { item.id = asPrefix + item.id; }
+                    (item as any)._idPrefix = asPrefix;
+                }
+            }
 
             return items;
         }
@@ -528,6 +539,7 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
     private _prefixTreeItemIds(items: readonly vscode.TreeItem[], prefix: string): void {
         for (const item of items) {
             if (item.id) { item.id = prefix + item.id; }
+            (item as any)._idPrefix = prefix;
             if (item instanceof SubfolderItem && item.children) {
                 this._prefixTreeItemIds(item.children, prefix);
             }
