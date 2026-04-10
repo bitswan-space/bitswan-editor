@@ -25,6 +25,29 @@ interface AutomationInfo {
     state: string;
     url: string;
     relativePath: string;
+    icon: string;
+}
+
+function inferAutomationIcon(autoDir: string): string {
+    const configPath = path.join(autoDir, 'automation.toml');
+    if (!fs.existsSync(configPath)) { return '\u{1F4E6}'; } // 📦
+    try {
+        const data = toml.parse(fs.readFileSync(configPath, 'utf-8')) as any;
+        const dep = data.deployment || {};
+        const hasExposeTo = !!dep.expose_to;
+        const hasExpose = dep.expose === true;
+        const hasKafka = !!(data.services?.kafka?.enabled);
+        const image = (dep.image || '').toLowerCase();
+        const hasFrontendImage = image.includes('frontend');
+
+        if (hasExposeTo) { return '\u{1F512}'; }                    // 🔒 internal frontend
+        if (hasExpose && hasFrontendImage) { return '\u{1F310}'; }   // 🌐 public frontend
+        if (hasExpose) { return '\u{2699}\u{FE0F}'; }               // ⚙️ backend
+        if (hasKafka) { return '\u{26A1}'; }                         // ⚡ kafka/streaming
+        return '\u{1F4E6}';                                          // 📦 default
+    } catch {
+        return '\u{1F4E6}';
+    }
 }
 
 function parseRequirementsToml(content: string): Requirement[] {
@@ -148,6 +171,27 @@ export class DashboardPanel {
                     vscode.env.openExternal(vscode.Uri.parse(msg.url));
                 }
                 break;
+            case 'startLiveDev': {
+                if (msg.relativePath && msg.worktree) {
+                    try {
+                        const { startLiveDev } = require('../lib');
+                        const details = await getDeployDetails(this.context);
+                        if (details) {
+                            const result = await startLiveDev(details.deployUrl, details.deploySecret, msg.relativePath, msg.worktree);
+                            if (result.success) {
+                                vscode.window.showInformationMessage(`Live dev started for ${msg.name || 'automation'}`);
+                                // Refresh after deploy completes
+                                setTimeout(() => this._reloadCurrentKey(), 5000);
+                            } else {
+                                vscode.window.showErrorMessage('Failed to start live dev');
+                            }
+                        }
+                    } catch (err: any) {
+                        vscode.window.showErrorMessage(`Failed to start live dev: ${err.message}`);
+                    }
+                }
+                break;
+            }
             case 'showLogs':
                 if (msg.deploymentId) {
                     // Find the automation and trigger log viewer
@@ -318,6 +362,7 @@ export class DashboardPanel {
                 state: match ? (match.state || 'not deployed') : 'not deployed',
                 url: match ? (match.automation_url || match.automationUrl || '') : '',
                 relativePath: relFromWorkspace,
+                icon: inferAutomationIcon(autoDir),
             });
         }
 
@@ -1029,6 +1074,9 @@ export class DashboardPanel {
                         }
 
                         var header = mkEl('div', 'auto-card-header');
+                        var iconSpan = mkEl('span', '', auto.icon || '\\u{1F4E6}');
+                        iconSpan.style.fontSize = '20px';
+                        header.appendChild(iconSpan);
                         header.appendChild(mkEl('span', 'auto-card-name', auto.name));
                         var stateClass = (auto.state || 'not-deployed').replace(/\\s+/g, '-').toLowerCase();
                         header.appendChild(mkEl('span', 'auto-card-state ' + stateClass, auto.state || 'not deployed'));
@@ -1041,23 +1089,30 @@ export class DashboardPanel {
                             card.appendChild(urlLine);
                         }
 
+                        var actions = mkEl('div', 'auto-card-actions');
                         if (auto.deploymentId) {
-                            var actions = mkEl('div', 'auto-card-actions');
-                            var logsBtn = mkEl('button', 'btn', 'Logs');
+                            var logsBtn = mkEl('button', 'btn', '\\u{1F4CB} Logs');
                             logsBtn.addEventListener('click', function(e) {
                                 e.stopPropagation();
                                 vscodeApi.postMessage({ type: 'showLogs', deploymentId: auto.deploymentId });
                             });
                             actions.appendChild(logsBtn);
 
-                            var restartBtn = mkEl('button', 'btn', 'Restart');
+                            var restartBtn = mkEl('button', 'btn', '\\u{1F504} Restart');
                             restartBtn.addEventListener('click', function(e) {
                                 e.stopPropagation();
                                 vscodeApi.postMessage({ type: 'restartAutomation', deploymentId: auto.deploymentId });
                             });
                             actions.appendChild(restartBtn);
-                            card.appendChild(actions);
+                        } else if (bpData.worktree) {
+                            var startBtn = mkEl('button', 'btn btn-primary', '\\u{25B6} Start Live Dev');
+                            startBtn.addEventListener('click', function(e) {
+                                e.stopPropagation();
+                                vscodeApi.postMessage({ type: 'startLiveDev', relativePath: auto.relativePath, worktree: bpData.worktree, name: auto.name });
+                            });
+                            actions.appendChild(startBtn);
                         }
+                        card.appendChild(actions);
 
                         autoCards.appendChild(card);
                     });
