@@ -38,11 +38,12 @@ function inferAutomationIcon(autoDir: string): string {
         const hasExpose = dep.expose === true;
         const hasKafka = !!(data.services?.kafka?.enabled);
         const image = (dep.image || '').toLowerCase();
-        const hasFrontendImage = image.includes('frontend');
+        const dirName = path.basename(autoDir).toLowerCase();
+        const isFrontend = image.includes('frontend') || dirName.includes('frontend');
 
-        if (hasExposeTo) { return '\u{1F512}'; }                    // 🔒 internal frontend
-        if (hasExpose && hasFrontendImage) { return '\u{1F310}'; }   // 🌐 public frontend
-        if (hasExpose) { return '\u{2699}\u{FE0F}'; }               // ⚙️ backend
+        if (hasExposeTo) { return '\u{1F512}'; }                    // 🔒 internal frontend (OAuth protected)
+        if (hasExpose && isFrontend) { return '\u{1F310}'; }        // 🌐 public frontend
+        if (hasExpose) { return '\u{2699}\u{FE0F}'; }               // ⚙️ backend (exposed API)
         if (hasKafka) { return '\u{26A1}'; }                         // ⚡ kafka/streaming
         return '\u{1F4E6}';                                          // 📦 default
     } catch {
@@ -831,16 +832,18 @@ export class DashboardPanel {
         .action-card .card-desc { font-size:11px; color:var(--vscode-descriptionForeground); margin-top:2px; }
 
         /* Automation cards */
-        .auto-cards { display:flex; gap:10px; flex-wrap:wrap; }
-        .auto-card { flex:1; min-width:200px; max-width:350px; padding:12px; border:1px solid var(--border); border-radius:8px; cursor:pointer; transition: border-color 0.15s; }
-        .auto-card:hover { border-color:var(--vscode-focusBorder, #007acc); }
-        .auto-card-header { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
-        .auto-card-name { font-weight:600; font-size:13px; }
-        .auto-card-state { font-size:10px; padding:2px 6px; border-radius:8px; text-transform:uppercase; font-weight:600; }
+        .auto-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
+        .auto-card { display:flex; flex-direction:column; padding:16px; border:1px solid var(--border); border-radius:10px; transition: border-color 0.15s, box-shadow 0.15s; }
+        .auto-card:hover { border-color:var(--vscode-focusBorder, #007acc); box-shadow:0 2px 8px rgba(0,0,0,0.1); }
+        .auto-card-icon { font-size:28px; margin-bottom:10px; }
+        .auto-card-name { font-weight:600; font-size:14px; margin-bottom:4px; }
+        .auto-card-state { display:inline-block; font-size:10px; padding:2px 8px; border-radius:10px; text-transform:uppercase; font-weight:600; letter-spacing:0.3px; margin-bottom:8px; }
         .auto-card-state.running { background:var(--status-pass); color:#fff; }
         .auto-card-state.exited, .auto-card-state.dead { background:var(--status-fail); color:#fff; }
         .auto-card-state.not-deployed { background:var(--status-proposed); color:#fff; }
-        .auto-card-actions { display:flex; gap:6px; margin-top:8px; }
+        .auto-card-url { font-size:11px; color:var(--vscode-descriptionForeground); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:8px; }
+        .auto-card-spacer { flex:1; }
+        .auto-card-actions { display:flex; gap:6px; border-top:1px solid var(--border); padding-top:10px; margin-top:4px; }
 
         /* Buttons */
         .btn { padding:4px 10px; border:1px solid var(--vscode-button-border, transparent); border-radius:4px; background:var(--vscode-button-secondaryBackground, rgba(128,128,128,0.2)); color:var(--vscode-button-secondaryForeground, var(--vscode-foreground)); cursor:pointer; font-size:11px; }
@@ -1066,46 +1069,50 @@ export class DashboardPanel {
                 if (bpData.automations) {
                     bpData.automations.forEach(function(auto) {
                         var card = mkEl('div', 'auto-card');
+
+                        // Icon
+                        card.appendChild(mkEl('div', 'auto-card-icon', auto.icon || '\\u{1F4E6}'));
+
+                        // Name
+                        card.appendChild(mkEl('div', 'auto-card-name', auto.name));
+
+                        // State badge
+                        var stateClass = (auto.state || 'not-deployed').replace(/\\s+/g, '-').toLowerCase();
+                        card.appendChild(mkEl('span', 'auto-card-state ' + stateClass, auto.state || 'not deployed'));
+
+                        // URL
                         if (auto.url) {
-                            card.addEventListener('click', function(e) {
-                                if (e.target.tagName === 'BUTTON') return;
+                            var urlEl = mkEl('div', 'auto-card-url');
+                            urlEl.textContent = auto.url;
+                            urlEl.style.cursor = 'pointer';
+                            urlEl.addEventListener('click', function(e) {
+                                e.stopPropagation();
                                 vscodeApi.postMessage({ type: 'openUrl', url: auto.url });
                             });
+                            card.appendChild(urlEl);
                         }
 
-                        var header = mkEl('div', 'auto-card-header');
-                        var iconSpan = mkEl('span', '', auto.icon || '\\u{1F4E6}');
-                        iconSpan.style.fontSize = '20px';
-                        header.appendChild(iconSpan);
-                        header.appendChild(mkEl('span', 'auto-card-name', auto.name));
-                        var stateClass = (auto.state || 'not-deployed').replace(/\\s+/g, '-').toLowerCase();
-                        header.appendChild(mkEl('span', 'auto-card-state ' + stateClass, auto.state || 'not deployed'));
-                        card.appendChild(header);
+                        // Spacer pushes actions to bottom
+                        card.appendChild(mkEl('div', 'auto-card-spacer'));
 
-                        if (auto.url) {
-                            var urlLine = mkEl('div', '', '');
-                            urlLine.style.cssText = 'font-size:11px; color:var(--vscode-descriptionForeground); margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
-                            urlLine.textContent = auto.url;
-                            card.appendChild(urlLine);
-                        }
-
+                        // Action buttons
                         var actions = mkEl('div', 'auto-card-actions');
                         if (auto.deploymentId) {
-                            var logsBtn = mkEl('button', 'btn', '\\u{1F4CB} Logs');
+                            var logsBtn = mkEl('button', 'btn', 'Logs');
                             logsBtn.addEventListener('click', function(e) {
                                 e.stopPropagation();
                                 vscodeApi.postMessage({ type: 'showLogs', deploymentId: auto.deploymentId });
                             });
                             actions.appendChild(logsBtn);
 
-                            var restartBtn = mkEl('button', 'btn', '\\u{1F504} Restart');
+                            var restartBtn = mkEl('button', 'btn', 'Restart');
                             restartBtn.addEventListener('click', function(e) {
                                 e.stopPropagation();
                                 vscodeApi.postMessage({ type: 'restartAutomation', deploymentId: auto.deploymentId });
                             });
                             actions.appendChild(restartBtn);
                         } else if (bpData.worktree) {
-                            var startBtn = mkEl('button', 'btn btn-primary', '\\u{25B6} Start Live Dev');
+                            var startBtn = mkEl('button', 'btn btn-primary', 'Start Live Dev');
                             startBtn.addEventListener('click', function(e) {
                                 e.stopPropagation();
                                 vscodeApi.postMessage({ type: 'startLiveDev', relativePath: auto.relativePath, worktree: bpData.worktree, name: auto.name });
