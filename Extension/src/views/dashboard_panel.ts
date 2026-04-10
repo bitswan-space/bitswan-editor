@@ -3,7 +3,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as cp from 'child_process';
 import * as toml from '@iarna/toml';
+import axios from 'axios';
 import { getUserEmail } from '../services/user_info';
+import { getDeployDetails } from '../deploy_details';
 
 const REQUIREMENTS_FILENAME = 'testable-requirements.toml';
 const WORKSPACE_DIR = '/workspace/workspace';
@@ -168,7 +170,7 @@ export class DashboardPanel {
                         if (auto) {
                             const name = auto.name || auto.deployment_id;
                             try {
-                                const { restartAutomation } = await import('../lib');
+                                const { restartAutomation } = require('../lib');
                                 const url = `${activeInstance.url}/automations/${name}/restart`;
                                 await restartAutomation(url, activeInstance.secret);
                                 vscode.window.showInformationMessage(`Restarted ${name}`);
@@ -460,11 +462,9 @@ export class DashboardPanel {
             title: 'Starting coding agent container...',
             cancellable: false,
         }, async (progress) => {
-            const { getDeployDetails } = await import('../deploy_details');
             const details = await getDeployDetails(this.context);
             if (!details) { return false; }
             try {
-                const axios = (await import('axios')).default;
                 await axios.post(
                     `${details.deployUrl}/worktrees/coding-agent/ensure`,
                     {},
@@ -569,10 +569,8 @@ export class DashboardPanel {
 
         try {
             // Try GitOps API first
-            const { getDeployDetails } = await import('../deploy_details');
             const details = await getDeployDetails(this.context);
             if (details) {
-                const axios = (await import('axios')).default;
                 await axios.post(
                     `${details.deployUrl}/worktrees/create`,
                     { branch_name: name },
@@ -642,13 +640,10 @@ export class DashboardPanel {
         );
         if (confirm !== 'Merge') { return; }
 
-        const { getDeployDetails } = await import('../deploy_details');
         const details = await getDeployDetails(this.context);
         if (!details) { return; }
 
         try {
-            const axios = (await import('axios')).default;
-
             // First commit any uncommitted changes
             try {
                 await axios.post(
