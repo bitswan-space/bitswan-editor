@@ -406,7 +406,9 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
         if (element instanceof BusinessProcessItem) {
             console.log(`[DEBUG] getChildren - BusinessProcessItem: "${element.name}"`);
-            const items = this.getAutomationSourcesForBusinessProcess(element.name);
+            const items = (element as any)._idPrefix
+                ? this.getAutomationSourcesAtPath(element.resourceUri.fsPath, element.name)
+                : this.getAutomationSourcesForBusinessProcess(element.name);
             // Namespace IDs for worktree BPs to avoid collisions
             const prefix = (element as any)._idPrefix || '';
             if (prefix) {
@@ -634,6 +636,11 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         );
 
         return businessProcesses;
+    }
+
+    private getAutomationSourcesAtPath(absolutePath: string, businessProcessName: string): (AutomationSourceItem | SubfolderItem)[] {
+        const allSources = this.getAutomationSourcesInDirectoryRecursive(absolutePath, businessProcessName);
+        return this.buildSubfolderTree(allSources, absolutePath);
     }
 
     private getAutomationSourcesForBusinessProcess(businessProcessName: string): (AutomationSourceItem | SubfolderItem)[] {
