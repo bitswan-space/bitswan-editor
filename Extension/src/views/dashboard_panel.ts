@@ -714,72 +714,28 @@ export class DashboardPanel {
         vscode.commands.executeCommand('bitswan.openAutomationTemplates', relPath);
     }
 
-    private async syncWorktree(worktree: string): Promise<void> {
+    /**
+     * Rebase worktree onto main and fast-forward main.
+     * If deleteAfter is true, deletes the worktree on success.
+     * On conflicts, launches Claude to resolve them.
+     */
+    private async rebaseAndMerge(worktree: string, deleteAfter: boolean): Promise<void> {
         const details = await getDeployDetails(this.context);
         if (!details) { return; }
 
-        await vscode.window.withProgress({
-            location: vscode.ProgressLocation.Notification,
-            title: `Syncing worktree "${worktree}" with main...`,
-            cancellable: false,
-        }, async () => {
-            try {
-                // Commit any uncommitted changes first
-                try {
-                    await axios.post(
-                        `${details.deployUrl}/agent/worktrees/${worktree}/vcs/commit`,
-                        { message: 'Pre-sync commit' },
-                        { headers: { Authorization: `Bearer ${details.deploySecret}` } },
-                    );
-                } catch { /* nothing to commit */ }
-
-                const result = await axios.post(
-                    `${details.deployUrl}/agent/worktrees/${worktree}/sync`,
-                    {},
-                    {
-                        headers: { Authorization: `Bearer ${details.deploySecret}` },
-                        validateStatus: () => true,
-                    },
-                );
-
-                const data = result.data;
-                if (data.status === 'synced' || data.status === 'success' || data.status === 'already_up_to_date') {
-                    vscode.window.showInformationMessage(`Worktree "${worktree}" synced with main.`);
-                } else if (data.status === 'conflicts') {
-                    const conflictedFiles = (data.conflicted_files || []).join(', ');
-                    vscode.window.showWarningMessage(`Sync has conflicts in: ${conflictedFiles}. Launching Claude to resolve.`);
-                    await this.launchMergeConflictAgent(worktree, data.conflicted_files || []);
-                } else {
-                    vscode.window.showErrorMessage(`Sync failed: ${data.detail || data.message || JSON.stringify(data)}`);
-                }
-            } catch (err: any) {
-                vscode.window.showErrorMessage(`Sync failed: ${err.message}`);
-            }
-        });
-    }
-
-    private async mergeWorktree(worktree: string): Promise<void> {
-        const confirm = await vscode.window.showWarningMessage(
-            `Merge worktree "${worktree}" into main and delete the worktree?`,
-            { modal: true },
-            'Merge & Delete',
-        );
-        if (confirm !== 'Merge & Delete') { return; }
-
-        const details = await getDeployDetails(this.context);
-        if (!details) { return; }
+        const action = deleteAfter ? 'Merge & Delete' : 'Sync';
 
         try {
-            // First commit any uncommitted changes
+            // Commit any uncommitted changes
             try {
                 await axios.post(
                     `${details.deployUrl}/agent/worktrees/${worktree}/vcs/commit`,
-                    { message: 'Pre-merge commit' },
+                    { message: `Pre-${action.toLowerCase()} commit` },
                     { headers: { Authorization: `Bearer ${details.deploySecret}` } },
                 );
-            } catch { /* may fail if nothing to commit — that's fine */ }
+            } catch { /* nothing to commit */ }
 
-            // Start rebase-and-merge
+            // Rebase and fast-forward main
             const result = await axios.post(
                 `${details.deployUrl}/agent/worktrees/${worktree}/rebase-and-merge`,
                 {},
@@ -792,33 +748,45 @@ export class DashboardPanel {
             const data = result.data;
 
             if (data.status === 'merged' || data.status === 'success') {
-                // Merge succeeded — delete worktree automatically
                 const merged_into = data.merged_into || 'main';
-                try {
-                    await axios.delete(
-                        `${details.deployUrl}/worktrees/${worktree}`,
-                        { headers: { Authorization: `Bearer ${details.deploySecret}` } },
-                    );
-                    vscode.window.showInformationMessage(`Worktree "${worktree}" merged into ${merged_into} and deleted.`);
-                } catch (err: any) {
-                    vscode.window.showWarningMessage(`Merged into ${merged_into} but failed to delete worktree: ${err.message}`);
+                if (deleteAfter) {
+                    try {
+                        await axios.delete(
+                            `${details.deployUrl}/worktrees/${worktree}`,
+                            { headers: { Authorization: `Bearer ${details.deploySecret}` } },
+                        );
+                        vscode.window.showInformationMessage(`Worktree "${worktree}" merged into ${merged_into} and deleted.`);
+                    } catch (err: any) {
+                        vscode.window.showWarningMessage(`Merged but failed to delete worktree: ${err.message}`);
+                    }
+                    await this.loadBusinessProcesses();
+                } else {
+                    vscode.window.showInformationMessage(`Worktree "${worktree}" synced with ${merged_into}.`);
                 }
-                await this.loadBusinessProcesses();
             } else if (data.status === 'conflicts') {
-                // Conflicts — launch Claude to resolve
                 const conflictedFiles = (data.conflicted_files || []).join(', ');
-                vscode.window.showWarningMessage(
-                    `Merge has conflicts in: ${conflictedFiles}. Launching Claude to resolve.`,
-                );
+                vscode.window.showWarningMessage(`Conflicts in: ${conflictedFiles}. Launching Claude to resolve.`);
                 await this.launchMergeConflictAgent(worktree, data.conflicted_files || []);
             } else {
-                vscode.window.showErrorMessage(
-                    `Merge failed: ${data.detail || data.message || JSON.stringify(data)}`,
-                );
+                vscode.window.showErrorMessage(`${action} failed: ${data.detail || data.message || JSON.stringify(data)}`);
             }
         } catch (err: any) {
-            vscode.window.showErrorMessage(`Merge failed: ${err.message}`);
+            vscode.window.showErrorMessage(`${action} failed: ${err.message}`);
         }
+    }
+
+    private async syncWorktree(worktree: string): Promise<void> {
+        await this.rebaseAndMerge(worktree, false);
+    }
+
+    private async mergeWorktree(worktree: string): Promise<void> {
+        const confirm = await vscode.window.showWarningMessage(
+            `Merge worktree "${worktree}" into main and delete the worktree?`,
+            { modal: true },
+            'Merge & Delete',
+        );
+        if (confirm !== 'Merge & Delete') { return; }
+        await this.rebaseAndMerge(worktree, true);
     }
 
     private async launchMergeConflictAgent(worktree: string, conflictedFiles: string[]): Promise<void> {
