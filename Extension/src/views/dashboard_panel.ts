@@ -43,6 +43,14 @@ function serializeRequirementsToml(reqs: Requirement[]): string {
     return toml.stringify(data as any);
 }
 
+interface ActiveSession {
+    worktree: string;
+    userEmail: string;
+    terminalName: string;
+}
+
+const activeSessions: ActiveSession[] = [];
+
 export class DashboardPanel {
     private static currentPanel: DashboardPanel | undefined;
 
@@ -113,6 +121,8 @@ export class DashboardPanel {
         switch (msg.type) {
             case 'ready':
                 await this.loadBusinessProcesses();
+                this.sendActiveSessions();
+                this.postMessage({ type: 'anonMode', enabled: this.context.globalState.get<boolean>('agentAnonMode', false) });
                 break;
             case 'loadBP':
                 await this.loadBPContent(msg.key);
@@ -187,6 +197,11 @@ export class DashboardPanel {
             case 'mergeWorktree':
                 await this.mergeWorktree(msg.worktree);
                 break;
+            case 'focusTerminal': {
+                const t = vscode.window.terminals.find(t => t.name === msg.terminalName);
+                if (t) { t.show(true); }
+                break;
+            }
             case 'toggleAnon': {
                 const current = this.context.globalState.get<boolean>('agentAnonMode', false);
                 await this.context.globalState.update('agentAnonMode', !current);
@@ -441,7 +456,7 @@ export class DashboardPanel {
                 return;
             }
 
-            const userEmail = await getUserEmail(this.context);
+            const userEmail = await getUserEmail(this.context) || 'unknown';
             const cdPath = `/workspace/worktrees/${worktree}/${bpPath}`;
 
             const anon = this.context.globalState.get<boolean>('agentAnonMode', false);
@@ -462,6 +477,24 @@ export class DashboardPanel {
                 },
             });
             terminal.show(true);
+
+            // Track active session
+            const termName = terminal.name;
+            activeSessions.push({ worktree, userEmail, terminalName: termName });
+            this.sendActiveSessions();
+
+            // Remove when terminal closes
+            const disposable = vscode.window.onDidCloseTerminal(t => {
+                if (t.name === termName) {
+                    const idx = activeSessions.findIndex(s => s.terminalName === termName);
+                    if (idx >= 0) { activeSessions.splice(idx, 1); }
+                    if (DashboardPanel.currentPanel) {
+                        DashboardPanel.currentPanel.sendActiveSessions();
+                    }
+                    disposable.dispose();
+                }
+            });
+
             setTimeout(() => {
                 terminal.sendText(`cd "${cdPath}" && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && claude --dangerously-skip-permissions`);
             }, 2000);
@@ -491,9 +524,10 @@ export class DashboardPanel {
                 return;
             }
 
-            const userEmail = await getUserEmail(this.context);
+            const userEmail = await getUserEmail(this.context) || 'unknown';
             const cdPath = `/workspace/worktrees/${worktree}/${bpPath}`;
 
+            const anon = this.context.globalState.get<boolean>('agentAnonMode', false);
             const terminal = vscode.window.createTerminal({
                 name: `Terminal: ${worktree}/${bpPath}`,
                 shellPath: '/usr/bin/ssh',
@@ -506,11 +540,26 @@ export class DashboardPanel {
                 ],
                 env: {
                     SSH_USER_EMAIL: userEmail,
-                    SSH_LOGGED: 'false',
+                    SSH_LOGGED: anon ? 'false' : 'true',
                     SSH_WORKTREE: worktree,
                 },
             });
             terminal.show(true);
+
+            const termName = terminal.name;
+            activeSessions.push({ worktree, userEmail, terminalName: termName });
+            this.sendActiveSessions();
+            const disposable = vscode.window.onDidCloseTerminal(t => {
+                if (t.name === termName) {
+                    const idx = activeSessions.findIndex(s => s.terminalName === termName);
+                    if (idx >= 0) { activeSessions.splice(idx, 1); }
+                    if (DashboardPanel.currentPanel) {
+                        DashboardPanel.currentPanel.sendActiveSessions();
+                    }
+                    disposable.dispose();
+                }
+            });
+
             setTimeout(() => {
                 terminal.sendText(`cd "${cdPath}"`);
             }, 2000);
@@ -687,7 +736,7 @@ export class DashboardPanel {
             return;
         }
 
-        const userEmail = await getUserEmail(this.context);
+        const userEmail = await getUserEmail(this.context) || 'unknown';
         const wtPath = `/workspace/worktrees/${worktree}`;
 
         const conflictList = conflictedFiles.map(f => `  - ${f}`).join('\n');
@@ -725,6 +774,10 @@ export class DashboardPanel {
         setTimeout(() => {
             terminal.sendText(`cd "${wtPath}" && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && claude --dangerously-skip-permissions -p "${claudePrompt}"`);
         }, 2000);
+    }
+
+    private sendActiveSessions(): void {
+        this.postMessage({ type: 'activeSessions', sessions: activeSessions });
     }
 
     private postMessage(msg: any): void {
@@ -848,6 +901,32 @@ export class DashboardPanel {
         var currentBpKey = '';
         var bpData = null; // { requirements, automations, readme, worktree, bpPath, sessions }
         var anonMode = false;
+        var activeSessionsList = [];
+
+        function renderActiveSessions(container) {
+            if (!container) { container = document.getElementById('activeSessions'); }
+            if (!container) return;
+            container.innerHTML = '';
+            var filtered = activeSessionsList.filter(function(s) {
+                return !bpData || !bpData.worktree || s.worktree === bpData.worktree;
+            });
+            if (filtered.length === 0) return;
+            filtered.forEach(function(s) {
+                var row = mkEl('div', '');
+                row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; margin-bottom:4px;';
+                var dot = mkEl('span', '');
+                dot.style.cssText = 'width:8px; height:8px; border-radius:50%; background:var(--status-pass); flex-shrink:0;';
+                row.appendChild(dot);
+                row.appendChild(mkEl('span', '', s.terminalName + ' — ' + s.userEmail));
+                var focusBtn = mkEl('button', 'btn btn-sm', 'Focus');
+                focusBtn.style.marginLeft = 'auto';
+                focusBtn.addEventListener('click', function() {
+                    vscodeApi.postMessage({ type: 'focusTerminal', terminalName: s.terminalName });
+                });
+                row.appendChild(focusBtn);
+                container.appendChild(row);
+            });
+        }
         var mode = 'navigate';
 
         function cycleStatus(s) { var o=['pending','pass','fail','retest','proposed']; return o[(o.indexOf(s)+1)%o.length]; }
@@ -1067,6 +1146,12 @@ export class DashboardPanel {
                 toggleLabel.appendChild(document.createTextNode('Record sessions'));
                 sessHeader.appendChild(toggleLabel);
                 sessSection.appendChild(sessHeader);
+
+                // Active sessions
+                var activeDiv = mkEl('div', '');
+                activeDiv.id = 'activeSessions';
+                renderActiveSessions(activeDiv);
+                sessSection.appendChild(activeDiv);
 
                 // Playback area (hidden by default)
                 var playbackArea = mkEl('div', '');
@@ -1296,9 +1381,13 @@ export class DashboardPanel {
                         renderContent();
                     }
                     break;
+                case 'activeSessions':
+                    activeSessionsList = msg.sessions || [];
+                    renderActiveSessions(null);
+                    break;
                 case 'anonMode':
                     anonMode = msg.enabled;
-                    var cb = document.querySelector('#playbackArea')?.parentElement?.querySelector('input[type=checkbox]');
+                    var cb = document.querySelector('input[type=checkbox]');
                     if (cb) { cb.checked = !anonMode; }
                     break;
                 case 'castData':
