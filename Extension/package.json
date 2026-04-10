@@ -523,7 +523,7 @@
         {
           "command": "bitswan.removeAllOrphaned",
           "when": "view == bitswan-unified-business-processes && viewItem == otherAutomations",
-          "group": "inline"
+          "group": "7_modification"
         },
         {
           "command": "bitswan.restartAutomation",
