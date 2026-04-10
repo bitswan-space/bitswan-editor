@@ -34,7 +34,7 @@ import { Jupyter } from '@vscode/jupyter-extension';
 import { getJupyterServers } from './commands/jupyter-server';
 import { startBitswanKernel, stopBitswanKernel, checkAndUpdateKernelStatus, updateKernelStatusContext } from './commands/kernel';
 import * as filesystemCommands from './commands/filesystem';
-import { initUserInfo } from './services/user_info';
+import { initUserInfo, getUserEmail } from './services/user_info';
 import { WorktreesViewProvider } from './views/worktrees_view';
 import { createWorktreeCommand as createWorktreeCmd, deleteWorktreeCommand as deleteWorktreeCmd, openAgentTerminalCommand as openAgentTerminalCmd, viewWorktreeDiffCommand as viewWorktreeDiffCmd } from './commands/worktrees';
 import { AgentSessionPanel, startAgentSession } from './commands/agent_sessions';
@@ -1164,8 +1164,10 @@ export function activate(context: vscode.ExtensionContext) {
     };
     context.subscriptions.push(vscode.window.registerUriHandler(uriHandler));
 
-    // Auto-open the Dashboard on startup
-    DashboardPanel.createOrShow(context);
+    // Auto-open the Dashboard on startup, after user info has been fetched
+    getUserEmail(context).finally(() => {
+        DashboardPanel.createOrShow(context);
+    });
 }
 
 /**
