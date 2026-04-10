@@ -814,9 +814,9 @@ export class DashboardPanel {
         @font-face { font-family: codicon; src: url(${this.codiconFontUri}); }
         .codicon { font-family: codicon; font-size: 14px; line-height: 1; display: inline-block; }
         .codicon-output::before { content: "\\eb9d"; }
-        .codicon-debug-restart::before { content: "\\eb4e"; }
-        .codicon-debug-start::before { content: "\\eb49"; }
-        .codicon-link-external::before { content: "\\eb05"; }
+        .codicon-debug-restart::before { content: "\\ead2"; }
+        .codicon-debug-start::before { content: "\\ead3"; }
+        .codicon-link-external::before { content: "\\eb14"; }
         :root { color-scheme: light dark; font-family: var(--vscode-font-family, sans-serif);
             --status-pass: #3fb950; --status-fail: #f85149; --status-pending: #d29922; --status-retest: #a371f7; --status-proposed: #768390; --border: var(--vscode-editorWidget-border, rgba(128,128,128,0.3)); }
         * { box-sizing: border-box; }
