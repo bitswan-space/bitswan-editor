@@ -165,6 +165,9 @@ export class DashboardPanel {
             case 'createAutomation':
                 await this.createAutomation(msg.worktree, msg.bpPath);
                 break;
+            case 'mergeWorktree':
+                await this.mergeWorktree(msg.worktree);
+                break;
         }
     }
 
@@ -371,7 +374,7 @@ export class DashboardPanel {
             }
 
             const userEmail = await getUserEmail(this.context);
-            const cdPath = `/workspace/workspace/worktrees/${worktree}/${bpPath}`;
+            const cdPath = `/workspace/worktrees/${worktree}/${bpPath}`;
 
             const terminal = vscode.window.createTerminal({
                 name: `Claude: ${worktree}/${bpPath}`,
@@ -420,7 +423,7 @@ export class DashboardPanel {
             }
 
             const userEmail = await getUserEmail(this.context);
-            const cdPath = `/workspace/workspace/worktrees/${worktree}/${bpPath}`;
+            const cdPath = `/workspace/worktrees/${worktree}/${bpPath}`;
 
             const terminal = vscode.window.createTerminal({
                 name: `Terminal: ${worktree}/${bpPath}`,
@@ -527,6 +530,132 @@ export class DashboardPanel {
         }
 
         vscode.commands.executeCommand('bitswan.openAutomationTemplates', relPath);
+    }
+
+    private async mergeWorktree(worktree: string): Promise<void> {
+        const confirm = await vscode.window.showWarningMessage(
+            `Merge worktree "${worktree}" into the main branch?`,
+            { modal: true },
+            'Merge',
+        );
+        if (confirm !== 'Merge') { return; }
+
+        const { getDeployDetails } = await import('../deploy_details');
+        const details = await getDeployDetails(this.context);
+        if (!details) { return; }
+
+        try {
+            const axios = (await import('axios')).default;
+
+            // First commit any uncommitted changes
+            try {
+                await axios.post(
+                    `${details.deployUrl}/agent/worktrees/${worktree}/vcs/commit`,
+                    { message: 'Pre-merge commit' },
+                    { headers: { Authorization: `Bearer ${details.deploySecret}` } },
+                );
+            } catch { /* may fail if nothing to commit — that's fine */ }
+
+            // Start rebase-and-merge
+            const result = await axios.post(
+                `${details.deployUrl}/agent/worktrees/${worktree}/rebase-and-merge`,
+                {},
+                {
+                    headers: { Authorization: `Bearer ${details.deploySecret}` },
+                    validateStatus: () => true,
+                },
+            );
+
+            const data = result.data;
+
+            if (data.status === 'merged' || data.status === 'success') {
+                // Merge succeeded — ask to delete worktree
+                const merged_into = data.merged_into || 'main';
+                const deleteConfirm = await vscode.window.showInformationMessage(
+                    `Worktree "${worktree}" merged into ${merged_into}. Delete the worktree?`,
+                    'Delete Worktree',
+                    'Keep',
+                );
+                if (deleteConfirm === 'Delete Worktree') {
+                    try {
+                        await axios.delete(
+                            `${details.deployUrl}/worktrees/${worktree}`,
+                            { headers: { Authorization: `Bearer ${details.deploySecret}` } },
+                        );
+                        vscode.window.showInformationMessage(`Worktree "${worktree}" deleted.`);
+                    } catch (err: any) {
+                        vscode.window.showErrorMessage(`Failed to delete worktree: ${err.message}`);
+                    }
+                }
+                await this.loadBusinessProcesses();
+            } else if (data.status === 'conflicts') {
+                // Conflicts — launch Claude to resolve
+                const conflictedFiles = (data.conflicted_files || []).join(', ');
+                vscode.window.showWarningMessage(
+                    `Merge has conflicts in: ${conflictedFiles}. Launching Claude to resolve.`,
+                );
+                await this.launchMergeConflictAgent(worktree, data.conflicted_files || []);
+            } else {
+                vscode.window.showErrorMessage(
+                    `Merge failed: ${data.detail || data.message || JSON.stringify(data)}`,
+                );
+            }
+        } catch (err: any) {
+            vscode.window.showErrorMessage(`Merge failed: ${err.message}`);
+        }
+    }
+
+    private async launchMergeConflictAgent(worktree: string, conflictedFiles: string[]): Promise<void> {
+        const workspaceName = process.env.HOSTNAME?.replace('-editor', '') || 'workspace';
+        const agentHost = `${workspaceName}-coding-agent`;
+
+        const reachable = await new Promise<boolean>(resolve => {
+            cp.exec(`getent hosts ${agentHost}`, (err) => resolve(!err));
+        });
+
+        if (!reachable) {
+            vscode.window.showErrorMessage('Coding agent container is not running.');
+            return;
+        }
+
+        const userEmail = await getUserEmail(this.context);
+        const wtPath = `/workspace/worktrees/${worktree}`;
+
+        const conflictList = conflictedFiles.map(f => `  - ${f}`).join('\n');
+        const claudePrompt = [
+            `A rebase-and-merge is in progress for worktree "${worktree}" and there are conflicts.`,
+            ``,
+            `Conflicted files:`,
+            conflictList,
+            ``,
+            `Please:`,
+            `1. Open each conflicted file and resolve the conflict markers (<<<<<<<, =======, >>>>>>>)`,
+            `2. After resolving ALL conflicts, run: bitswan-coding-agent vcs rebase-continue`,
+            `3. If more conflicts arise, repeat`,
+            `4. Once the merge is complete, tell the user it's done`,
+        ].join('\\n');
+
+        const terminal = vscode.window.createTerminal({
+            name: `Merge: ${worktree}`,
+            shellPath: '/usr/bin/ssh',
+            shellArgs: [
+                '-i', '/workspace/.ssh/id_ed25519',
+                '-o', 'StrictHostKeyChecking=no',
+                '-o', 'UserKnownHostsFile=/dev/null',
+                '-o', 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE',
+                `agent@${agentHost}`,
+            ],
+            env: {
+                SSH_USER_EMAIL: userEmail,
+                SSH_LOGGED: 'true',
+                SSH_WORKTREE: worktree,
+            },
+        });
+        terminal.show(true);
+
+        setTimeout(() => {
+            terminal.sendText(`cd "${wtPath}" && claude --dangerously-skip-permissions -p "${claudePrompt}"`);
+        }, 2000);
     }
 
     private postMessage(msg: any): void {
@@ -754,6 +883,15 @@ export class DashboardPanel {
                     vscodeApi.postMessage({ type: 'openTerminal', worktree: bpData.worktree, bpPath: bpData.bpPath });
                 });
                 actionsRow.appendChild(termCard);
+
+                if (bpData.worktree) {
+                    var mergeCard = mkEl('div', 'action-card');
+                    mergeCard.innerHTML = '<div class="card-icon">\\u{1F500}</div><div class="card-label">Merge</div><div class="card-desc">Merge worktree into main</div>';
+                    mergeCard.addEventListener('click', function() {
+                        vscodeApi.postMessage({ type: 'mergeWorktree', worktree: bpData.worktree });
+                    });
+                    actionsRow.appendChild(mergeCard);
+                }
 
                 actionsSection.appendChild(actionsRow);
                 content.appendChild(actionsSection);
