@@ -461,13 +461,10 @@ export class DashboardPanel {
 
             const anon = this.context.globalState.get<boolean>('agentAnonMode', false);
             const logged = anon ? 'false' : 'true';
-            const autoCmd = `cd '${cdPath}' && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions`;
-            const terminal = vscode.window.createTerminal({
-                name: `Claude: ${worktree}/${bpPath}`,
-                shellPath: '/bin/bash',
-                shellArgs: ['-c', `exec SSH_USER_EMAIL='${userEmail}' SSH_LOGGED='${logged}' SSH_WORKTREE='${worktree}' SSH_AUTO_CMD='${autoCmd.replace(/'/g, "'\\''")}' ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`],
-            });
+            const autoCmd = `cd ${cdPath} && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions`;
+            const terminal = vscode.window.createTerminal(`Claude: ${worktree}/${bpPath}`);
             terminal.show(true);
+            terminal.sendText(`exec SSH_USER_EMAIL="${userEmail}" SSH_LOGGED="${logged}" SSH_WORKTREE="${worktree}" SSH_AUTO_CMD="${autoCmd}" ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
 
             const termName = terminal.name;
             activeSessions.push({ worktree, userEmail, terminalName: termName });
@@ -518,13 +515,10 @@ export class DashboardPanel {
 
             const anon = this.context.globalState.get<boolean>('agentAnonMode', false);
             const logged = anon ? 'false' : 'true';
-            const autoCmd = `cd '${cdPath}' && exec bash`;
-            const terminal = vscode.window.createTerminal({
-                name: `Terminal: ${worktree}/${bpPath}`,
-                shellPath: '/bin/bash',
-                shellArgs: ['-c', `exec SSH_USER_EMAIL='${userEmail}' SSH_LOGGED='${logged}' SSH_WORKTREE='${worktree}' SSH_AUTO_CMD='${autoCmd.replace(/'/g, "'\\''")}' ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`],
-            });
+            const autoCmd = `cd ${cdPath} && exec bash`;
+            const terminal = vscode.window.createTerminal(`Terminal: ${worktree}/${bpPath}`);
             terminal.show(true);
+            terminal.sendText(`exec SSH_USER_EMAIL="${userEmail}" SSH_LOGGED="${logged}" SSH_WORKTREE="${worktree}" SSH_AUTO_CMD="${autoCmd}" ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
 
             const termName = terminal.name;
             activeSessions.push({ worktree, userEmail, terminalName: termName });
@@ -736,13 +730,10 @@ export class DashboardPanel {
             `4. Once the merge is complete, tell the user it's done`,
         ].join('\\n');
 
-        const mergeAutoCmd = `cd '${wtPath}' && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions -p "${claudePrompt}"`;
-        const terminal = vscode.window.createTerminal({
-            name: `Merge: ${worktree}`,
-            shellPath: '/bin/bash',
-            shellArgs: ['-c', `exec SSH_USER_EMAIL='${userEmail}' SSH_LOGGED='true' SSH_WORKTREE='${worktree}' SSH_AUTO_CMD='${mergeAutoCmd.replace(/'/g, "'\\''")}' ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`],
-        });
+        const mergeAutoCmd = `cd ${wtPath} && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions -p "${claudePrompt}"`;
+        const terminal = vscode.window.createTerminal(`Merge: ${worktree}`);
         terminal.show(true);
+        terminal.sendText(`exec SSH_USER_EMAIL="${userEmail}" SSH_LOGGED="true" SSH_WORKTREE="${worktree}" SSH_AUTO_CMD="${mergeAutoCmd}" ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
     }
 
     private sendActiveSessions(): void {
