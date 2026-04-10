@@ -419,7 +419,12 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         }
 
         if (element instanceof AutomationSourceItem) {
-            // Show stages (dev/staging/production) for this automation source, followed by file entries and image builds
+            // Worktree automations: no children — actions are inline buttons
+            if ((element as any)._idPrefix) {
+                return [];
+            }
+
+            // Main workspace: show stages, file entries, images
             console.log(`[DEBUG] getChildren - AutomationSourceItem: "${element.name}"`);
             const [stages, fileEntries] = await Promise.all([
                 this.getStagesForSource(element.name),
@@ -446,15 +451,6 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             }
 
             items.push(imagesSection);
-
-            // Propagate worktree ID prefix to all children
-            const asPrefix = (element as any)._idPrefix || '';
-            if (asPrefix) {
-                for (const item of items) {
-                    if (item.id) { item.id = asPrefix + item.id; }
-                    (item as any)._idPrefix = asPrefix;
-                }
-            }
 
             return items;
         }
@@ -540,6 +536,11 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         for (const item of items) {
             if (item.id) { item.id = prefix + item.id; }
             (item as any)._idPrefix = prefix;
+            // Worktree automations are leaf nodes — no stages
+            if (item instanceof AutomationSourceItem) {
+                item.collapsibleState = vscode.TreeItemCollapsibleState.None;
+                item.contextValue = 'worktreeAutomation';
+            }
             if (item instanceof SubfolderItem && item.children) {
                 this._prefixTreeItemIds(item.children, prefix);
             }
