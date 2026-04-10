@@ -501,11 +501,14 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                 return processDirs.map(processDir => {
                     const relativePath = path.relative(wtRoot, processDir);
                     const processConfigPath = path.join(processDir, 'process.toml');
-                    return new BusinessProcessItem(
+                    const item = new BusinessProcessItem(
                         relativePath,
                         vscode.Uri.file(processDir),
                         processConfigPath
                     );
+                    // Namespace the ID to avoid collision with main workspace BPs
+                    item.id = `bp:wt-${element.name}/${relativePath}`;
+                    return item;
                 });
             }
             return [];
