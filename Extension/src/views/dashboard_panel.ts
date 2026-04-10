@@ -548,6 +548,7 @@ export class DashboardPanel {
         body { margin:0; padding:0; font-size:13px; color:var(--vscode-foreground); background:var(--vscode-editor-background); display:flex; flex-direction:column; height:100vh; overflow:hidden; }
         .header { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--border); flex-shrink:0; }
         .header h2 { margin:0; font-size:16px; }
+        .tab-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--vscode-descriptionForeground); padding:6px 8px 6px 0; white-space:nowrap; }
         .tab-bar { display:flex; border-bottom:2px solid var(--border); flex-shrink:0; padding:0 8px; }
         .tab { padding:8px 16px; cursor:pointer; font-size:12px; font-weight:500; border-bottom:2px solid transparent; margin-bottom:-2px; color:var(--vscode-descriptionForeground); }
         .tab:hover { color:var(--vscode-foreground); }
@@ -621,8 +622,14 @@ export class DashboardPanel {
 </head>
 <body>
     <div class="header"><h2>Dashboard</h2></div>
-    <div class="tab-bar" id="tabBar"></div>
-    <div class="subtab-bar" id="subtabBar"></div>
+    <div style="display:flex; align-items:center; padding:0 8px;">
+        <span class="tab-label">Worktrees</span>
+        <div class="tab-bar" id="tabBar" style="flex:1;"></div>
+    </div>
+    <div style="display:flex; align-items:center; padding:0 8px;">
+        <span class="tab-label">Business Processes</span>
+        <div class="subtab-bar" id="subtabBar" style="flex:1;"></div>
+    </div>
     <div class="content" id="content">
         <div class="placeholder" id="placeholder">Loading...</div>
     </div>
