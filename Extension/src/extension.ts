@@ -756,12 +756,19 @@ export function activate(context: vscode.ExtensionContext) {
                 cancellable: false,
             }, async (progress) => {
                 for (const orphan of orphaned) {
+                    const depId = orphan.deploymentId;
                     try {
-                        const url = `${details.deployUrl}/automations/${orphan.deploymentId}`;
-                        await deleteAutomation(url, details.deploySecret);
-                        removed++;
-                        progress.report({ message: `${removed}/${orphaned.length}` });
-                    } catch {
+                        const url = `${details.deployUrl}/automations/${depId}`;
+                        const success = await deleteAutomation(url, details.deploySecret);
+                        if (success) {
+                            removed++;
+                        } else {
+                            outputChannel.appendLine(`Failed to remove orphaned automation: ${depId}`);
+                            failed++;
+                        }
+                        progress.report({ message: `${removed + failed}/${orphaned.length}` });
+                    } catch (err: any) {
+                        outputChannel.appendLine(`Error removing ${depId}: ${err.message}`);
                         failed++;
                     }
                 }
@@ -772,7 +779,9 @@ export function activate(context: vscode.ExtensionContext) {
             } else {
                 vscode.window.showInformationMessage(`Removed ${removed} orphaned automations.`);
             }
+            // Refresh both the automations state and the unified view
             await automationCommands.refreshAutomationsCommand(context, automationsProvider);
+            unifiedBusinessProcessesProvider.refresh();
         });
 
     let createAutomationFileCommand = vscode.commands.registerCommand(
