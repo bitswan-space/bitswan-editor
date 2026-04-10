@@ -8,6 +8,7 @@ import { getUserEmail } from '../services/user_info';
 const REQUIREMENTS_FILENAME = 'testable-requirements.toml';
 const WORKSPACE_DIR = '/workspace/workspace';
 const WORKTREES_DIR = '/workspace/workspace/worktrees';
+const SESSIONS_DIR = '/workspace/agent-sessions';
 
 interface Requirement {
     id: string;
@@ -56,8 +57,8 @@ export class DashboardPanel {
         this.context = context;
 
         this.panel = vscode.window.createWebviewPanel(
-            'bitswan-dashboard',
-            'Dashboard',
+            'bitswan-workspace',
+            'Workspace',
             vscode.ViewColumn.Active,
             { enableScripts: true, retainContextWhenHidden: true },
         );
@@ -273,7 +274,33 @@ export class DashboardPanel {
             bpPath = key.substring('workspace:'.length);
         }
 
-        this.postMessage({ type: 'bpContent', key, requirements, automations, readme, worktree, bpPath });
+        // Agent sessions for this worktree
+        const sessions = worktree ? this._scanSessions(worktree) : [];
+
+        this.postMessage({ type: 'bpContent', key, requirements, automations, readme, worktree, bpPath, sessions });
+    }
+
+    private _scanSessions(worktree: string): { timestamp: string; userEmail: string; worktree: string }[] {
+        if (!fs.existsSync(SESSIONS_DIR)) { return []; }
+        const sessions: { timestamp: string; userEmail: string; worktree: string }[] = [];
+        try {
+            const entries = fs.readdirSync(SESSIONS_DIR);
+            for (const e of entries) {
+                if (!e.endsWith('.meta.json')) { continue; }
+                try {
+                    const meta = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, e), 'utf8'));
+                    if ((meta.worktree || '') === worktree) {
+                        sessions.push({
+                            timestamp: meta.timestamp || meta.started_at || '',
+                            userEmail: meta.user_email || meta.userEmail || '',
+                            worktree: meta.worktree || '',
+                        });
+                    }
+                } catch { /* skip */ }
+            }
+        } catch { /* */ }
+        sessions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        return sessions.slice(0, 20); // last 20
     }
 
     private _findAutomationDirsUnder(bpDir: string): string[] {
@@ -750,7 +777,7 @@ export class DashboardPanel {
     </style>
 </head>
 <body>
-    <div class="header"><h2>Dashboard</h2></div>
+    <div class="header"><h2>Workspace</h2></div>
     <div style="display:flex; align-items:center; padding:0 8px;">
         <span class="tab-label">Worktrees</span>
         <div class="tab-bar" id="tabBar" style="flex:1;"></div>
@@ -971,6 +998,26 @@ export class DashboardPanel {
                 readmeDiv.textContent = bpData.readme;
                 readmeSection.appendChild(readmeDiv);
                 content.appendChild(readmeSection);
+            }
+
+            // Agent Sessions
+            if (bpData.sessions && bpData.sessions.length > 0) {
+                var sessSection = mkEl('div', 'section');
+                sessSection.appendChild(mkEl('div', 'section-title', 'Recent Agent Sessions'));
+                var sessTable = document.createElement('table');
+                sessTable.style.cssText = 'width:100%; border-collapse:collapse; font-size:12px;';
+                sessTable.innerHTML = '<thead><tr style="text-align:left; color:var(--vscode-descriptionForeground);"><th style="padding:4px 8px;">Time</th><th style="padding:4px 8px;">User</th></tr></thead>';
+                var tbody = document.createElement('tbody');
+                bpData.sessions.forEach(function(s) {
+                    var tr = document.createElement('tr');
+                    tr.style.cssText = 'border-top:1px solid var(--border);';
+                    var ts = s.timestamp ? new Date(s.timestamp).toLocaleString() : 'Unknown';
+                    tr.innerHTML = '<td style="padding:4px 8px;">' + ts + '</td><td style="padding:4px 8px;">' + (s.userEmail || 'anonymous') + '</td>';
+                    tbody.appendChild(tr);
+                });
+                sessTable.appendChild(tbody);
+                sessSection.appendChild(sessTable);
+                content.appendChild(sessSection);
             }
 
             // Requirements
