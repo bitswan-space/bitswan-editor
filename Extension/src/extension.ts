@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import urlJoin from 'proper-url-join';
 
 import { AutomationItem } from './views/automations_view';
 import { ImageItem } from './views/unified_images_view';
@@ -727,8 +728,11 @@ export function activate(context: vscode.ExtensionContext) {
 
     let removeAllOrphanedCommand = vscode.commands.registerCommand('bitswan.removeAllOrphaned',
         async (item: OtherAutomationsItem) => {
-            const details = await getDeployDetails(context);
-            if (!details) { return; }
+            const activeInstance = context.globalState.get<any>('activeGitOpsInstance');
+            if (!activeInstance) {
+                vscode.window.showErrorMessage('No active GitOps instance');
+                return;
+            }
 
             // Get orphaned items from the unified view provider
             const children = await unifiedBusinessProcessesProvider.getChildren(item);
@@ -756,30 +760,30 @@ export function activate(context: vscode.ExtensionContext) {
                 cancellable: false,
             }, async (progress) => {
                 for (const orphan of orphaned) {
-                    const depId = orphan.deploymentId;
                     try {
-                        const url = `${details.deployUrl}/automations/${depId}`;
-                        const success = await deleteAutomation(url, details.deploySecret);
+                        // Use the same URL pattern as the working single-delete:
+                        // urlJoin(activeInstance.url, "automations", item.name)
+                        const url = urlJoin(activeInstance.url, "automations", orphan.name).toString();
+                        const success = await deleteAutomation(url, activeInstance.secret);
                         if (success) {
                             removed++;
                         } else {
-                            outputChannel.appendLine(`Failed to remove orphaned automation: ${depId}`);
+                            outputChannel.appendLine(`Failed to remove: ${orphan.name}`);
                             failed++;
                         }
                         progress.report({ message: `${removed + failed}/${orphaned.length}` });
                     } catch (err: any) {
-                        outputChannel.appendLine(`Error removing ${depId}: ${err.message}`);
+                        outputChannel.appendLine(`Error removing ${orphan.name}: ${err.message}`);
                         failed++;
                     }
                 }
             });
 
             if (failed > 0) {
-                vscode.window.showWarningMessage(`Removed ${removed} automations, ${failed} failed.`);
+                vscode.window.showWarningMessage(`Removed ${removed}, ${failed} failed.`);
             } else {
                 vscode.window.showInformationMessage(`Removed ${removed} orphaned automations.`);
             }
-            // Refresh both the automations state and the unified view
             await automationCommands.refreshAutomationsCommand(context, automationsProvider);
             unifiedBusinessProcessesProvider.refresh();
         });
