@@ -169,6 +169,24 @@ export class DashboardPanel {
             case 'mergeWorktree':
                 await this.mergeWorktree(msg.worktree);
                 break;
+            case 'toggleAnon': {
+                const current = this.context.globalState.get<boolean>('agentAnonMode', false);
+                await this.context.globalState.update('agentAnonMode', !current);
+                this.postMessage({ type: 'anonMode', enabled: !current });
+                break;
+            }
+            case 'playSession': {
+                if (msg.castFile) {
+                    try {
+                        const fullPath = path.join(SESSIONS_DIR, msg.castFile);
+                        const castContent = fs.readFileSync(fullPath, 'utf8');
+                        this.postMessage({ type: 'castData', castFile: msg.castFile, data: castContent });
+                    } catch (err: any) {
+                        vscode.window.showErrorMessage(`Failed to load recording: ${err.message}`);
+                    }
+                }
+                break;
+            }
         }
     }
 
@@ -280,9 +298,9 @@ export class DashboardPanel {
         this.postMessage({ type: 'bpContent', key, requirements, automations, readme, worktree, bpPath, sessions });
     }
 
-    private _scanSessions(worktree: string): { timestamp: string; userEmail: string; worktree: string }[] {
+    private _scanSessions(worktree: string): { timestamp: string; userEmail: string; worktree: string; castFile: string; logged: boolean }[] {
         if (!fs.existsSync(SESSIONS_DIR)) { return []; }
-        const sessions: { timestamp: string; userEmail: string; worktree: string }[] = [];
+        const sessions: { timestamp: string; userEmail: string; worktree: string; castFile: string; logged: boolean }[] = [];
         try {
             const entries = fs.readdirSync(SESSIONS_DIR);
             for (const e of entries) {
@@ -290,17 +308,22 @@ export class DashboardPanel {
                 try {
                     const meta = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, e), 'utf8'));
                     if ((meta.worktree || '') === worktree) {
+                        const baseName = e.replace('.meta.json', '');
+                        const castFile = baseName + '.cast';
+                        const hasCast = fs.existsSync(path.join(SESSIONS_DIR, castFile));
                         sessions.push({
                             timestamp: meta.timestamp || meta.started_at || '',
                             userEmail: meta.user_email || meta.userEmail || '',
                             worktree: meta.worktree || '',
+                            castFile: hasCast ? castFile : '',
+                            logged: meta.logged !== false,
                         });
                     }
                 } catch { /* skip */ }
             }
         } catch { /* */ }
         sessions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        return sessions.slice(0, 20); // last 20
+        return sessions.slice(0, 20);
     }
 
     private _findAutomationDirsUnder(bpDir: string): string[] {
@@ -403,6 +426,7 @@ export class DashboardPanel {
             const userEmail = await getUserEmail(this.context);
             const cdPath = `/workspace/worktrees/${worktree}/${bpPath}`;
 
+            const anon = this.context.globalState.get<boolean>('agentAnonMode', false);
             const terminal = vscode.window.createTerminal({
                 name: `Claude: ${worktree}/${bpPath}`,
                 shellPath: '/usr/bin/ssh',
@@ -415,7 +439,7 @@ export class DashboardPanel {
                 ],
                 env: {
                     SSH_USER_EMAIL: userEmail,
-                    SSH_LOGGED: 'true',
+                    SSH_LOGGED: anon ? 'false' : 'true',
                     SSH_WORKTREE: worktree,
                 },
             });
@@ -743,6 +767,7 @@ export class DashboardPanel {
         /* Buttons */
         .btn { padding:4px 10px; border:1px solid var(--vscode-button-border, transparent); border-radius:4px; background:var(--vscode-button-secondaryBackground, rgba(128,128,128,0.2)); color:var(--vscode-button-secondaryForeground, var(--vscode-foreground)); cursor:pointer; font-size:11px; }
         .btn:hover { opacity:0.85; }
+        .btn-sm { padding:2px 8px; font-size:11px; }
         .btn-primary { background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
         .btn-ghost { background:transparent; color:var(--vscode-descriptionForeground); border:none; }
         .btn-ghost:hover { background:var(--status-fail); color:#fff; }
@@ -800,7 +825,8 @@ export class DashboardPanel {
         var structure = [];
         var currentWsIdx = 0;
         var currentBpKey = '';
-        var bpData = null; // { requirements, automations, readme, worktree, bpPath }
+        var bpData = null; // { requirements, automations, readme, worktree, bpPath, sessions }
+        var anonMode = false;
         var mode = 'navigate';
 
         function cycleStatus(s) { var o=['pending','pass','fail','retest','proposed']; return o[(o.indexOf(s)+1)%o.length]; }
@@ -1001,22 +1027,67 @@ export class DashboardPanel {
             }
 
             // Agent Sessions
-            if (bpData.sessions && bpData.sessions.length > 0) {
+            if (bpData.worktree) {
                 var sessSection = mkEl('div', 'section');
-                sessSection.appendChild(mkEl('div', 'section-title', 'Recent Agent Sessions'));
-                var sessTable = document.createElement('table');
-                sessTable.style.cssText = 'width:100%; border-collapse:collapse; font-size:12px;';
-                sessTable.innerHTML = '<thead><tr style="text-align:left; color:var(--vscode-descriptionForeground);"><th style="padding:4px 8px;">Time</th><th style="padding:4px 8px;">User</th></tr></thead>';
-                var tbody = document.createElement('tbody');
-                bpData.sessions.forEach(function(s) {
-                    var tr = document.createElement('tr');
-                    tr.style.cssText = 'border-top:1px solid var(--border);';
-                    var ts = s.timestamp ? new Date(s.timestamp).toLocaleString() : 'Unknown';
-                    tr.innerHTML = '<td style="padding:4px 8px;">' + ts + '</td><td style="padding:4px 8px;">' + (s.userEmail || 'anonymous') + '</td>';
-                    tbody.appendChild(tr);
+                var sessHeader = mkEl('div', '');
+                sessHeader.style.cssText = 'display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;';
+                sessHeader.appendChild(mkEl('div', 'section-title', 'Agent Sessions'));
+
+                // Recording toggle
+                var toggleLabel = mkEl('label', '');
+                toggleLabel.style.cssText = 'display:flex; align-items:center; gap:6px; font-size:11px; color:var(--vscode-descriptionForeground); cursor:pointer;';
+                var toggleCb = document.createElement('input');
+                toggleCb.type = 'checkbox';
+                toggleCb.checked = !anonMode;
+                toggleCb.addEventListener('change', function() {
+                    vscodeApi.postMessage({ type: 'toggleAnon' });
                 });
-                sessTable.appendChild(tbody);
-                sessSection.appendChild(sessTable);
+                toggleLabel.appendChild(toggleCb);
+                toggleLabel.appendChild(document.createTextNode('Record sessions'));
+                sessHeader.appendChild(toggleLabel);
+                sessSection.appendChild(sessHeader);
+
+                // Playback area (hidden by default)
+                var playbackArea = mkEl('div', '');
+                playbackArea.id = 'playbackArea';
+                playbackArea.style.cssText = 'display:none; margin-bottom:12px; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:#000;';
+                sessSection.appendChild(playbackArea);
+
+                if (bpData.sessions && bpData.sessions.length > 0) {
+                    var sessTable = document.createElement('table');
+                    sessTable.style.cssText = 'width:100%; border-collapse:collapse; font-size:12px;';
+                    sessTable.innerHTML = '<thead><tr style="text-align:left; color:var(--vscode-descriptionForeground);"><th style="padding:4px 8px;">Time</th><th style="padding:4px 8px;">User</th><th style="padding:4px 8px;">Recorded</th><th style="padding:4px 8px;"></th></tr></thead>';
+                    var tbody = document.createElement('tbody');
+                    bpData.sessions.forEach(function(s) {
+                        var tr = document.createElement('tr');
+                        tr.style.cssText = 'border-top:1px solid var(--border);';
+                        var ts = s.timestamp ? new Date(s.timestamp).toLocaleString() : 'Unknown';
+                        var recordedIcon = s.logged ? '\\u{1F534}' : '\\u{26AA}';
+                        var playCell = '';
+                        if (s.castFile) {
+                            playCell = '<button class="btn btn-sm play-btn" data-cast="' + s.castFile + '">\\u25B6 Play</button>';
+                        }
+                        tr.innerHTML = '<td style="padding:4px 8px;">' + ts + '</td><td style="padding:4px 8px;">' + (s.userEmail || 'anonymous') + '</td><td style="padding:4px 8px; text-align:center;">' + recordedIcon + '</td><td style="padding:4px 8px;">' + playCell + '</td>';
+                        tbody.appendChild(tr);
+                    });
+                    sessTable.appendChild(tbody);
+
+                    // Wire up play buttons
+                    sessTable.addEventListener('click', function(e) {
+                        var btn = e.target;
+                        if (btn && btn.classList && btn.classList.contains('play-btn')) {
+                            var castFile = btn.getAttribute('data-cast');
+                            if (castFile) {
+                                vscodeApi.postMessage({ type: 'playSession', castFile: castFile });
+                            }
+                        }
+                    });
+
+                    sessSection.appendChild(sessTable);
+                } else {
+                    sessSection.appendChild(mkEl('div', 'placeholder', 'No sessions yet.'));
+                }
+
                 content.appendChild(sessSection);
             }
 
@@ -1202,6 +1273,18 @@ export class DashboardPanel {
                     if (msg.key === currentBpKey) {
                         bpData = msg;
                         renderContent();
+                    }
+                    break;
+                case 'anonMode':
+                    anonMode = msg.enabled;
+                    var cb = document.querySelector('#playbackArea')?.parentElement?.querySelector('input[type=checkbox]');
+                    if (cb) { cb.checked = !anonMode; }
+                    break;
+                case 'castData':
+                    var area = document.getElementById('playbackArea');
+                    if (area && msg.data) {
+                        area.style.display = 'block';
+                        area.innerHTML = '<pre style="margin:0; padding:12px; max-height:400px; overflow:auto; color:#0f0; font-size:11px; line-height:1.3; white-space:pre-wrap;">' + msg.data.replace(/</g, '&lt;') + '</pre>';
                     }
                     break;
             }
