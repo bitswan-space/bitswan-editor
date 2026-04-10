@@ -520,7 +520,8 @@ export class DashboardPanel {
 
         const terminal = vscode.window.createTerminal({
             name,
-            shellPath: scriptPath,
+            shellPath: '/bin/bash',
+            shellArgs: [scriptPath],
         });
         terminal.show(true);
 
