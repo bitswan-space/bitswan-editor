@@ -5,7 +5,7 @@ import { AutomationItem } from './views/automations_view';
 import { ImageItem } from './views/unified_images_view';
 import { FolderItem } from './views/sources_view';
 import { GitOpsItem } from './views/workspaces_view';
-import { BusinessProcessItem, AutomationSourceFileItem } from './views/unified_business_processes_view';
+import { BusinessProcessItem, AutomationSourceFileItem, OtherAutomationsItem } from './views/unified_business_processes_view';
 import { AutomationSourceItem, StageItem } from './views/unified_business_processes_view';
 
 // Import commands from the new command modules
@@ -725,6 +725,57 @@ export function activate(context: vscode.ExtensionContext) {
             })(context, automationsProvider, automationItem);
         });
 
+    let removeAllOrphanedCommand = vscode.commands.registerCommand('bitswan.removeAllOrphaned',
+        async (item: OtherAutomationsItem) => {
+            const details = await getDeployDetails(context);
+            if (!details) { return; }
+
+            const automations = context.globalState.get<any[]>('automations', []);
+            // Collect all orphaned automation items from the "Other" section
+            const children = await automationsProvider.getChildren(item);
+            const orphanedItems = (children || []).filter(
+                (child): child is AutomationItem => child instanceof AutomationItem
+            );
+
+            if (orphanedItems.length === 0) {
+                vscode.window.showInformationMessage('No orphaned automations to remove.');
+                return;
+            }
+
+            const confirm = await vscode.window.showWarningMessage(
+                `Remove ${orphanedItems.length} orphaned automation(s)?`,
+                { modal: true },
+                'Remove All'
+            );
+            if (confirm !== 'Remove All') { return; }
+
+            let removed = 0;
+            let failed = 0;
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: 'Removing orphaned automations',
+                cancellable: false,
+            }, async (progress) => {
+                for (const orphan of orphanedItems) {
+                    try {
+                        const url = `${details.deployUrl}/automations/${orphan.deploymentId}`;
+                        await deleteAutomation(url, details.deploySecret);
+                        removed++;
+                        progress.report({ message: `${removed}/${orphanedItems.length}` });
+                    } catch {
+                        failed++;
+                    }
+                }
+            });
+
+            if (failed > 0) {
+                vscode.window.showWarningMessage(`Removed ${removed} automations, ${failed} failed.`);
+            } else {
+                vscode.window.showInformationMessage(`Removed ${removed} orphaned automations.`);
+            }
+            await automationCommands.refreshAutomationsCommand(context, automationsProvider);
+        });
+
     let createAutomationFileCommand = vscode.commands.registerCommand(
         'bitswan.createAutomationFile',
         async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
@@ -1003,6 +1054,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(activateAutomationCommand);
     context.subscriptions.push(deactivateAutomationCommand);
     context.subscriptions.push(deleteAutomationCommand);
+    context.subscriptions.push(removeAllOrphanedCommand);
     context.subscriptions.push(createAutomationFileCommand);
     context.subscriptions.push(createAutomationFolderCommand);
     context.subscriptions.push(renameAutomationResourceCommand);

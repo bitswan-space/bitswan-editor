@@ -241,6 +241,11 @@
         "icon": "$(terminal-kill)"
       },
       {
+        "command": "bitswan.removeAllOrphaned",
+        "title": "Remove All Orphaned",
+        "icon": "$(trash)"
+      },
+      {
         "command": "bitswan.stopAutomation",
         "title": "Stop Automation",
         "icon": "$(debug-stop)"
@@ -514,6 +519,11 @@
           "command": "bitswan.deleteAutomation",
           "when": "view == bitswan-unified-business-processes && viewItem =~ /^automation,/",
           "group": "inline@4"
+        },
+        {
+          "command": "bitswan.removeAllOrphaned",
+          "when": "view == bitswan-unified-business-processes && viewItem == otherAutomations",
+          "group": "inline"
         },
         {
           "command": "bitswan.restartAutomation",
