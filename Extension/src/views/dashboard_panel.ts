@@ -35,7 +35,7 @@ function inferAutomationIcon(autoDir: string): string {
     try {
         const data = toml.parse(fs.readFileSync(configPath, 'utf-8')) as any;
         const dep = data.deployment || {};
-        const hasExposeTo = !!dep.expose_to;
+        const hasExposeTo = !!dep.expose_to || !!data.expose_to;
         const hasExpose = dep.expose === true;
         const hasKafka = !!(data.services?.kafka?.enabled);
         const image = (dep.image || '').toLowerCase();
@@ -90,6 +90,7 @@ export class DashboardPanel {
 
     private playerJsUri: vscode.Uri | undefined;
     private playerCssUri: vscode.Uri | undefined;
+    private codiconFontUri: vscode.Uri | undefined;
 
     private constructor(context: vscode.ExtensionContext) {
         this.context = context;
@@ -98,6 +99,9 @@ export class DashboardPanel {
             path.join(context.extensionPath, 'node_modules', 'asciinema-player', 'dist', 'bundle')
         );
 
+        // Codicon font from code-server
+        const codiconDir = vscode.Uri.file('/usr/lib/code-server/lib/vscode/out/media');
+
         this.panel = vscode.window.createWebviewPanel(
             'bitswan-workspace',
             'Workspace',
@@ -105,7 +109,7 @@ export class DashboardPanel {
             {
                 enableScripts: true,
                 retainContextWhenHidden: true,
-                localResourceRoots: [asciinemaDir],
+                localResourceRoots: [asciinemaDir, codiconDir],
             },
         );
 
@@ -115,6 +119,9 @@ export class DashboardPanel {
         this.playerCssUri = this.panel.webview.asWebviewUri(vscode.Uri.file(
             path.join(context.extensionPath, 'node_modules', 'asciinema-player', 'dist', 'bundle', 'asciinema-player.css')
         ));
+        this.codiconFontUri = this.panel.webview.asWebviewUri(
+            vscode.Uri.file('/usr/lib/code-server/lib/vscode/out/media/codicon.ttf')
+        );
 
         this.panel.webview.html = this._getHtmlForWebview();
 
@@ -804,6 +811,12 @@ export class DashboardPanel {
 <head>
     <meta charset="UTF-8">
     <style>
+        @font-face { font-family: codicon; src: url(${this.codiconFontUri}); }
+        .codicon { font-family: codicon; font-size: 14px; line-height: 1; display: inline-block; }
+        .codicon-output::before { content: "\\eb9d"; }
+        .codicon-debug-restart::before { content: "\\eb4e"; }
+        .codicon-debug-start::before { content: "\\eb49"; }
+        .codicon-link-external::before { content: "\\eb05"; }
         :root { color-scheme: light dark; font-family: var(--vscode-font-family, sans-serif);
             --status-pass: #3fb950; --status-fail: #f85149; --status-pending: #d29922; --status-retest: #a371f7; --status-proposed: #768390; --border: var(--vscode-editorWidget-border, rgba(128,128,128,0.3)); }
         * { box-sizing: border-box; }
@@ -1081,7 +1094,9 @@ export class DashboardPanel {
                             top.addEventListener('click', function() {
                                 vscodeApi.postMessage({ type: 'openUrl', url: auto.url });
                             });
-                            top.appendChild(mkEl('span', 'auto-card-link-icon', '\\u{1F517}'));
+                            var linkIcon = mkEl('span', 'auto-card-link-icon');
+                            linkIcon.innerHTML = '<span class="codicon codicon-link-external"></span>';
+                            top.appendChild(linkIcon);
                         }
                         top.appendChild(mkEl('div', 'auto-card-icon', auto.icon || '\\u{1F4E6}'));
                         top.appendChild(mkEl('div', 'auto-card-name', auto.name));
@@ -1092,19 +1107,22 @@ export class DashboardPanel {
                         // Action buttons at bottom
                         var actions = mkEl('div', 'auto-card-actions');
                         if (auto.deploymentId) {
-                            var logsBtn = mkEl('button', 'btn', '\u{2261} Logs');
+                            var logsBtn = mkEl('button', 'btn', '');
+                            logsBtn.innerHTML = '<span class="codicon codicon-output"></span> Logs';
                             logsBtn.addEventListener('click', function() {
                                 vscodeApi.postMessage({ type: 'showLogs', deploymentId: auto.deploymentId });
                             });
                             actions.appendChild(logsBtn);
 
-                            var restartBtn = mkEl('button', 'btn', '\u{21BB} Restart');
+                            var restartBtn = mkEl('button', 'btn', '');
+                            restartBtn.innerHTML = '<span class="codicon codicon-debug-restart"></span> Restart';
                             restartBtn.addEventListener('click', function() {
                                 vscodeApi.postMessage({ type: 'restartAutomation', deploymentId: auto.deploymentId });
                             });
                             actions.appendChild(restartBtn);
                         } else if (bpData.worktree) {
-                            var startBtn = mkEl('button', 'btn btn-primary', '\u{25B6} Start Live Dev');
+                            var startBtn = mkEl('button', 'btn btn-primary', '');
+                            startBtn.innerHTML = '<span class="codicon codicon-debug-start"></span> Start Live Dev';
                             startBtn.addEventListener('click', function() {
                                 vscodeApi.postMessage({ type: 'startLiveDev', relativePath: auto.relativePath, worktree: bpData.worktree, name: auto.name });
                             });
