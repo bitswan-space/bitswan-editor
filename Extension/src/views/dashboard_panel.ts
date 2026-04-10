@@ -441,113 +441,118 @@ export class DashboardPanel {
 
     // ---- Terminals ----
 
+    /**
+     * Ensure the coding agent container is running, auto-starting it if needed.
+     * Returns the agent hostname, or null if it couldn't be started.
+     */
+    private async ensureAgentRunning(): Promise<string | null> {
+        const workspaceName = process.env.HOSTNAME?.replace('-editor', '') || 'workspace';
+        const agentHost = `${workspaceName}-coding-agent`;
+
+        const isReachable = () => new Promise<boolean>(resolve => {
+            cp.exec(`getent hosts ${agentHost}`, (err) => resolve(!err));
+        });
+
+        if (await isReachable()) { return agentHost; }
+
+        const started = await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: 'Starting coding agent container...',
+            cancellable: false,
+        }, async (progress) => {
+            const { getDeployDetails } = await import('../deploy_details');
+            const details = await getDeployDetails(this.context);
+            if (!details) { return false; }
+            try {
+                const axios = (await import('axios')).default;
+                await axios.post(
+                    `${details.deployUrl}/worktrees/coding-agent/ensure`,
+                    {},
+                    { headers: { Authorization: `Bearer ${details.deploySecret}` }, timeout: 120000 },
+                );
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`Failed to start coding agent: ${err?.response?.data?.detail || err?.message}`);
+                return false;
+            }
+            progress.report({ message: 'Waiting for SSH to become ready...' });
+            for (let i = 0; i < 15; i++) {
+                await new Promise(r => setTimeout(r, 2000));
+                if (await isReachable()) { return true; }
+            }
+            vscode.window.showErrorMessage('Coding agent started but SSH is not reachable yet.');
+            return false;
+        });
+
+        return started ? agentHost : null;
+    }
+
+    /**
+     * Open an SSH terminal to the coding agent container.
+     * @param name - Terminal tab name
+     * @param worktree - Worktree name
+     * @param autoCmd - Command to run on the remote (via SSH_AUTO_CMD). If empty, drops to shell.
+     */
+    private async openSSHTerminal(name: string, worktree: string, autoCmd: string): Promise<vscode.Terminal | null> {
+        const agentHost = await this.ensureAgentRunning();
+        if (!agentHost) { return null; }
+
+        const userEmail = await getUserEmail(this.context) || 'unknown';
+        const anon = this.context.globalState.get<boolean>('agentAnonMode', false);
+        const logged = anon ? 'false' : 'true';
+
+        const terminal = vscode.window.createTerminal(name);
+        terminal.show(true);
+
+        // Build the export + exec ssh command.
+        // SSH_AUTO_CMD is base64-encoded to avoid shell metachar interpretation.
+        let exportVars = `export SSH_USER_EMAIL="${userEmail}" SSH_LOGGED="${logged}" SSH_WORKTREE="${worktree}"`;
+        if (autoCmd) {
+            const b64 = Buffer.from(autoCmd).toString('base64');
+            exportVars += ` SSH_AUTO_CMD="$(echo ${b64} | base64 -d)"`;
+        }
+        terminal.sendText(`${exportVars} && exec ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
+
+        // Track active session
+        const termName = terminal.name;
+        activeSessions.push({ worktree, userEmail, terminalName: termName });
+        this.sendActiveSessions();
+
+        const disposable = vscode.window.onDidCloseTerminal(t => {
+            if (t.name === termName) {
+                const idx = activeSessions.findIndex(s => s.terminalName === termName);
+                if (idx >= 0) { activeSessions.splice(idx, 1); }
+                if (DashboardPanel.currentPanel) {
+                    DashboardPanel.currentPanel.sendActiveSessions();
+                    DashboardPanel.currentPanel._reloadCurrentKey();
+                }
+                disposable.dispose();
+            }
+        });
+
+        // Refresh sessions after meta.json is created by the agent container
+        setTimeout(() => this._reloadCurrentKey(), 5000);
+        return terminal;
+    }
+
     private async openCodingAgentTerminal(worktree: string, bpPath: string): Promise<void> {
         if (worktree) {
-            // Worktree: SSH into coding agent container
-            const workspaceName = process.env.HOSTNAME?.replace('-editor', '') || 'workspace';
-            const agentHost = `${workspaceName}-coding-agent`;
-
-            const reachable = await new Promise<boolean>(resolve => {
-                cp.exec(`getent hosts ${agentHost}`, (err) => resolve(!err));
-            });
-
-            if (!reachable) {
-                vscode.window.showErrorMessage('Coding agent container is not running. Start it from the worktrees view.');
-                return;
-            }
-
-            const userEmail = await getUserEmail(this.context) || 'unknown';
             const cdPath = `/workspace/worktrees/${worktree}/${bpPath}`;
-
-            const anon = this.context.globalState.get<boolean>('agentAnonMode', false);
-            const logged = anon ? 'false' : 'true';
             const autoCmd = `cd ${cdPath} && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions`;
-            const autoCmdB64 = Buffer.from(autoCmd).toString('base64');
-            const terminal = vscode.window.createTerminal(`Claude: ${worktree}/${bpPath}`);
-            terminal.show(true);
-            terminal.sendText(`export SSH_USER_EMAIL="${userEmail}" SSH_LOGGED="${logged}" SSH_WORKTREE="${worktree}" SSH_AUTO_CMD="$(echo ${autoCmdB64} | base64 -d)" && exec ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
-
-            const termName = terminal.name;
-            activeSessions.push({ worktree, userEmail, terminalName: termName });
-            this.sendActiveSessions();
-
-            const disposable = vscode.window.onDidCloseTerminal(t => {
-                if (t.name === termName) {
-                    const idx = activeSessions.findIndex(s => s.terminalName === termName);
-                    if (idx >= 0) { activeSessions.splice(idx, 1); }
-                    if (DashboardPanel.currentPanel) {
-                        DashboardPanel.currentPanel.sendActiveSessions();
-                        DashboardPanel.currentPanel._reloadCurrentKey();
-                    }
-                    disposable.dispose();
-                }
-            });
-
-            // Refresh sessions after meta.json is created by the agent container
-            setTimeout(() => this._reloadCurrentKey(), 5000);
+            await this.openSSHTerminal(`Claude: ${worktree}/${bpPath}`, worktree, autoCmd);
         } else {
-            // Main workspace: local terminal
             const cdPath = path.join(WORKSPACE_DIR, bpPath);
-            const terminal = vscode.window.createTerminal({
-                name: `Claude: ${bpPath}`,
-                cwd: cdPath,
-            });
+            const terminal = vscode.window.createTerminal({ name: `Claude: ${bpPath}`, cwd: cdPath });
             terminal.show(true);
-            terminal.sendText('mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && claude --dangerously-skip-permissions');
+            terminal.sendText(`mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions`);
         }
     }
 
     private async openPlainTerminal(worktree: string, bpPath: string): Promise<void> {
         if (worktree) {
-            const workspaceName = process.env.HOSTNAME?.replace('-editor', '') || 'workspace';
-            const agentHost = `${workspaceName}-coding-agent`;
-
-            const reachable = await new Promise<boolean>(resolve => {
-                cp.exec(`getent hosts ${agentHost}`, (err) => resolve(!err));
-            });
-
-            if (!reachable) {
-                vscode.window.showErrorMessage('Coding agent container is not running.');
-                return;
-            }
-
-            const userEmail = await getUserEmail(this.context) || 'unknown';
             const cdPath = `/workspace/worktrees/${worktree}/${bpPath}`;
-
-            const anon = this.context.globalState.get<boolean>('agentAnonMode', false);
-            const logged = anon ? 'false' : 'true';
-            const autoCmd = `cd ${cdPath} && exec bash`;
-            const autoCmdB64 = Buffer.from(autoCmd).toString('base64');
-            const terminal = vscode.window.createTerminal(`Terminal: ${worktree}/${bpPath}`);
-            terminal.show(true);
-            terminal.sendText(`export SSH_USER_EMAIL="${userEmail}" SSH_LOGGED="${logged}" SSH_WORKTREE="${worktree}" SSH_AUTO_CMD="$(echo ${autoCmdB64} | base64 -d)" && exec ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
-
-            const termName = terminal.name;
-            activeSessions.push({ worktree, userEmail, terminalName: termName });
-            this.sendActiveSessions();
-            const disposable = vscode.window.onDidCloseTerminal(t => {
-                if (t.name === termName) {
-                    const idx = activeSessions.findIndex(s => s.terminalName === termName);
-                    if (idx >= 0) { activeSessions.splice(idx, 1); }
-                    if (DashboardPanel.currentPanel) {
-                        DashboardPanel.currentPanel.sendActiveSessions();
-                        DashboardPanel.currentPanel._reloadCurrentKey();
-                    }
-                    disposable.dispose();
-                }
-            });
-
-            setTimeout(() => {
-                terminal.sendText(`cd "${cdPath}"`);
-            }, 2000);
-
-            setTimeout(() => this._reloadCurrentKey(), 5000);
+            await this.openSSHTerminal(`Terminal: ${worktree}/${bpPath}`, worktree, `cd ${cdPath} && exec bash`);
         } else {
-            const cdPath = path.join(WORKSPACE_DIR, bpPath);
-            const terminal = vscode.window.createTerminal({
-                name: `Terminal: ${bpPath}`,
-                cwd: cdPath,
-            });
+            const terminal = vscode.window.createTerminal({ name: `Terminal: ${bpPath}`, cwd: path.join(WORKSPACE_DIR, bpPath) });
             terminal.show(true);
         }
     }
@@ -703,21 +708,7 @@ export class DashboardPanel {
     }
 
     private async launchMergeConflictAgent(worktree: string, conflictedFiles: string[]): Promise<void> {
-        const workspaceName = process.env.HOSTNAME?.replace('-editor', '') || 'workspace';
-        const agentHost = `${workspaceName}-coding-agent`;
-
-        const reachable = await new Promise<boolean>(resolve => {
-            cp.exec(`getent hosts ${agentHost}`, (err) => resolve(!err));
-        });
-
-        if (!reachable) {
-            vscode.window.showErrorMessage('Coding agent container is not running.');
-            return;
-        }
-
-        const userEmail = await getUserEmail(this.context) || 'unknown';
         const wtPath = `/workspace/worktrees/${worktree}`;
-
         const conflictList = conflictedFiles.map(f => `  - ${f}`).join('\n');
         const claudePrompt = [
             `A rebase-and-merge is in progress for worktree "${worktree}" and there are conflicts.`,
@@ -732,11 +723,8 @@ export class DashboardPanel {
             `4. Once the merge is complete, tell the user it's done`,
         ].join('\\n');
 
-        const mergeAutoCmd = `cd ${wtPath} && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions -p "${claudePrompt}"`;
-        const mergeB64 = Buffer.from(mergeAutoCmd).toString('base64');
-        const terminal = vscode.window.createTerminal(`Merge: ${worktree}`);
-        terminal.show(true);
-        terminal.sendText(`export SSH_USER_EMAIL="${userEmail}" SSH_LOGGED="true" SSH_WORKTREE="${worktree}" SSH_AUTO_CMD="$(echo ${mergeB64} | base64 -d)" && exec ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
+        const autoCmd = `cd ${wtPath} && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions -p "${claudePrompt}"`;
+        await this.openSSHTerminal(`Merge: ${worktree}`, worktree, autoCmd);
     }
 
     private sendActiveSessions(): void {
