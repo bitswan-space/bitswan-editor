@@ -535,13 +535,41 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
      * so that refreshAutomations() can fire targeted change events.
      */
     private _prefixTreeItemIds(items: readonly vscode.TreeItem[], prefix: string): void {
+        const automations = this.context.globalState.get<any[]>('automations', []);
+        const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '/workspace/workspace';
+
         for (const item of items) {
             if (item.id) { item.id = prefix + item.id; }
             (item as any)._idPrefix = prefix;
-            // Worktree automations are leaf nodes — no stages
+            // Worktree automations are leaf nodes with state info
             if (item instanceof AutomationSourceItem) {
                 item.collapsibleState = vscode.TreeItemCollapsibleState.None;
-                item.contextValue = 'worktreeAutomation';
+
+                // Match against running automations by relative_path
+                const relPath = path.relative(workspacePath, item.resourceUri.fsPath);
+                const match = automations.find(a => {
+                    const aPath = a.relative_path || a.relativePath || '';
+                    return aPath === relPath || aPath.endsWith('/' + relPath);
+                });
+
+                if (match) {
+                    const state = match.state || 'unknown';
+                    const hasUrl = !!(match.automation_url || match.automationUrl);
+                    item.contextValue = `worktreeAutomation,${state}${hasUrl ? ',url' : ''}`;
+                    item.description = state;
+                    // Status icon
+                    if (state === 'running') {
+                        item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('testing.iconPassed'));
+                    } else if (state === 'exited' || state === 'dead') {
+                        item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('testing.iconFailed'));
+                    } else {
+                        item.iconPath = new vscode.ThemeIcon('circle-outline');
+                    }
+                } else {
+                    item.contextValue = 'worktreeAutomation,notDeployed';
+                    item.description = 'not deployed';
+                    item.iconPath = new vscode.ThemeIcon('circle-outline');
+                }
             }
             if (item instanceof SubfolderItem && item.children) {
                 this._prefixTreeItemIds(item.children, prefix);
