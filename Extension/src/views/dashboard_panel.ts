@@ -515,7 +515,8 @@ export class DashboardPanel {
             lines.push(`export SSH_AUTO_CMD="$(echo ${b64} | base64 -d)"`);
         }
         lines.push(`exec ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
-        fs.writeFileSync(scriptPath, lines.join('\n') + '\n', { mode: 0o755 });
+        fs.writeFileSync(scriptPath, lines.join('\n') + '\n');
+        fs.chmodSync(scriptPath, 0o755);
 
         const terminal = vscode.window.createTerminal({
             name,
