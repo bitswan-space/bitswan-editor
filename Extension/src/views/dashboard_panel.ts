@@ -519,7 +519,7 @@ export class DashboardPanel {
         const terminal = vscode.window.createTerminal(name);
         terminal.show(true);
         // Use source to run the script in the current shell
-        terminal.sendText(`source ${scriptPath}`);
+        terminal.sendText(`source ${scriptPath}; exit`);
 
         // Track active session
         const termName = terminal.name;
