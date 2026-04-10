@@ -511,7 +511,7 @@ export class DashboardPanel {
             const b64 = Buffer.from(autoCmd).toString('base64');
             exportVars += ` SSH_AUTO_CMD="$(echo ${b64} | base64 -d)"`;
         }
-        terminal.sendText(`${exportVars} && exec ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
+        terminal.sendText(`${exportVars} && ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}; exit`);
 
         // Track active session
         const termName = terminal.name;
