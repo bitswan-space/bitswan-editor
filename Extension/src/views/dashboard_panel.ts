@@ -500,30 +500,26 @@ export class DashboardPanel {
         const anon = this.context.globalState.get<boolean>('agentAnonMode', false);
         const logged = anon ? 'false' : 'true';
 
-        // Write a temp script to avoid all quoting/timing issues with sendText
+        // Write a temp script to avoid quoting issues
         const tmpDir = '/tmp/bitswan-terminals';
         if (!fs.existsSync(tmpDir)) { fs.mkdirSync(tmpDir, { recursive: true }); }
         const scriptPath = path.join(tmpDir, `agent-${Date.now()}.sh`);
-        const lines = [
-            '#!/bin/bash',
+        const scriptLines = [
             `export SSH_USER_EMAIL="${userEmail}"`,
             `export SSH_LOGGED="${logged}"`,
             `export SSH_WORKTREE="${worktree}"`,
         ];
         if (autoCmd) {
             const b64 = Buffer.from(autoCmd).toString('base64');
-            lines.push(`export SSH_AUTO_CMD="$(echo ${b64} | base64 -d)"`);
+            scriptLines.push(`export SSH_AUTO_CMD="$(echo ${b64} | base64 -d)"`);
         }
-        lines.push(`exec ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
-        fs.writeFileSync(scriptPath, lines.join('\n') + '\n');
-        fs.chmodSync(scriptPath, 0o755);
+        scriptLines.push(`ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
+        fs.writeFileSync(scriptPath, scriptLines.join('\n') + '\n');
 
-        const terminal = vscode.window.createTerminal({
-            name,
-            shellPath: '/bin/bash',
-            shellArgs: [scriptPath],
-        });
+        const terminal = vscode.window.createTerminal(name);
         terminal.show(true);
+        // Use source to run the script in the current shell
+        terminal.sendText(`source ${scriptPath}`);
 
         // Track active session
         const termName = terminal.name;
