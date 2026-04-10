@@ -62,31 +62,7 @@ export class WorktreesViewProvider implements vscode.TreeDataProvider<WorktreeIt
             return [];
         }
 
-        // Try gitops API first
-        const details = await getDeployDetails(this.context);
-        if (details) {
-            try {
-                const url = urlJoin(details.deployUrl, 'worktrees/');
-                const response = await axios.get(url, {
-                    headers: { Authorization: `Bearer ${details.deploySecret}` },
-                });
-
-                const worktrees: any[] = response.data;
-                return worktrees.map((wt: any) => new WorktreeItem(
-                    wt.name || 'unknown',
-                    wt.branch || 'unknown',
-                    wt.commit_message || wt.last_commit || wt.lastCommit || '',
-                    wt.has_requirements || wt.hasRequirements || false
-                ));
-            } catch (apiErr: any) {
-                // If 404, fall through to local git
-                if (apiErr?.response?.status !== 404) {
-                    // For other errors (network, auth), still try local fallback
-                }
-            }
-        }
-
-        // Fallback: list worktrees from local filesystem + git
+        // Filesystem is the single source of truth for worktrees
         return this._getWorktreesFromLocal();
     }
 
