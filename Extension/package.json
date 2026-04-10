@@ -471,11 +471,6 @@
           "group": "inline"
         },
         {
-          "command": "bitswan.startLiveDevServer",
-          "when": "view == bitswan-unified-business-processes && viewItem == automationSource",
-          "group": "inline@2"
-        },
-        {
           "command": "bitswan.jumpToSource",
           "when": "view == bitswan-unified-business-processes && viewItem == automationSource",
           "group": "inline@6"
@@ -562,7 +557,7 @@
         },
         {
           "command": "bitswan.startLiveDevServer",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,live-dev,notDeployed/",
+          "when": "false",
           "group": "inline@1"
         },
         {
