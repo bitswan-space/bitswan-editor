@@ -464,7 +464,7 @@ export class DashboardPanel {
             const autoCmd = `cd ${cdPath} && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions`;
             const terminal = vscode.window.createTerminal(`Claude: ${worktree}/${bpPath}`);
             terminal.show(true);
-            terminal.sendText(`exec SSH_USER_EMAIL="${userEmail}" SSH_LOGGED="${logged}" SSH_WORKTREE="${worktree}" SSH_AUTO_CMD="${autoCmd}" ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
+            terminal.sendText(`export SSH_USER_EMAIL="${userEmail}" SSH_LOGGED="${logged}" SSH_WORKTREE="${worktree}" SSH_AUTO_CMD="${autoCmd}" && exec ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
 
             const termName = terminal.name;
             activeSessions.push({ worktree, userEmail, terminalName: termName });
@@ -518,7 +518,7 @@ export class DashboardPanel {
             const autoCmd = `cd ${cdPath} && exec bash`;
             const terminal = vscode.window.createTerminal(`Terminal: ${worktree}/${bpPath}`);
             terminal.show(true);
-            terminal.sendText(`exec SSH_USER_EMAIL="${userEmail}" SSH_LOGGED="${logged}" SSH_WORKTREE="${worktree}" SSH_AUTO_CMD="${autoCmd}" ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
+            terminal.sendText(`export SSH_USER_EMAIL="${userEmail}" SSH_LOGGED="${logged}" SSH_WORKTREE="${worktree}" SSH_AUTO_CMD="${autoCmd}" && exec ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
 
             const termName = terminal.name;
             activeSessions.push({ worktree, userEmail, terminalName: termName });
