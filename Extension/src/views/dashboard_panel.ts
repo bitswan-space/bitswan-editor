@@ -869,7 +869,7 @@ export class DashboardPanel {
                 var tab = document.createElement('div');
                 tab.className = 'tab' + (idx === currentWsIdx ? ' active' : '');
                 tab.textContent = ws.name;
-                tab.addEventListener('click', function() { currentWsIdx = idx; currentBpKey = ''; bpData = null; renderSubtabs(); renderContent(); });
+                tab.addEventListener('click', function() { currentWsIdx = idx; currentBpKey = ''; bpData = null; renderTabs(); renderSubtabs(); renderContent(); });
                 tabBar.appendChild(tab);
             });
             // "+ New Worktree" tab
