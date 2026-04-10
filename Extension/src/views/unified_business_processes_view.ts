@@ -554,21 +554,28 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
                 if (match) {
                     const state = match.state || 'unknown';
+                    const status = match.status || state;
                     const hasUrl = !!(match.automation_url || match.automationUrl);
                     item.contextValue = `worktreeAutomation,${state}${hasUrl ? ',url' : ''}`;
-                    item.description = state;
-                    // Status icon
-                    if (state === 'running') {
-                        item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('testing.iconPassed'));
-                    } else if (state === 'exited' || state === 'dead') {
-                        item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('testing.iconFailed'));
-                    } else {
-                        item.iconPath = new vscode.ThemeIcon('circle-outline');
+                    item.description = status;
+                    // Use the same color scheme as AutomationItem
+                    switch (state) {
+                        case 'running':
+                            item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.green'));
+                            break;
+                        case 'paused': case 'restarting':
+                            item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.orange'));
+                            break;
+                        case 'exited': case 'dead': case 'removing':
+                            item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.red'));
+                            break;
+                        default:
+                            item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.gray'));
                     }
                 } else {
                     item.contextValue = 'worktreeAutomation,notDeployed';
                     item.description = 'not deployed';
-                    item.iconPath = new vscode.ThemeIcon('circle-outline');
+                    item.iconPath = new vscode.ThemeIcon('circle-outline', new vscode.ThemeColor('bitswan.statusIcon.gray'));
                 }
             }
             if (item instanceof SubfolderItem && item.children) {
