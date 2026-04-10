@@ -405,12 +405,14 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         }
 
         if (element instanceof BusinessProcessItem) {
-            // Show automation sources for this business process
             console.log(`[DEBUG] getChildren - BusinessProcessItem: "${element.name}"`);
             const items = this.getAutomationSourcesForBusinessProcess(element.name);
-            // Track AutomationSourceItems for targeted refresh
+            // Namespace IDs for worktree BPs to avoid collisions
+            const prefix = (element as any)._idPrefix || '';
+            if (prefix) {
+                this._prefixTreeItemIds(items, prefix);
+            }
             this._trackAutomationSources(items);
-            // Add the "+ Create Automation" button at the end
             return [...items, new CreateAutomationItem(element.name)];
         }
 
@@ -498,6 +500,7 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             const wtRoot = path.join(workspacePath, 'worktrees', element.name);
             if (fs.existsSync(wtRoot)) {
                 const processDirs = this.findDirectoriesWithProcessToml(wtRoot);
+                const wtPrefix = `wt-${element.name}/`;
                 return processDirs.map(processDir => {
                     const relativePath = path.relative(wtRoot, processDir);
                     const processConfigPath = path.join(processDir, 'process.toml');
@@ -506,8 +509,8 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                         vscode.Uri.file(processDir),
                         processConfigPath
                     );
-                    // Namespace the ID to avoid collision with main workspace BPs
-                    item.id = `bp:wt-${element.name}/${relativePath}`;
+                    item.id = `bp:${wtPrefix}${relativePath}`;
+                    (item as any)._idPrefix = wtPrefix;
                     return item;
                 });
             }
@@ -522,6 +525,15 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
      * Collect AutomationSourceItem instances (including inside SubfolderItems)
      * so that refreshAutomations() can fire targeted change events.
      */
+    private _prefixTreeItemIds(items: readonly vscode.TreeItem[], prefix: string): void {
+        for (const item of items) {
+            if (item.id) { item.id = prefix + item.id; }
+            if (item instanceof SubfolderItem && item.children) {
+                this._prefixTreeItemIds(item.children, prefix);
+            }
+        }
+    }
+
     private _trackAutomationSources(items: readonly UnifiedTreeItem[]): void {
         for (const item of items) {
             if (item instanceof AutomationSourceItem) {
