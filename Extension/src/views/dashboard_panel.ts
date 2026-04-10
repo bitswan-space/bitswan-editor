@@ -53,15 +53,33 @@ export class DashboardPanel {
     private fileWatcher: vscode.FileSystemWatcher | undefined;
     private currentKey = '';
 
+    private playerJsUri: vscode.Uri | undefined;
+    private playerCssUri: vscode.Uri | undefined;
+
     private constructor(context: vscode.ExtensionContext) {
         this.context = context;
+
+        const asciinemaDir = vscode.Uri.file(
+            path.join(context.extensionPath, 'node_modules', 'asciinema-player', 'dist', 'bundle')
+        );
 
         this.panel = vscode.window.createWebviewPanel(
             'bitswan-workspace',
             'Workspace',
             vscode.ViewColumn.Active,
-            { enableScripts: true, retainContextWhenHidden: true },
+            {
+                enableScripts: true,
+                retainContextWhenHidden: true,
+                localResourceRoots: [asciinemaDir],
+            },
         );
+
+        this.playerJsUri = this.panel.webview.asWebviewUri(vscode.Uri.file(
+            path.join(context.extensionPath, 'node_modules', 'asciinema-player', 'dist', 'bundle', 'asciinema-player.min.js')
+        ));
+        this.playerCssUri = this.panel.webview.asWebviewUri(vscode.Uri.file(
+            path.join(context.extensionPath, 'node_modules', 'asciinema-player', 'dist', 'bundle', 'asciinema-player.css')
+        ));
 
         this.panel.webview.html = this._getHtmlForWebview();
 
@@ -799,7 +817,10 @@ export class DashboardPanel {
         .add-root-btn:hover { border-color:var(--vscode-focusBorder); color:var(--vscode-foreground); }
         .keyhints { display:flex; flex-wrap:wrap; gap:12px; padding:6px 16px; border-top:1px solid var(--border); flex-shrink:0; font-size:11px; color:var(--vscode-descriptionForeground); }
         .keyhints kbd { padding:1px 5px; border:1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.4)); border-radius:3px; font-size:10px; font-family:inherit; background:var(--vscode-sideBar-background, rgba(128,128,128,0.1)); }
+        #playerWrapper { min-height:400px; }
+        #playerWrapper .ap-wrapper { width:100% !important; }
     </style>
+    <link rel="stylesheet" type="text/css" href="${this.playerCssUri}" />
 </head>
 <body>
     <div class="header"><h2>Workspace</h2></div>
@@ -1284,7 +1305,20 @@ export class DashboardPanel {
                     var area = document.getElementById('playbackArea');
                     if (area && msg.data) {
                         area.style.display = 'block';
-                        area.innerHTML = '<pre style="margin:0; padding:12px; max-height:400px; overflow:auto; color:#0f0; font-size:11px; line-height:1.3; white-space:pre-wrap;">' + msg.data.replace(/</g, '&lt;') + '</pre>';
+                        area.innerHTML = '<div style="display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--border); background:var(--vscode-sideBar-background);"><button class="btn btn-sm" id="closePlayer">Back</button><span style="font-size:11px; color:var(--vscode-descriptionForeground);">' + (msg.castFile || 'Playback') + '</span></div><div id="playerWrapper"></div>';
+                        document.getElementById('closePlayer').addEventListener('click', function() {
+                            area.style.display = 'none';
+                            area.innerHTML = '';
+                        });
+                        try {
+                            AsciinemaPlayer.create(
+                                { data: msg.data },
+                                document.getElementById('playerWrapper'),
+                                { autoPlay: true, terminalFontSize: '13px' }
+                            );
+                        } catch (err) {
+                            document.getElementById('playerWrapper').textContent = 'Player error: ' + String(err);
+                        }
                     }
                     break;
             }
@@ -1292,6 +1326,7 @@ export class DashboardPanel {
 
         vscodeApi.postMessage({ type: 'ready' });
     </script>
+    <script src="${this.playerJsUri}"></script>
 </body>
 </html>
         `;
