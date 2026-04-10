@@ -516,10 +516,12 @@ export class DashboardPanel {
         scriptLines.push(`exec ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
         fs.writeFileSync(scriptPath, scriptLines.join('\n') + '\n');
 
-        const terminal = vscode.window.createTerminal(name);
+        const terminal = vscode.window.createTerminal({
+            name,
+            shellPath: '/usr/bin/env',
+            shellArgs: ['bash', scriptPath],
+        });
         terminal.show(true);
-        // source + exec: the exec replaces bash with ssh, so when ssh exits the terminal closes
-        terminal.sendText(`source ${scriptPath}`);
 
         // Track active session
         const termName = terminal.name;
