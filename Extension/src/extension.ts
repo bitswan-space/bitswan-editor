@@ -730,20 +730,19 @@ export function activate(context: vscode.ExtensionContext) {
             const details = await getDeployDetails(context);
             if (!details) { return; }
 
-            const automations = context.globalState.get<any[]>('automations', []);
-            // Collect all orphaned automation items from the "Other" section
-            const children = await automationsProvider.getChildren(item);
-            const orphanedItems = (children || []).filter(
+            // Get orphaned items from the unified view provider
+            const children = await unifiedBusinessProcessesProvider.getChildren(item);
+            const orphaned = (children || []).filter(
                 (child): child is AutomationItem => child instanceof AutomationItem
             );
 
-            if (orphanedItems.length === 0) {
+            if (orphaned.length === 0) {
                 vscode.window.showInformationMessage('No orphaned automations to remove.');
                 return;
             }
 
             const confirm = await vscode.window.showWarningMessage(
-                `Remove ${orphanedItems.length} orphaned automation(s)?`,
+                `Remove ${orphaned.length} orphaned automation(s)?`,
                 { modal: true },
                 'Remove All'
             );
@@ -756,12 +755,12 @@ export function activate(context: vscode.ExtensionContext) {
                 title: 'Removing orphaned automations',
                 cancellable: false,
             }, async (progress) => {
-                for (const orphan of orphanedItems) {
+                for (const orphan of orphaned) {
                     try {
                         const url = `${details.deployUrl}/automations/${orphan.deploymentId}`;
                         await deleteAutomation(url, details.deploySecret);
                         removed++;
-                        progress.report({ message: `${removed}/${orphanedItems.length}` });
+                        progress.report({ message: `${removed}/${orphaned.length}` });
                     } catch {
                         failed++;
                     }
