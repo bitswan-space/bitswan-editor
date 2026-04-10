@@ -546,13 +546,13 @@ export class DashboardPanel {
     private async openCodingAgentTerminal(worktree: string, bpPath: string): Promise<void> {
         if (worktree) {
             const cdPath = `/workspace/worktrees/${worktree}/${bpPath}`;
-            const autoCmd = `cd ${cdPath} && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions`;
+            const autoCmd = `cd ${cdPath} && mkdir -p ~/.claude && echo '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions`;
             await this.openSSHTerminal(`Claude: ${worktree}/${bpPath}`, worktree, autoCmd);
         } else {
             const cdPath = path.join(WORKSPACE_DIR, bpPath);
             const terminal = vscode.window.createTerminal({ name: `Claude: ${bpPath}`, cwd: cdPath });
             terminal.show(true);
-            terminal.sendText(`mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions`);
+            terminal.sendText(`mkdir -p ~/.claude && echo '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions`);
         }
     }
 
@@ -727,7 +727,7 @@ export class DashboardPanel {
             `4. Once the merge is complete, tell the user it's done`,
         ].join('\\n');
 
-        const autoCmd = `cd ${wtPath} && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions -p "${claudePrompt}"`;
+        const autoCmd = `cd ${wtPath} && mkdir -p ~/.claude && echo '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions -p "${claudePrompt}"`;
         await this.openSSHTerminal(`Merge: ${worktree}`, worktree, autoCmd);
     }
 
