@@ -259,6 +259,69 @@ export class DashboardPanel {
             case 'mergeWorktree':
                 await this.mergeWorktree(msg.worktree);
                 break;
+            case 'openFile': {
+                const dirPath = this.bpMap.get(msg.key);
+                if (dirPath && msg.relPath) {
+                    const filePath = path.join(dirPath, msg.relPath);
+                    if (fs.existsSync(filePath)) {
+                        const doc = await vscode.workspace.openTextDocument(filePath);
+                        await vscode.window.showTextDocument(doc);
+                    }
+                }
+                break;
+            }
+            case 'createFile': {
+                const dir = this.bpMap.get(msg.key);
+                if (dir && msg.name) {
+                    const target = path.join(dir, msg.parentPath || '', msg.name);
+                    fs.mkdirSync(path.dirname(target), { recursive: true });
+                    fs.writeFileSync(target, '', 'utf-8');
+                    this._reloadCurrentKey();
+                }
+                break;
+            }
+            case 'createFolder': {
+                const dir2 = this.bpMap.get(msg.key);
+                if (dir2 && msg.name) {
+                    fs.mkdirSync(path.join(dir2, msg.parentPath || '', msg.name), { recursive: true });
+                    this._reloadCurrentKey();
+                }
+                break;
+            }
+            case 'deleteFile': {
+                const dir3 = this.bpMap.get(msg.key);
+                if (dir3 && msg.relPath) {
+                    const target = path.join(dir3, msg.relPath);
+                    const confirm = await vscode.window.showWarningMessage(
+                        `Delete "${msg.relPath}"?`, { modal: true }, 'Delete'
+                    );
+                    if (confirm === 'Delete') {
+                        fs.rmSync(target, { recursive: true, force: true });
+                        this._reloadCurrentKey();
+                    }
+                }
+                break;
+            }
+            case 'renameFile': {
+                const dir4 = this.bpMap.get(msg.key);
+                if (dir4 && msg.relPath && msg.newName) {
+                    const oldPath = path.join(dir4, msg.relPath);
+                    const newPath = path.join(path.dirname(oldPath), msg.newName);
+                    fs.renameSync(oldPath, newPath);
+                    this._reloadCurrentKey();
+                }
+                break;
+            }
+            case 'uploadFile': {
+                const dir5 = this.bpMap.get(msg.key);
+                if (dir5 && msg.name && msg.data) {
+                    const target = path.join(dir5, msg.parentPath || '', msg.name);
+                    fs.mkdirSync(path.dirname(target), { recursive: true });
+                    fs.writeFileSync(target, Buffer.from(msg.data, 'base64'));
+                    this._reloadCurrentKey();
+                }
+                break;
+            }
             case 'focusTerminal': {
                 const t = vscode.window.terminals.find(t => t.name === msg.terminalName);
                 if (t) { t.show(true); }
@@ -388,10 +451,35 @@ export class DashboardPanel {
             bpPath = key.substring('workspace:'.length);
         }
 
+        // Files
+        const files = this._scanFiles(dirPath, dirPath);
+
         // Agent sessions for this worktree
         const sessions = worktree ? this._scanSessions(worktree) : [];
 
-        this.postMessage({ type: 'bpContent', key, requirements, automations, readme, worktree, bpPath, sessions });
+        this.postMessage({ type: 'bpContent', key, requirements, automations, readme, worktree, bpPath, files, sessions });
+    }
+
+    private _scanFiles(dir: string, rootDir: string): { name: string; relPath: string; isDirectory: boolean; children?: any[] }[] {
+        const results: { name: string; relPath: string; isDirectory: boolean; children?: any[] }[] = [];
+        try {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                if (entry.name.startsWith('.') || entry.name === 'node_modules') { continue; }
+                const fullPath = path.join(dir, entry.name);
+                const relPath = path.relative(rootDir, fullPath);
+                if (entry.isDirectory()) {
+                    results.push({ name: entry.name, relPath, isDirectory: true, children: this._scanFiles(fullPath, rootDir) });
+                } else {
+                    results.push({ name: entry.name, relPath, isDirectory: false });
+                }
+            }
+        } catch { /* */ }
+        results.sort((a, b) => {
+            if (a.isDirectory !== b.isDirectory) { return a.isDirectory ? -1 : 1; }
+            return a.name.localeCompare(b.name);
+        });
+        return results;
     }
 
     private _scanSessions(worktree: string): { timestamp: string; userEmail: string; worktree: string; castFile: string; logged: boolean }[] {
@@ -863,6 +951,18 @@ export class DashboardPanel {
         .auto-card-state.not-deployed { background:var(--status-proposed); color:#fff; }
         .auto-card-actions { display:flex; gap:6px; border-top:1px solid var(--border); padding:10px 16px; }
 
+        /* File tree */
+        .file-tree { font-size:12px; }
+        .file-item { display:flex; align-items:center; gap:6px; padding:3px 4px; border-radius:4px; cursor:pointer; }
+        .file-item:hover { background:var(--vscode-list-hoverBackground, rgba(128,128,128,0.08)); }
+        .file-item-icon { width:16px; text-align:center; flex-shrink:0; }
+        .file-item-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .file-item-actions { display:none; gap:4px; }
+        .file-item:hover .file-item-actions { display:flex; }
+        .file-item-btn { background:none; border:none; color:var(--vscode-descriptionForeground); cursor:pointer; font-size:11px; padding:0 2px; }
+        .file-item-btn:hover { color:var(--vscode-foreground); }
+        .file-children { margin-left:16px; }
+
         /* Buttons */
         .btn { padding:4px 10px; border:1px solid var(--vscode-button-border, transparent); border-radius:4px; background:var(--vscode-button-secondaryBackground, rgba(128,128,128,0.2)); color:var(--vscode-button-secondaryForeground, var(--vscode-foreground)); cursor:pointer; font-size:11px; }
         .btn:hover { opacity:0.85; }
@@ -1159,6 +1259,69 @@ export class DashboardPanel {
                 content.appendChild(readmeSection);
             }
 
+            // Requirements
+            var reqSection = mkEl('div', 'section');
+            reqSection.appendChild(mkEl('div', 'section-title', 'Requirements'));
+            if (bpData.requirements.length === 0) {
+                reqSection.appendChild(mkEl('div', 'placeholder', 'No requirements yet. Press N to add one.'));
+            } else {
+                var tree = buildTree(bpData.requirements);
+                var list = mkEl('div', '');
+                renderTree(tree, list);
+                reqSection.appendChild(list);
+            }
+            var addRoot = mkEl('button', 'add-root-btn', '+ Add Requirement');
+            addRoot.addEventListener('click', function() { showAddInput('', addRoot); });
+            reqSection.appendChild(addRoot);
+            content.appendChild(reqSection);
+
+            // Files
+            if (bpData.files) {
+                var filesSection = mkEl('div', 'section');
+                var filesHeader = mkEl('div', '');
+                filesHeader.style.cssText = 'display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;';
+                filesHeader.appendChild(mkEl('div', 'section-title', 'Files'));
+                var fileActions = mkEl('div', '');
+                fileActions.style.cssText = 'display:flex; gap:6px;';
+                var newFileBtn = mkEl('button', 'btn btn-sm', '+ File');
+                newFileBtn.addEventListener('click', function() {
+                    var name = prompt('File name:');
+                    if (name) { vscodeApi.postMessage({ type: 'createFile', key: currentBpKey, name: name, parentPath: '' }); }
+                });
+                var newFolderBtn = mkEl('button', 'btn btn-sm', '+ Folder');
+                newFolderBtn.addEventListener('click', function() {
+                    var name = prompt('Folder name:');
+                    if (name) { vscodeApi.postMessage({ type: 'createFolder', key: currentBpKey, name: name, parentPath: '' }); }
+                });
+                var uploadBtn = mkEl('button', 'btn btn-sm', 'Upload');
+                uploadBtn.addEventListener('click', function() {
+                    var input = document.createElement('input');
+                    input.type = 'file';
+                    input.addEventListener('change', function() {
+                        if (input.files && input.files[0]) {
+                            var file = input.files[0];
+                            var reader = new FileReader();
+                            reader.onload = function() {
+                                var base64 = reader.result.toString().split(',')[1];
+                                vscodeApi.postMessage({ type: 'uploadFile', key: currentBpKey, name: file.name, data: base64, parentPath: '' });
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                    });
+                    input.click();
+                });
+                fileActions.appendChild(newFileBtn);
+                fileActions.appendChild(newFolderBtn);
+                fileActions.appendChild(uploadBtn);
+                filesHeader.appendChild(fileActions);
+                filesSection.appendChild(filesHeader);
+
+                var fileTree = mkEl('div', 'file-tree');
+                renderFileTree(bpData.files, fileTree, '');
+                filesSection.appendChild(fileTree);
+                content.appendChild(filesSection);
+            }
+
             // Agent Sessions
             if (bpData.worktree) {
                 var sessSection = mkEl('div', 'section');
@@ -1166,7 +1329,6 @@ export class DashboardPanel {
                 sessHeader.style.cssText = 'display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;';
                 sessHeader.appendChild(mkEl('div', 'section-title', 'Agent Sessions'));
 
-                // Recording toggle
                 var toggleLabel = mkEl('label', '');
                 toggleLabel.style.cssText = 'display:flex; align-items:center; gap:6px; font-size:11px; color:var(--vscode-descriptionForeground); cursor:pointer;';
                 var toggleCb = document.createElement('input');
@@ -1180,13 +1342,11 @@ export class DashboardPanel {
                 sessHeader.appendChild(toggleLabel);
                 sessSection.appendChild(sessHeader);
 
-                // Active sessions
                 var activeDiv = mkEl('div', '');
                 activeDiv.id = 'activeSessions';
                 renderActiveSessions(activeDiv);
                 sessSection.appendChild(activeDiv);
 
-                // Playback area (hidden by default)
                 var playbackArea = mkEl('div', '');
                 playbackArea.id = 'playbackArea';
                 playbackArea.style.cssText = 'display:none; margin-bottom:12px; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:#000;';
@@ -1210,18 +1370,13 @@ export class DashboardPanel {
                         tbody.appendChild(tr);
                     });
                     sessTable.appendChild(tbody);
-
-                    // Wire up play buttons
                     sessTable.addEventListener('click', function(e) {
                         var btn = e.target;
                         if (btn && btn.classList && btn.classList.contains('play-btn')) {
                             var castFile = btn.getAttribute('data-cast');
-                            if (castFile) {
-                                vscodeApi.postMessage({ type: 'playSession', castFile: castFile });
-                            }
+                            if (castFile) { vscodeApi.postMessage({ type: 'playSession', castFile: castFile }); }
                         }
                     });
-
                     sessSection.appendChild(sessTable);
                 } else {
                     sessSection.appendChild(mkEl('div', 'placeholder', 'No sessions yet.'));
@@ -1229,25 +1384,59 @@ export class DashboardPanel {
 
                 content.appendChild(sessSection);
             }
-
-            // Requirements
-            var reqSection = mkEl('div', 'section');
-            reqSection.appendChild(mkEl('div', 'section-title', 'Requirements'));
-            if (bpData.requirements.length === 0) {
-                reqSection.appendChild(mkEl('div', 'placeholder', 'No requirements yet. Press N to add one.'));
-            } else {
-                var tree = buildTree(bpData.requirements);
-                var list = mkEl('div', '');
-                renderTree(tree, list);
-                reqSection.appendChild(list);
-            }
-            var addRoot = mkEl('button', 'add-root-btn', '+ Add Requirement');
-            addRoot.addEventListener('click', function() { showAddInput('', addRoot); });
-            reqSection.appendChild(addRoot);
-            content.appendChild(reqSection);
         }
 
         // ---- Requirements tree (same logic as before) ----
+
+        function renderFileTree(files, container, parentPath) {
+            files.forEach(function(f) {
+                var item = mkEl('div', 'file-item');
+                var icon = mkEl('span', 'file-item-icon', f.isDirectory ? '\\u{1F4C1}' : '\\u{1F4C4}');
+                item.appendChild(icon);
+                var nameSpan = mkEl('span', 'file-item-name', f.name);
+                item.appendChild(nameSpan);
+
+                // Inline action buttons
+                var actions = mkEl('div', 'file-item-actions');
+                var renameBtn = mkEl('button', 'file-item-btn', '\\u{270F}');
+                renameBtn.title = 'Rename';
+                renameBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    var newName = prompt('New name:', f.name);
+                    if (newName && newName !== f.name) {
+                        vscodeApi.postMessage({ type: 'renameFile', key: currentBpKey, relPath: f.relPath, newName: newName });
+                    }
+                });
+                actions.appendChild(renameBtn);
+                var deleteBtn = mkEl('button', 'file-item-btn', '\\u{1F5D1}');
+                deleteBtn.title = 'Delete';
+                deleteBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    vscodeApi.postMessage({ type: 'deleteFile', key: currentBpKey, relPath: f.relPath });
+                });
+                actions.appendChild(deleteBtn);
+                item.appendChild(actions);
+
+                if (f.isDirectory) {
+                    var wrapper = mkEl('div', '');
+                    var childContainer = mkEl('div', 'file-children');
+                    childContainer.style.display = 'none';
+                    item.addEventListener('click', function() {
+                        childContainer.style.display = childContainer.style.display === 'none' ? '' : 'none';
+                        icon.textContent = childContainer.style.display === 'none' ? '\\u{1F4C1}' : '\\u{1F4C2}';
+                    });
+                    wrapper.appendChild(item);
+                    if (f.children) { renderFileTree(f.children, childContainer, f.relPath); }
+                    wrapper.appendChild(childContainer);
+                    container.appendChild(wrapper);
+                } else {
+                    item.addEventListener('click', function() {
+                        vscodeApi.postMessage({ type: 'openFile', key: currentBpKey, relPath: f.relPath });
+                    });
+                    container.appendChild(item);
+                }
+            });
+        }
 
         function buildTree(reqs) {
             var map = {}; var roots = [];
