@@ -91,6 +91,8 @@ export class DashboardPanel {
     private playerJsUri: vscode.Uri | undefined;
     private playerCssUri: vscode.Uri | undefined;
     private codiconFontUri: vscode.Uri | undefined;
+    private markedJsUri: vscode.Uri | undefined;
+    private mermaidJsUri: vscode.Uri | undefined;
 
     private constructor(context: vscode.ExtensionContext) {
         this.context = context;
@@ -99,8 +101,9 @@ export class DashboardPanel {
             path.join(context.extensionPath, 'node_modules', 'asciinema-player', 'dist', 'bundle')
         );
 
-        // Codicon font from code-server
         const codiconDir = vscode.Uri.file('/usr/lib/code-server/lib/vscode/out/media');
+        const markedDir = vscode.Uri.file(path.join(context.extensionPath, 'node_modules', 'marked', 'lib'));
+        const mermaidDir = vscode.Uri.file(path.join(context.extensionPath, 'node_modules', 'mermaid', 'dist'));
 
         this.panel = vscode.window.createWebviewPanel(
             'bitswan-workspace',
@@ -109,7 +112,7 @@ export class DashboardPanel {
             {
                 enableScripts: true,
                 retainContextWhenHidden: true,
-                localResourceRoots: [asciinemaDir, codiconDir],
+                localResourceRoots: [asciinemaDir, codiconDir, markedDir, mermaidDir],
             },
         );
 
@@ -122,6 +125,12 @@ export class DashboardPanel {
         this.codiconFontUri = this.panel.webview.asWebviewUri(
             vscode.Uri.file('/usr/lib/code-server/lib/vscode/out/media/codicon.ttf')
         );
+        this.markedJsUri = this.panel.webview.asWebviewUri(vscode.Uri.file(
+            path.join(context.extensionPath, 'node_modules', 'marked', 'lib', 'marked.umd.js')
+        ));
+        this.mermaidJsUri = this.panel.webview.asWebviewUri(vscode.Uri.file(
+            path.join(context.extensionPath, 'node_modules', 'mermaid', 'dist', 'mermaid.min.js')
+        ));
 
         this.panel.webview.html = this._getHtmlForWebview();
 
@@ -139,6 +148,11 @@ export class DashboardPanel {
         const autoWatcher = vscode.workspace.createFileSystemWatcher('**/automation.toml');
         autoWatcher.onDidCreate(() => this._reloadCurrentKey());
         context.subscriptions.push(autoWatcher);
+
+        // Watch for README changes
+        const readmeWatcher = vscode.workspace.createFileSystemWatcher('**/README.md');
+        readmeWatcher.onDidChange(() => this._reloadCurrentKey());
+        context.subscriptions.push(readmeWatcher);
 
         this.panel.onDidDispose(() => {
             this.disposed = true;
@@ -262,6 +276,17 @@ export class DashboardPanel {
             case 'mergeWorktree':
                 await this.mergeWorktree(msg.worktree);
                 break;
+            case 'editReadme': {
+                const bpDir = this.bpMap.get(msg.key);
+                if (bpDir) {
+                    const readmePath = path.join(bpDir, 'README.md');
+                    if (fs.existsSync(readmePath)) {
+                        const doc = await vscode.workspace.openTextDocument(readmePath);
+                        await vscode.window.showTextDocument(doc);
+                    }
+                }
+                break;
+            }
             case 'revealInExplorer': {
                 const bpDir = this.bpMap.get(msg.key);
                 if (bpDir) {
@@ -833,6 +858,7 @@ export class DashboardPanel {
         .codicon-debug-start::before { content: "\\ead3"; }
         .codicon-link-external::before { content: "\\eb14"; }
         .codicon-folder-opened::before { content: "\\eaf7"; }
+        .codicon-edit::before { content: "\\ea73"; }
         :root { color-scheme: light dark; font-family: var(--vscode-font-family, sans-serif);
             --status-pass: #3fb950; --status-fail: #f85149; --status-pending: #d29922; --status-retest: #a371f7; --status-proposed: #768390; --border: var(--vscode-editorWidget-border, rgba(128,128,128,0.3)); }
         * { box-sizing: border-box; }
@@ -889,7 +915,17 @@ export class DashboardPanel {
         .btn-ghost:hover { background:var(--status-fail); color:#fff; }
 
         /* README */
-        .readme { padding:12px; border:1px solid var(--border); border-radius:8px; background:var(--vscode-sideBar-background, rgba(128,128,128,0.05)); font-size:12px; line-height:1.5; white-space:pre-wrap; max-height:200px; overflow-y:auto; }
+        .readme { padding:12px 16px; border:1px solid var(--border); border-radius:8px; background:var(--vscode-sideBar-background, rgba(128,128,128,0.05)); font-size:13px; line-height:1.6; max-height:400px; overflow-y:auto; }
+        .readme h1, .readme h2, .readme h3 { margin:12px 0 6px; }
+        .readme h1 { font-size:18px; } .readme h2 { font-size:16px; } .readme h3 { font-size:14px; }
+        .readme p { margin:6px 0; }
+        .readme code { background:rgba(128,128,128,0.15); padding:1px 4px; border-radius:3px; font-size:12px; }
+        .readme pre { background:rgba(0,0,0,0.2); padding:10px; border-radius:6px; overflow-x:auto; }
+        .readme pre code { background:none; padding:0; }
+        .readme ul, .readme ol { padding-left:20px; margin:6px 0; }
+        .readme a { color:var(--vscode-textLink-foreground, #3794ff); }
+        .readme img { max-width:100%; border-radius:4px; }
+        .readme .mermaid { margin:12px 0; }
 
         /* Requirements (from original) */
         .req-node { margin-bottom:6px; position:relative; }
@@ -1180,14 +1216,32 @@ export class DashboardPanel {
                 content.appendChild(autoSection);
             }
 
-            // README
+            // README — rendered markdown with mermaid diagrams
             if (bpData.readme) {
                 var readmeSection = mkEl('div', 'section');
-                readmeSection.appendChild(mkEl('div', 'section-title', 'README'));
+                var readmeHeader = mkEl('div', '');
+                readmeHeader.style.cssText = 'display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;';
+                readmeHeader.appendChild(mkEl('div', 'section-title', 'README'));
+                var editBtn = mkEl('button', 'btn btn-sm', '');
+                editBtn.innerHTML = '<span class="codicon codicon-edit"></span>';
+                editBtn.title = 'Edit README';
+                editBtn.addEventListener('click', function() {
+                    vscodeApi.postMessage({ type: 'editReadme', key: currentBpKey });
+                });
+                readmeHeader.appendChild(editBtn);
+                readmeSection.appendChild(readmeHeader);
+
                 var readmeDiv = mkEl('div', 'readme');
-                readmeDiv.textContent = bpData.readme;
+                readmeDiv.innerHTML = renderMarkdown(bpData.readme);
                 readmeSection.appendChild(readmeDiv);
                 content.appendChild(readmeSection);
+
+                // Render mermaid diagrams after DOM is ready
+                if (typeof mermaid !== 'undefined') {
+                    setTimeout(function() {
+                        try { mermaid.run({ nodes: readmeDiv.querySelectorAll('.mermaid') }); } catch(e) {}
+                    }, 100);
+                }
             }
 
             // Requirements
@@ -1473,6 +1527,31 @@ export class DashboardPanel {
         vscodeApi.postMessage({ type: 'ready' });
     </script>
     <script src="${this.playerJsUri}"></script>
+    <script src="${this.markedJsUri}"></script>
+    <script src="${this.mermaidJsUri}"></script>
+    <script>
+        // Initialize mermaid
+        if (typeof mermaid !== 'undefined') {
+            mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+        }
+
+        // Render markdown with mermaid code block support
+        function renderMarkdown(text) {
+            if (typeof marked === 'undefined') { return text; }
+            var renderer = new marked.Renderer();
+            var origCode = renderer.code;
+            renderer.code = function(code, language) {
+                // Handle both marked v4 ({text, lang}) and v12+ (code, language) signatures
+                var codeText = typeof code === 'object' ? code.text : code;
+                var codeLang = typeof code === 'object' ? code.lang : language;
+                if (codeLang === 'mermaid') {
+                    return '<div class="mermaid">' + codeText + '</div>';
+                }
+                return '<pre><code>' + (codeText || '').replace(/</g, '&lt;') + '</code></pre>';
+            };
+            return marked.parse(text, { renderer: renderer });
+        }
+    </script>
 </body>
 </html>
         `;
