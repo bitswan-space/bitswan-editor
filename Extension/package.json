@@ -436,7 +436,7 @@
       },
       {
         "command": "bitswan.openRequirementsEditor",
-        "title": "Open Requirements Editor",
+        "title": "Open Workspace",
         "category": "BitSwan"
       },
       {
