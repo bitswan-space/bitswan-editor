@@ -1092,19 +1092,19 @@ export class DashboardPanel {
                         // Action buttons at bottom
                         var actions = mkEl('div', 'auto-card-actions');
                         if (auto.deploymentId) {
-                            var logsBtn = mkEl('button', 'btn', '\u{1F4DC} Logs');
+                            var logsBtn = mkEl('button', 'btn', '\u{2261} Logs');
                             logsBtn.addEventListener('click', function() {
                                 vscodeApi.postMessage({ type: 'showLogs', deploymentId: auto.deploymentId });
                             });
                             actions.appendChild(logsBtn);
 
-                            var restartBtn = mkEl('button', 'btn', '\u{1F504} Restart');
+                            var restartBtn = mkEl('button', 'btn', '\u{21BB} Restart');
                             restartBtn.addEventListener('click', function() {
                                 vscodeApi.postMessage({ type: 'restartAutomation', deploymentId: auto.deploymentId });
                             });
                             actions.appendChild(restartBtn);
                         } else if (bpData.worktree) {
-                            var startBtn = mkEl('button', 'btn btn-primary', '\u{25B6}\u{FE0F} Start Live Dev');
+                            var startBtn = mkEl('button', 'btn btn-primary', '\u{25B6} Start Live Dev');
                             startBtn.addEventListener('click', function() {
                                 vscodeApi.postMessage({ type: 'startLiveDev', relativePath: auto.relativePath, worktree: bpData.worktree, name: auto.name });
                             });
