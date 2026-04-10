@@ -1074,6 +1074,13 @@ export class DashboardPanel {
                 });
                 actionsRow.appendChild(termCard);
 
+                var filesCard = mkEl('div', 'action-card');
+                filesCard.innerHTML = '<div class="card-icon">\\u{1F4C2}</div><div class="card-label">Files</div><div class="card-desc">Browse in Explorer</div>';
+                filesCard.addEventListener('click', function() {
+                    vscodeApi.postMessage({ type: 'revealInExplorer', key: currentBpKey });
+                });
+                actionsRow.appendChild(filesCard);
+
                 if (bpData.worktree) {
                     var mergeCard = mkEl('div', 'action-card');
                     mergeCard.innerHTML = '<div class="card-icon">\\u{1F500}</div><div class="card-label">Merge</div><div class="card-desc">Merge worktree into main</div>';
@@ -1184,18 +1191,6 @@ export class DashboardPanel {
             reqSection.appendChild(addRoot);
             content.appendChild(reqSection);
 
-            // Files — open in VS Code's native file explorer
-            {
-                var filesSection = mkEl('div', 'section');
-                filesSection.appendChild(mkEl('div', 'section-title', 'Files'));
-                var openExplorerBtn = mkEl('button', 'btn', '');
-                openExplorerBtn.innerHTML = '<span class="codicon codicon-folder-opened"></span> Open in Explorer';
-                openExplorerBtn.addEventListener('click', function() {
-                    vscodeApi.postMessage({ type: 'revealInExplorer', key: currentBpKey });
-                });
-                filesSection.appendChild(openExplorerBtn);
-                content.appendChild(filesSection);
-            }
 
             // Agent Sessions
             if (bpData.worktree) {
