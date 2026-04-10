@@ -103,6 +103,11 @@ export class DashboardPanel {
         this.fileWatcher.onDidChange(() => this._reloadCurrentKey());
         this.fileWatcher.onDidCreate(() => this._reloadCurrentKey());
 
+        // Watch for new automations (automation.toml creation)
+        const autoWatcher = vscode.workspace.createFileSystemWatcher('**/automation.toml');
+        autoWatcher.onDidCreate(() => this._reloadCurrentKey());
+        context.subscriptions.push(autoWatcher);
+
         this.panel.onDidDispose(() => {
             this.disposed = true;
             if (this.fileWatcher) { this.fileWatcher.dispose(); }
