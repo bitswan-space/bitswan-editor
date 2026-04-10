@@ -269,7 +269,7 @@ export class CreateAutomationItem extends vscode.TreeItem {
  */
 export class WorktreesSectionItem extends vscode.TreeItem {
     constructor() {
-        super('Worktrees', vscode.TreeItemCollapsibleState.Collapsed);
+        super('Worktrees', vscode.TreeItemCollapsibleState.Expanded);
         this.id = 'worktrees-section';
         this.contextValue = 'worktreesSection';
         this.iconPath = new vscode.ThemeIcon('git-branch');
@@ -483,15 +483,30 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         if (element instanceof WorktreesSectionItem) {
             if (this._worktreesProvider) {
                 const items = await this._worktreesProvider.getChildren();
-                // Add click-to-select command on each worktree item
                 for (const item of items) {
-                    item.command = {
-                        command: 'bitswan.selectWorktree',
-                        title: 'Select Worktree',
-                        arguments: [item.name],
-                    };
+                    item.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
+                    item.command = undefined;
                 }
                 return items;
+            }
+            return [];
+        }
+
+        if (element instanceof WorktreeItem) {
+            // Show business processes inside this worktree
+            const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '/workspace/workspace';
+            const wtRoot = path.join(workspacePath, 'worktrees', element.name);
+            if (fs.existsSync(wtRoot)) {
+                const processDirs = this.findDirectoriesWithProcessToml(wtRoot);
+                return processDirs.map(processDir => {
+                    const relativePath = path.relative(wtRoot, processDir);
+                    const processConfigPath = path.join(processDir, 'process.toml');
+                    return new BusinessProcessItem(
+                        relativePath,
+                        vscode.Uri.file(processDir),
+                        processConfigPath
+                    );
+                });
             }
             return [];
         }
@@ -532,6 +547,11 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
 
     private getBusinessProcesses(): UnifiedTreeItem[] {
         const businessProcesses: UnifiedTreeItem[] = [];
+
+        // Worktrees at the top (expandable — no mode switching)
+        if (!this._selectedWorktree && this._worktreesProvider) {
+            businessProcesses.push(new WorktreesSectionItem());
+        }
 
         // "Back to Main" button when viewing a worktree
         if (this._selectedWorktree) {
@@ -577,11 +597,6 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                     }
                 }
             }
-        }
-
-        // Worktrees section (only in main mode)
-        if (!this._selectedWorktree && this._worktreesProvider) {
-            businessProcesses.push(new WorktreesSectionItem());
         }
 
         // Action buttons at the bottom — always show regardless of scan root
