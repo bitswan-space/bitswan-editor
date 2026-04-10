@@ -359,93 +359,100 @@ export class DashboardPanel {
     // ---- Terminals ----
 
     private async openCodingAgentTerminal(worktree: string, bpPath: string): Promise<void> {
-        if (!worktree) {
-            vscode.window.showErrorMessage('Coding agent is only available for worktrees.');
-            return;
+        if (worktree) {
+            // Worktree: SSH into coding agent container
+            const workspaceName = process.env.HOSTNAME?.replace('-editor', '') || 'workspace';
+            const agentHost = `${workspaceName}-coding-agent`;
+
+            const reachable = await new Promise<boolean>(resolve => {
+                cp.exec(`getent hosts ${agentHost}`, (err) => resolve(!err));
+            });
+
+            if (!reachable) {
+                vscode.window.showErrorMessage('Coding agent container is not running. Start it from the worktrees view.');
+                return;
+            }
+
+            const userEmail = await getUserEmail(this.context);
+            const cdPath = `/workspace/workspace/worktrees/${worktree}/${bpPath}`;
+
+            const terminal = vscode.window.createTerminal({
+                name: `Claude: ${worktree}/${bpPath}`,
+                shellPath: '/usr/bin/ssh',
+                shellArgs: [
+                    '-i', '/workspace/.ssh/id_ed25519',
+                    '-o', 'StrictHostKeyChecking=no',
+                    '-o', 'UserKnownHostsFile=/dev/null',
+                    '-o', 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE',
+                    `agent@${agentHost}`,
+                ],
+                env: {
+                    SSH_USER_EMAIL: userEmail,
+                    SSH_LOGGED: 'true',
+                    SSH_WORKTREE: worktree,
+                },
+            });
+            terminal.show(true);
+            setTimeout(() => {
+                terminal.sendText(`cd "${cdPath}" && claude --dangerously-skip-permissions`);
+            }, 2000);
+        } else {
+            // Main workspace: local terminal
+            const cdPath = path.join(WORKSPACE_DIR, bpPath);
+            const terminal = vscode.window.createTerminal({
+                name: `Claude: ${bpPath}`,
+                cwd: cdPath,
+            });
+            terminal.show(true);
+            terminal.sendText('claude --dangerously-skip-permissions');
         }
-
-        const workspaceName = process.env.HOSTNAME?.replace('-editor', '') || 'workspace';
-        const agentHost = `${workspaceName}-coding-agent`;
-
-        // Check if agent container is reachable
-        const reachable = await new Promise<boolean>(resolve => {
-            cp.exec(`getent hosts ${agentHost}`, (err) => resolve(!err));
-        });
-
-        if (!reachable) {
-            vscode.window.showErrorMessage('Coding agent container is not running. Start it from the worktrees view.');
-            return;
-        }
-
-        const userEmail = await getUserEmail(this.context);
-        const cdPath = `/workspace/workspace/worktrees/${worktree}/${bpPath}`;
-
-        const terminal = vscode.window.createTerminal({
-            name: `Claude: ${worktree}/${bpPath}`,
-            shellPath: '/usr/bin/ssh',
-            shellArgs: [
-                '-i', '/workspace/.ssh/id_ed25519',
-                '-o', 'StrictHostKeyChecking=no',
-                '-o', 'UserKnownHostsFile=/dev/null',
-                '-o', 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE',
-                `agent@${agentHost}`,
-            ],
-            env: {
-                SSH_USER_EMAIL: userEmail,
-                SSH_LOGGED: 'true',
-                SSH_WORKTREE: worktree,
-            },
-        });
-        terminal.show(true);
-
-        // After SSH connects, cd and launch claude
-        setTimeout(() => {
-            terminal.sendText(`cd "${cdPath}" && claude --dangerously-skip-permissions`);
-        }, 2000);
     }
 
     private async openPlainTerminal(worktree: string, bpPath: string): Promise<void> {
-        if (!worktree) {
-            vscode.window.showErrorMessage('Terminal is only available for worktrees.');
-            return;
+        if (worktree) {
+            const workspaceName = process.env.HOSTNAME?.replace('-editor', '') || 'workspace';
+            const agentHost = `${workspaceName}-coding-agent`;
+
+            const reachable = await new Promise<boolean>(resolve => {
+                cp.exec(`getent hosts ${agentHost}`, (err) => resolve(!err));
+            });
+
+            if (!reachable) {
+                vscode.window.showErrorMessage('Coding agent container is not running.');
+                return;
+            }
+
+            const userEmail = await getUserEmail(this.context);
+            const cdPath = `/workspace/workspace/worktrees/${worktree}/${bpPath}`;
+
+            const terminal = vscode.window.createTerminal({
+                name: `Terminal: ${worktree}/${bpPath}`,
+                shellPath: '/usr/bin/ssh',
+                shellArgs: [
+                    '-i', '/workspace/.ssh/id_ed25519',
+                    '-o', 'StrictHostKeyChecking=no',
+                    '-o', 'UserKnownHostsFile=/dev/null',
+                    '-o', 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE',
+                    `agent@${agentHost}`,
+                ],
+                env: {
+                    SSH_USER_EMAIL: userEmail,
+                    SSH_LOGGED: 'false',
+                    SSH_WORKTREE: worktree,
+                },
+            });
+            terminal.show(true);
+            setTimeout(() => {
+                terminal.sendText(`cd "${cdPath}"`);
+            }, 2000);
+        } else {
+            const cdPath = path.join(WORKSPACE_DIR, bpPath);
+            const terminal = vscode.window.createTerminal({
+                name: `Terminal: ${bpPath}`,
+                cwd: cdPath,
+            });
+            terminal.show(true);
         }
-
-        const workspaceName = process.env.HOSTNAME?.replace('-editor', '') || 'workspace';
-        const agentHost = `${workspaceName}-coding-agent`;
-
-        const reachable = await new Promise<boolean>(resolve => {
-            cp.exec(`getent hosts ${agentHost}`, (err) => resolve(!err));
-        });
-
-        if (!reachable) {
-            vscode.window.showErrorMessage('Coding agent container is not running.');
-            return;
-        }
-
-        const userEmail = await getUserEmail(this.context);
-        const cdPath = `/workspace/workspace/worktrees/${worktree}/${bpPath}`;
-
-        const terminal = vscode.window.createTerminal({
-            name: `Terminal: ${worktree}/${bpPath}`,
-            shellPath: '/usr/bin/ssh',
-            shellArgs: [
-                '-i', '/workspace/.ssh/id_ed25519',
-                '-o', 'StrictHostKeyChecking=no',
-                '-o', 'UserKnownHostsFile=/dev/null',
-                '-o', 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE',
-                `agent@${agentHost}`,
-            ],
-            env: {
-                SSH_USER_EMAIL: userEmail,
-                SSH_LOGGED: 'false',
-                SSH_WORKTREE: worktree,
-            },
-        });
-        terminal.show(true);
-
-        setTimeout(() => {
-            terminal.sendText(`cd "${cdPath}"`);
-        }, 2000);
     }
 
     private postMessage(msg: any): void {
@@ -622,7 +629,7 @@ export class DashboardPanel {
             }
 
             // Action cards (Coding Agent + Terminal) — only for worktrees
-            if (bpData.worktree) {
+            {
                 var actionsSection = mkEl('div', 'section');
                 actionsSection.appendChild(mkEl('div', 'section-title', 'Actions'));
                 var actionsRow = mkEl('div', 'action-cards');
