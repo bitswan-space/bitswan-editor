@@ -421,7 +421,7 @@ export class DashboardPanel {
             });
             terminal.show(true);
             setTimeout(() => {
-                terminal.sendText(`cd "${cdPath}" && claude --dangerously-skip-permissions`);
+                terminal.sendText(`cd "${cdPath}" && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && claude --dangerously-skip-permissions`);
             }, 2000);
         } else {
             // Main workspace: local terminal
@@ -431,7 +431,7 @@ export class DashboardPanel {
                 cwd: cdPath,
             });
             terminal.show(true);
-            terminal.sendText('claude --dangerously-skip-permissions');
+            terminal.sendText('mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && claude --dangerously-skip-permissions');
         }
     }
 
@@ -681,7 +681,7 @@ export class DashboardPanel {
         terminal.show(true);
 
         setTimeout(() => {
-            terminal.sendText(`cd "${wtPath}" && claude --dangerously-skip-permissions -p "${claudePrompt}"`);
+            terminal.sendText(`cd "${wtPath}" && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && claude --dangerously-skip-permissions -p "${claudePrompt}"`);
         }, 2000);
     }
 
