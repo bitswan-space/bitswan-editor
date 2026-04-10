@@ -256,6 +256,9 @@ export class DashboardPanel {
             case 'createAutomation':
                 await this.createAutomation(msg.worktree, msg.bpPath);
                 break;
+            case 'syncWorktree':
+                await this.syncWorktree(msg.worktree);
+                break;
             case 'mergeWorktree':
                 await this.mergeWorktree(msg.worktree);
                 break;
@@ -711,13 +714,57 @@ export class DashboardPanel {
         vscode.commands.executeCommand('bitswan.openAutomationTemplates', relPath);
     }
 
+    private async syncWorktree(worktree: string): Promise<void> {
+        const details = await getDeployDetails(this.context);
+        if (!details) { return; }
+
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: `Syncing worktree "${worktree}" with main...`,
+            cancellable: false,
+        }, async () => {
+            try {
+                // Commit any uncommitted changes first
+                try {
+                    await axios.post(
+                        `${details.deployUrl}/agent/worktrees/${worktree}/vcs/commit`,
+                        { message: 'Pre-sync commit' },
+                        { headers: { Authorization: `Bearer ${details.deploySecret}` } },
+                    );
+                } catch { /* nothing to commit */ }
+
+                const result = await axios.post(
+                    `${details.deployUrl}/agent/worktrees/${worktree}/sync`,
+                    {},
+                    {
+                        headers: { Authorization: `Bearer ${details.deploySecret}` },
+                        validateStatus: () => true,
+                    },
+                );
+
+                const data = result.data;
+                if (data.status === 'synced' || data.status === 'success' || data.status === 'already_up_to_date') {
+                    vscode.window.showInformationMessage(`Worktree "${worktree}" synced with main.`);
+                } else if (data.status === 'conflicts') {
+                    const conflictedFiles = (data.conflicted_files || []).join(', ');
+                    vscode.window.showWarningMessage(`Sync has conflicts in: ${conflictedFiles}. Launching Claude to resolve.`);
+                    await this.launchMergeConflictAgent(worktree, data.conflicted_files || []);
+                } else {
+                    vscode.window.showErrorMessage(`Sync failed: ${data.detail || data.message || JSON.stringify(data)}`);
+                }
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`Sync failed: ${err.message}`);
+            }
+        });
+    }
+
     private async mergeWorktree(worktree: string): Promise<void> {
         const confirm = await vscode.window.showWarningMessage(
-            `Merge worktree "${worktree}" into the main branch?`,
+            `Merge worktree "${worktree}" into main and delete the worktree?`,
             { modal: true },
-            'Merge',
+            'Merge & Delete',
         );
-        if (confirm !== 'Merge') { return; }
+        if (confirm !== 'Merge & Delete') { return; }
 
         const details = await getDeployDetails(this.context);
         if (!details) { return; }
@@ -745,23 +792,16 @@ export class DashboardPanel {
             const data = result.data;
 
             if (data.status === 'merged' || data.status === 'success') {
-                // Merge succeeded — ask to delete worktree
+                // Merge succeeded — delete worktree automatically
                 const merged_into = data.merged_into || 'main';
-                const deleteConfirm = await vscode.window.showInformationMessage(
-                    `Worktree "${worktree}" merged into ${merged_into}. Delete the worktree?`,
-                    'Delete Worktree',
-                    'Keep',
-                );
-                if (deleteConfirm === 'Delete Worktree') {
-                    try {
-                        await axios.delete(
-                            `${details.deployUrl}/worktrees/${worktree}`,
-                            { headers: { Authorization: `Bearer ${details.deploySecret}` } },
-                        );
-                        vscode.window.showInformationMessage(`Worktree "${worktree}" deleted.`);
-                    } catch (err: any) {
-                        vscode.window.showErrorMessage(`Failed to delete worktree: ${err.message}`);
-                    }
+                try {
+                    await axios.delete(
+                        `${details.deployUrl}/worktrees/${worktree}`,
+                        { headers: { Authorization: `Bearer ${details.deploySecret}` } },
+                    );
+                    vscode.window.showInformationMessage(`Worktree "${worktree}" merged into ${merged_into} and deleted.`);
+                } catch (err: any) {
+                    vscode.window.showWarningMessage(`Merged into ${merged_into} but failed to delete worktree: ${err.message}`);
                 }
                 await this.loadBusinessProcesses();
             } else if (data.status === 'conflicts') {
@@ -1082,12 +1122,19 @@ export class DashboardPanel {
                 actionsRow.appendChild(filesCard);
 
                 if (bpData.worktree) {
-                    var mergeCard = mkEl('div', 'action-card');
-                    mergeCard.innerHTML = '<div class="card-icon">\\u{1F500}</div><div class="card-label">Merge</div><div class="card-desc">Merge worktree into main</div>';
-                    mergeCard.addEventListener('click', function() {
+                    var syncCard = mkEl('div', 'action-card');
+                    syncCard.innerHTML = '<div class="card-icon">\\u{1F504}</div><div class="card-label">Sync</div><div class="card-desc">Rebase onto main branch</div>';
+                    syncCard.addEventListener('click', function() {
+                        vscodeApi.postMessage({ type: 'syncWorktree', worktree: bpData.worktree });
+                    });
+                    actionsRow.appendChild(syncCard);
+
+                    var mergeDeleteCard = mkEl('div', 'action-card');
+                    mergeDeleteCard.innerHTML = '<div class="card-icon">\\u{1F500}</div><div class="card-label">Merge & Delete</div><div class="card-desc">Merge into main and delete worktree</div>';
+                    mergeDeleteCard.addEventListener('click', function() {
                         vscodeApi.postMessage({ type: 'mergeWorktree', worktree: bpData.worktree });
                     });
-                    actionsRow.appendChild(mergeCard);
+                    actionsRow.appendChild(mergeDeleteCard);
                 }
 
                 actionsSection.appendChild(actionsRow);
