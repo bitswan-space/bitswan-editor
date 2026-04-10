@@ -855,7 +855,7 @@ export class DashboardPanel {
         .auto-card-top.clickable { cursor:pointer; }
         .auto-card-top.clickable:hover { background:var(--vscode-list-hoverBackground, rgba(128,128,128,0.08)); }
         .auto-card-link-icon { position:absolute; top:12px; right:12px; font-size:12px; color:var(--vscode-descriptionForeground); }
-        .auto-card-icon { font-size:28px; margin-bottom:10px; }
+        .auto-card-icon { font-size:28px; margin-bottom:10px; text-align:center; }
         .auto-card-name { font-weight:600; font-size:14px; margin-bottom:4px; }
         .auto-card-state { display:inline-block; font-size:10px; padding:2px 8px; border-radius:10px; text-transform:uppercase; font-weight:600; letter-spacing:0.3px; margin-bottom:8px; }
         .auto-card-state.running { background:var(--status-pass); color:#fff; }
