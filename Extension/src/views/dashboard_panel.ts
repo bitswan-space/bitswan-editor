@@ -460,23 +460,13 @@ export class DashboardPanel {
             const cdPath = `/workspace/worktrees/${worktree}/${bpPath}`;
 
             const anon = this.context.globalState.get<boolean>('agentAnonMode', false);
+            const logged = anon ? 'false' : 'true';
+            const sshCmd = `SSH_USER_EMAIL='${userEmail}' SSH_LOGGED='${logged}' SSH_WORKTREE='${worktree}' ssh -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE' agent@${agentHost}`;
             const terminal = vscode.window.createTerminal({
                 name: `Claude: ${worktree}/${bpPath}`,
-                shellPath: '/usr/bin/ssh',
-                shellArgs: [
-                    '-i', '/workspace/.ssh/id_ed25519',
-                    '-o', 'StrictHostKeyChecking=no',
-                    '-o', 'UserKnownHostsFile=/dev/null',
-                    '-o', 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE',
-                    `agent@${agentHost}`,
-                ],
-                env: {
-                    SSH_USER_EMAIL: userEmail,
-                    SSH_LOGGED: anon ? 'false' : 'true',
-                    SSH_WORKTREE: worktree,
-                },
             });
             terminal.show(true);
+            terminal.sendText(sshCmd);
 
             // Track active session
             const termName = terminal.name;
@@ -497,7 +487,7 @@ export class DashboardPanel {
 
             setTimeout(() => {
                 terminal.sendText(`cd "${cdPath}" && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && claude --dangerously-skip-permissions`);
-            }, 2000);
+            }, 3000);
         } else {
             // Main workspace: local terminal
             const cdPath = path.join(WORKSPACE_DIR, bpPath);
@@ -528,23 +518,13 @@ export class DashboardPanel {
             const cdPath = `/workspace/worktrees/${worktree}/${bpPath}`;
 
             const anon = this.context.globalState.get<boolean>('agentAnonMode', false);
+            const logged = anon ? 'false' : 'true';
+            const sshCmd = `SSH_USER_EMAIL='${userEmail}' SSH_LOGGED='${logged}' SSH_WORKTREE='${worktree}' ssh -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE' agent@${agentHost}`;
             const terminal = vscode.window.createTerminal({
                 name: `Terminal: ${worktree}/${bpPath}`,
-                shellPath: '/usr/bin/ssh',
-                shellArgs: [
-                    '-i', '/workspace/.ssh/id_ed25519',
-                    '-o', 'StrictHostKeyChecking=no',
-                    '-o', 'UserKnownHostsFile=/dev/null',
-                    '-o', 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE',
-                    `agent@${agentHost}`,
-                ],
-                env: {
-                    SSH_USER_EMAIL: userEmail,
-                    SSH_LOGGED: anon ? 'false' : 'true',
-                    SSH_WORKTREE: worktree,
-                },
             });
             terminal.show(true);
+            terminal.sendText(sshCmd);
 
             const termName = terminal.name;
             activeSessions.push({ worktree, userEmail, terminalName: termName });
@@ -753,27 +733,16 @@ export class DashboardPanel {
             `4. Once the merge is complete, tell the user it's done`,
         ].join('\\n');
 
+        const sshCmd = `SSH_USER_EMAIL='${userEmail}' SSH_LOGGED='true' SSH_WORKTREE='${worktree}' ssh -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE' agent@${agentHost}`;
         const terminal = vscode.window.createTerminal({
             name: `Merge: ${worktree}`,
-            shellPath: '/usr/bin/ssh',
-            shellArgs: [
-                '-i', '/workspace/.ssh/id_ed25519',
-                '-o', 'StrictHostKeyChecking=no',
-                '-o', 'UserKnownHostsFile=/dev/null',
-                '-o', 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE',
-                `agent@${agentHost}`,
-            ],
-            env: {
-                SSH_USER_EMAIL: userEmail,
-                SSH_LOGGED: 'true',
-                SSH_WORKTREE: worktree,
-            },
         });
         terminal.show(true);
+        terminal.sendText(sshCmd);
 
         setTimeout(() => {
             terminal.sendText(`cd "${wtPath}" && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && claude --dangerously-skip-permissions -p "${claudePrompt}"`);
-        }, 2000);
+        }, 3000);
     }
 
     private sendActiveSessions(): void {
