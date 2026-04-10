@@ -398,7 +398,7 @@ export class DashboardPanel {
         // Agent sessions for this worktree
         const sessions = worktree ? this._scanSessions(worktree) : [];
 
-        this.postMessage({ type: 'bpContent', key, requirements, automations, readme, worktree, bpPath, files, sessions });
+        this.postMessage({ type: 'bpContent', key, requirements, automations, readme, worktree, bpPath, sessions });
     }
 
     private _scanSessions(worktree: string): { timestamp: string; userEmail: string; worktree: string; castFile: string; logged: boolean }[] {
