@@ -503,8 +503,9 @@ export class DashboardPanel {
         const terminal = vscode.window.createTerminal(name);
         terminal.show(true);
 
-        // Build the export + exec ssh command.
-        // SSH_AUTO_CMD is base64-encoded to avoid shell metachar interpretation.
+        // SSH_AUTO_CMD is base64-encoded to avoid shell metachar issues.
+        // Also send the command via sendText as fallback for older containers
+        // that don't support SSH_AUTO_CMD yet.
         let exportVars = `export SSH_USER_EMAIL="${userEmail}" SSH_LOGGED="${logged}" SSH_WORKTREE="${worktree}"`;
         if (autoCmd) {
             const b64 = Buffer.from(autoCmd).toString('base64');
