@@ -6,6 +6,7 @@ import * as toml from '@iarna/toml';
 import axios from 'axios';
 import { getUserEmail } from '../services/user_info';
 import { getDeployDetails } from '../deploy_details';
+import { AutomationItem } from './automations_view';
 
 const REQUIREMENTS_FILENAME = 'testable-requirements.toml';
 const WORKSPACE_DIR = '/workspace/workspace';
@@ -195,39 +196,41 @@ export class DashboardPanel {
             }
             case 'showLogs':
                 if (msg.deploymentId) {
-                    // Find the automation and trigger log viewer
                     const automations = this.context.globalState.get<any[]>('automations', []);
-                    const automation = automations?.find(a =>
+                    const auto = automations?.find(a =>
                         (a.deployment_id || a.deploymentId) === msg.deploymentId
                     );
-                    if (automation) {
-                        vscode.commands.executeCommand('bitswan.showAutomationLogs', {
-                            name: automation.name || automation.deployment_id,
-                            deploymentId: automation.deployment_id || automation.deploymentId,
-                            automationUrl: automation.automation_url || automation.automationUrl,
-                        });
+                    if (auto) {
+                        const item = new AutomationItem(
+                            auto.name || auto.deployment_id,
+                            auto.state,
+                            auto.status,
+                            auto.deployment_id || auto.deploymentId,
+                            auto.active,
+                            auto.automation_url || auto.automationUrl,
+                            auto.relative_path || auto.relativePath,
+                        );
+                        vscode.commands.executeCommand('bitswan.showAutomationLogs', item);
                     }
                 }
                 break;
             case 'restartAutomation':
                 if (msg.deploymentId) {
-                    const activeInstance = this.context.globalState.get<any>('activeGitOpsInstance');
-                    if (activeInstance) {
-                        const automations = this.context.globalState.get<any[]>('automations', []);
-                        const auto = automations?.find(a =>
-                            (a.deployment_id || a.deploymentId) === msg.deploymentId
+                    const automations2 = this.context.globalState.get<any[]>('automations', []);
+                    const auto2 = automations2?.find(a =>
+                        (a.deployment_id || a.deploymentId) === msg.deploymentId
+                    );
+                    if (auto2) {
+                        const item2 = new AutomationItem(
+                            auto2.name || auto2.deployment_id,
+                            auto2.state,
+                            auto2.status,
+                            auto2.deployment_id || auto2.deploymentId,
+                            auto2.active,
+                            auto2.automation_url || auto2.automationUrl,
+                            auto2.relative_path || auto2.relativePath,
                         );
-                        if (auto) {
-                            const name = auto.name || auto.deployment_id;
-                            try {
-                                const { restartAutomation } = require('../lib');
-                                const url = `${activeInstance.url}/automations/${name}/restart`;
-                                await restartAutomation(url, activeInstance.secret);
-                                vscode.window.showInformationMessage(`Restarted ${name}`);
-                            } catch (err: any) {
-                                vscode.window.showErrorMessage(`Failed to restart: ${err.message}`);
-                            }
-                        }
+                        vscode.commands.executeCommand('bitswan.restartAutomation', item2);
                     }
                 }
                 break;
@@ -833,17 +836,19 @@ export class DashboardPanel {
 
         /* Automation cards */
         .auto-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
-        .auto-card { display:flex; flex-direction:column; padding:16px; border:1px solid var(--border); border-radius:10px; transition: border-color 0.15s, box-shadow 0.15s; }
+        .auto-card { display:flex; flex-direction:column; border:1px solid var(--border); border-radius:10px; transition: border-color 0.15s, box-shadow 0.15s; overflow:hidden; }
         .auto-card:hover { border-color:var(--vscode-focusBorder, #007acc); box-shadow:0 2px 8px rgba(0,0,0,0.1); }
+        .auto-card-top { padding:16px; position:relative; }
+        .auto-card-top.clickable { cursor:pointer; }
+        .auto-card-top.clickable:hover { background:var(--vscode-list-hoverBackground, rgba(128,128,128,0.08)); }
+        .auto-card-link-icon { position:absolute; top:12px; right:12px; font-size:12px; color:var(--vscode-descriptionForeground); }
         .auto-card-icon { font-size:28px; margin-bottom:10px; }
         .auto-card-name { font-weight:600; font-size:14px; margin-bottom:4px; }
         .auto-card-state { display:inline-block; font-size:10px; padding:2px 8px; border-radius:10px; text-transform:uppercase; font-weight:600; letter-spacing:0.3px; margin-bottom:8px; }
         .auto-card-state.running { background:var(--status-pass); color:#fff; }
         .auto-card-state.exited, .auto-card-state.dead { background:var(--status-fail); color:#fff; }
         .auto-card-state.not-deployed { background:var(--status-proposed); color:#fff; }
-        .auto-card-url { font-size:11px; color:var(--vscode-descriptionForeground); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:8px; }
-        .auto-card-spacer { flex:1; }
-        .auto-card-actions { display:flex; gap:6px; border-top:1px solid var(--border); padding-top:10px; margin-top:4px; }
+        .auto-card-actions { display:flex; gap:6px; border-top:1px solid var(--border); padding:10px 16px; }
 
         /* Buttons */
         .btn { padding:4px 10px; border:1px solid var(--vscode-button-border, transparent); border-radius:4px; background:var(--vscode-button-secondaryBackground, rgba(128,128,128,0.2)); color:var(--vscode-button-secondaryForeground, var(--vscode-foreground)); cursor:pointer; font-size:11px; }
@@ -1070,51 +1075,37 @@ export class DashboardPanel {
                     bpData.automations.forEach(function(auto) {
                         var card = mkEl('div', 'auto-card');
 
-                        // Icon
-                        card.appendChild(mkEl('div', 'auto-card-icon', auto.icon || '\\u{1F4E6}'));
-
-                        // Name
-                        card.appendChild(mkEl('div', 'auto-card-name', auto.name));
-
-                        // State badge
-                        var stateClass = (auto.state || 'not-deployed').replace(/\\s+/g, '-').toLowerCase();
-                        card.appendChild(mkEl('span', 'auto-card-state ' + stateClass, auto.state || 'not deployed'));
-
-                        // URL
+                        // Top section (clickable if URL exists)
+                        var top = mkEl('div', 'auto-card-top' + (auto.url ? ' clickable' : ''));
                         if (auto.url) {
-                            var urlEl = mkEl('div', 'auto-card-url');
-                            urlEl.textContent = auto.url;
-                            urlEl.style.cursor = 'pointer';
-                            urlEl.addEventListener('click', function(e) {
-                                e.stopPropagation();
+                            top.addEventListener('click', function() {
                                 vscodeApi.postMessage({ type: 'openUrl', url: auto.url });
                             });
-                            card.appendChild(urlEl);
+                            top.appendChild(mkEl('span', 'auto-card-link-icon', '\\u{1F517}'));
                         }
+                        top.appendChild(mkEl('div', 'auto-card-icon', auto.icon || '\\u{1F4E6}'));
+                        top.appendChild(mkEl('div', 'auto-card-name', auto.name));
+                        var stateClass = (auto.state || 'not-deployed').replace(/\\s+/g, '-').toLowerCase();
+                        top.appendChild(mkEl('span', 'auto-card-state ' + stateClass, auto.state || 'not deployed'));
+                        card.appendChild(top);
 
-                        // Spacer pushes actions to bottom
-                        card.appendChild(mkEl('div', 'auto-card-spacer'));
-
-                        // Action buttons
+                        // Action buttons at bottom
                         var actions = mkEl('div', 'auto-card-actions');
                         if (auto.deploymentId) {
                             var logsBtn = mkEl('button', 'btn', 'Logs');
-                            logsBtn.addEventListener('click', function(e) {
-                                e.stopPropagation();
+                            logsBtn.addEventListener('click', function() {
                                 vscodeApi.postMessage({ type: 'showLogs', deploymentId: auto.deploymentId });
                             });
                             actions.appendChild(logsBtn);
 
                             var restartBtn = mkEl('button', 'btn', 'Restart');
-                            restartBtn.addEventListener('click', function(e) {
-                                e.stopPropagation();
+                            restartBtn.addEventListener('click', function() {
                                 vscodeApi.postMessage({ type: 'restartAutomation', deploymentId: auto.deploymentId });
                             });
                             actions.appendChild(restartBtn);
                         } else if (bpData.worktree) {
                             var startBtn = mkEl('button', 'btn btn-primary', 'Start Live Dev');
-                            startBtn.addEventListener('click', function(e) {
-                                e.stopPropagation();
+                            startBtn.addEventListener('click', function() {
                                 vscodeApi.postMessage({ type: 'startLiveDev', relativePath: auto.relativePath, worktree: bpData.worktree, name: auto.name });
                             });
                             actions.appendChild(startBtn);
