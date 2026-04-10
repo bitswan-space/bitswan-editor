@@ -156,6 +156,15 @@ export class DashboardPanel {
             case 'openTerminal':
                 await this.openPlainTerminal(msg.worktree, msg.bpPath);
                 break;
+            case 'createWorktree':
+                await this.createWorktree();
+                break;
+            case 'createBusinessProcess':
+                await this.createBusinessProcess(msg.worktree);
+                break;
+            case 'createAutomation':
+                await this.createAutomation(msg.worktree, msg.bpPath);
+                break;
         }
     }
 
@@ -184,18 +193,7 @@ export class DashboardPanel {
         this.bpMap.clear();
         const workspaces: { name: string; bps: { key: string; label: string }[] }[] = [];
 
-        if (fs.existsSync(WORKSPACE_DIR)) {
-            const bps = this._findBPsUnder(WORKSPACE_DIR, 4);
-            const bpEntries: { key: string; label: string }[] = [];
-            for (const dirPath of bps) {
-                const rel = path.relative(WORKSPACE_DIR, dirPath);
-                const key = `workspace:${rel}`;
-                bpEntries.push({ key, label: rel });
-                this.bpMap.set(key, dirPath);
-            }
-            workspaces.push({ name: 'Main', bps: bpEntries });
-        }
-
+        // Only show worktrees — no Main tab
         if (fs.existsSync(WORKTREES_DIR)) {
             let wtEntries: fs.Dirent[];
             try { wtEntries = fs.readdirSync(WORKTREES_DIR, { withFileTypes: true }); } catch { wtEntries = []; }
@@ -210,9 +208,8 @@ export class DashboardPanel {
                     bpEntries.push({ key, label: rel });
                     this.bpMap.set(key, dirPath);
                 }
-                if (bpEntries.length > 0) {
-                    workspaces.push({ name: wtEntry.name, bps: bpEntries });
-                }
+                // Always include the worktree even if it has no BPs yet
+                workspaces.push({ name: wtEntry.name, bps: bpEntries });
             }
         }
 
@@ -455,6 +452,83 @@ export class DashboardPanel {
         }
     }
 
+    // ---- Create flows ----
+
+    private async createWorktree(): Promise<void> {
+        const name = await vscode.window.showInputBox({
+            prompt: 'Worktree branch name',
+            placeHolder: 'e.g. feature-login',
+            validateInput: (v) => /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(v) ? null : 'Letters, numbers, hyphens and underscores only',
+        });
+        if (!name) { return; }
+
+        try {
+            // Try GitOps API first
+            const { getDeployDetails } = await import('../deploy_details');
+            const details = await getDeployDetails(this.context);
+            if (details) {
+                const axios = (await import('axios')).default;
+                await axios.post(
+                    `${details.deployUrl}/worktrees/create`,
+                    { branch_name: name },
+                    { headers: { Authorization: `Bearer ${details.deploySecret}` } },
+                );
+            }
+        } catch {
+            // Fallback: create locally
+            const wtPath = path.join(WORKTREES_DIR, name);
+            if (!fs.existsSync(wtPath)) {
+                fs.mkdirSync(wtPath, { recursive: true });
+            }
+        }
+
+        vscode.window.showInformationMessage(`Worktree "${name}" created.`);
+        await this.loadBusinessProcesses();
+    }
+
+    private async createBusinessProcess(worktree: string): Promise<void> {
+        const name = await vscode.window.showInputBox({
+            prompt: 'Business process name',
+            placeHolder: 'e.g. user-management',
+            validateInput: (v) => /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(v) ? null : 'Letters, numbers, hyphens and underscores only',
+        });
+        if (!name) { return; }
+
+        const bpDir = path.join(WORKTREES_DIR, worktree, name);
+        fs.mkdirSync(bpDir, { recursive: true });
+
+        // Create process.toml
+        const processId = require('crypto').randomUUID();
+        fs.writeFileSync(
+            path.join(bpDir, 'process.toml'),
+            `process-id = "${processId}"\n`,
+            'utf-8',
+        );
+
+        // Create README.md
+        fs.writeFileSync(
+            path.join(bpDir, 'README.md'),
+            `# ${name}\n\nDescribe this business process here.\n`,
+            'utf-8',
+        );
+
+        vscode.window.showInformationMessage(`Business process "${name}" created in worktree "${worktree}".`);
+        await this.loadBusinessProcesses();
+    }
+
+    private async createAutomation(worktree: string, bpPath: string): Promise<void> {
+        // Pass relative path from workspace root so the templates gallery
+        // places the new automation in the correct worktree BP directory
+        const relPath = `worktrees/${worktree}/${bpPath}`;
+        const bpDir = path.join(WORKSPACE_DIR, relPath);
+        if (!fs.existsSync(bpDir)) {
+            vscode.window.showErrorMessage(`Business process directory not found: ${bpDir}`);
+            return;
+        }
+
+        vscode.commands.executeCommand('bitswan.openAutomationTemplates', relPath);
+    }
+
     private postMessage(msg: any): void {
         if (!this.disposed) { this.panel.webview.postMessage(msg); }
     }
@@ -588,6 +662,21 @@ export class DashboardPanel {
                 tab.addEventListener('click', function() { currentWsIdx = idx; currentBpKey = ''; bpData = null; renderSubtabs(); renderContent(); });
                 tabBar.appendChild(tab);
             });
+            // "+ New Worktree" tab
+            var addWtTab = document.createElement('div');
+            addWtTab.className = 'tab';
+            addWtTab.textContent = '+';
+            addWtTab.title = 'Create new worktree';
+            addWtTab.style.cssText = 'font-weight:bold; font-size:16px; padding:4px 12px;';
+            addWtTab.addEventListener('click', function() {
+                vscodeApi.postMessage({ type: 'createWorktree' });
+            });
+            tabBar.appendChild(addWtTab);
+        }
+
+        function getActiveWorktree() {
+            var ws = structure[currentWsIdx];
+            return ws ? ws.name : '';
         }
 
         function renderSubtabs() {
@@ -607,6 +696,17 @@ export class DashboardPanel {
                 });
                 subtabBar.appendChild(tab);
             });
+            // "+ New Business Process" subtab
+            var addBpTab = document.createElement('div');
+            addBpTab.className = 'subtab';
+            addBpTab.textContent = '+';
+            addBpTab.title = 'Create new business process';
+            addBpTab.style.cssText = 'font-weight:bold; font-size:14px; padding:4px 12px;';
+            addBpTab.addEventListener('click', function() {
+                vscodeApi.postMessage({ type: 'createBusinessProcess', worktree: getActiveWorktree() });
+            });
+            subtabBar.appendChild(addBpTab);
+
             if (!currentBpKey && ws.bps.length > 0) {
                 currentBpKey = ws.bps[0].key;
                 vscodeApi.postMessage({ type: 'loadBP', key: currentBpKey });
@@ -653,53 +753,67 @@ export class DashboardPanel {
             }
 
             // Automations
-            if (bpData.automations && bpData.automations.length > 0) {
+            {
                 var autoSection = mkEl('div', 'section');
                 autoSection.appendChild(mkEl('div', 'section-title', 'Automations'));
                 var autoCards = mkEl('div', 'auto-cards');
 
-                bpData.automations.forEach(function(auto) {
-                    var card = mkEl('div', 'auto-card');
-                    if (auto.url) {
-                        card.addEventListener('click', function(e) {
-                            if (e.target.tagName === 'BUTTON') return;
-                            vscodeApi.postMessage({ type: 'openUrl', url: auto.url });
-                        });
-                    }
+                if (bpData.automations) {
+                    bpData.automations.forEach(function(auto) {
+                        var card = mkEl('div', 'auto-card');
+                        if (auto.url) {
+                            card.addEventListener('click', function(e) {
+                                if (e.target.tagName === 'BUTTON') return;
+                                vscodeApi.postMessage({ type: 'openUrl', url: auto.url });
+                            });
+                        }
 
-                    var header = mkEl('div', 'auto-card-header');
-                    header.appendChild(mkEl('span', 'auto-card-name', auto.name));
-                    var stateClass = (auto.state || 'not-deployed').replace(/\\s+/g, '-').toLowerCase();
-                    header.appendChild(mkEl('span', 'auto-card-state ' + stateClass, auto.state || 'not deployed'));
-                    card.appendChild(header);
+                        var header = mkEl('div', 'auto-card-header');
+                        header.appendChild(mkEl('span', 'auto-card-name', auto.name));
+                        var stateClass = (auto.state || 'not-deployed').replace(/\\s+/g, '-').toLowerCase();
+                        header.appendChild(mkEl('span', 'auto-card-state ' + stateClass, auto.state || 'not deployed'));
+                        card.appendChild(header);
 
-                    if (auto.url) {
-                        var urlLine = mkEl('div', '', '');
-                        urlLine.style.cssText = 'font-size:11px; color:var(--vscode-descriptionForeground); margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
-                        urlLine.textContent = auto.url;
-                        card.appendChild(urlLine);
-                    }
+                        if (auto.url) {
+                            var urlLine = mkEl('div', '', '');
+                            urlLine.style.cssText = 'font-size:11px; color:var(--vscode-descriptionForeground); margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+                            urlLine.textContent = auto.url;
+                            card.appendChild(urlLine);
+                        }
 
-                    if (auto.deploymentId) {
-                        var actions = mkEl('div', 'auto-card-actions');
-                        var logsBtn = mkEl('button', 'btn', 'Logs');
-                        logsBtn.addEventListener('click', function(e) {
-                            e.stopPropagation();
-                            vscodeApi.postMessage({ type: 'showLogs', deploymentId: auto.deploymentId });
-                        });
-                        actions.appendChild(logsBtn);
+                        if (auto.deploymentId) {
+                            var actions = mkEl('div', 'auto-card-actions');
+                            var logsBtn = mkEl('button', 'btn', 'Logs');
+                            logsBtn.addEventListener('click', function(e) {
+                                e.stopPropagation();
+                                vscodeApi.postMessage({ type: 'showLogs', deploymentId: auto.deploymentId });
+                            });
+                            actions.appendChild(logsBtn);
 
-                        var restartBtn = mkEl('button', 'btn', 'Restart');
-                        restartBtn.addEventListener('click', function(e) {
-                            e.stopPropagation();
-                            vscodeApi.postMessage({ type: 'restartAutomation', deploymentId: auto.deploymentId });
-                        });
-                        actions.appendChild(restartBtn);
-                        card.appendChild(actions);
-                    }
+                            var restartBtn = mkEl('button', 'btn', 'Restart');
+                            restartBtn.addEventListener('click', function(e) {
+                                e.stopPropagation();
+                                vscodeApi.postMessage({ type: 'restartAutomation', deploymentId: auto.deploymentId });
+                            });
+                            actions.appendChild(restartBtn);
+                            card.appendChild(actions);
+                        }
 
-                    autoCards.appendChild(card);
-                });
+                        autoCards.appendChild(card);
+                    });
+                }
+
+                // "+ New Automation" card
+                if (bpData.worktree) {
+                    var newAutoCard = mkEl('div', 'auto-card');
+                    newAutoCard.style.cssText = 'border-style:dashed; text-align:center; display:flex; align-items:center; justify-content:center; min-height:80px;';
+                    newAutoCard.innerHTML = '<div><div style="font-size:20px; margin-bottom:4px;">+</div><div class="auto-card-name">New Automation</div></div>';
+                    newAutoCard.addEventListener('click', function() {
+                        vscodeApi.postMessage({ type: 'createAutomation', worktree: bpData.worktree, bpPath: bpData.bpPath });
+                    });
+                    autoCards.appendChild(newAutoCard);
+                }
+
                 autoSection.appendChild(autoCards);
                 content.appendChild(autoSection);
             }
