@@ -473,13 +473,14 @@ export class DashboardPanel {
             activeSessions.push({ worktree, userEmail, terminalName: termName });
             this.sendActiveSessions();
 
-            // Remove when terminal closes
+            // Remove when terminal closes and refresh sessions
             const disposable = vscode.window.onDidCloseTerminal(t => {
                 if (t.name === termName) {
                     const idx = activeSessions.findIndex(s => s.terminalName === termName);
                     if (idx >= 0) { activeSessions.splice(idx, 1); }
                     if (DashboardPanel.currentPanel) {
                         DashboardPanel.currentPanel.sendActiveSessions();
+                        DashboardPanel.currentPanel._reloadCurrentKey();
                     }
                     disposable.dispose();
                 }
@@ -488,6 +489,9 @@ export class DashboardPanel {
             setTimeout(() => {
                 terminal.sendText(`cd "${cdPath}" && mkdir -p ~/.claude && printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && claude --dangerously-skip-permissions`);
             }, 3000);
+
+            // Refresh sessions after meta.json is created by the agent container
+            setTimeout(() => this._reloadCurrentKey(), 5000);
         } else {
             // Main workspace: local terminal
             const cdPath = path.join(WORKSPACE_DIR, bpPath);
@@ -535,6 +539,7 @@ export class DashboardPanel {
                     if (idx >= 0) { activeSessions.splice(idx, 1); }
                     if (DashboardPanel.currentPanel) {
                         DashboardPanel.currentPanel.sendActiveSessions();
+                        DashboardPanel.currentPanel._reloadCurrentKey();
                     }
                     disposable.dispose();
                 }
@@ -543,6 +548,8 @@ export class DashboardPanel {
             setTimeout(() => {
                 terminal.sendText(`cd "${cdPath}"`);
             }, 2000);
+
+            setTimeout(() => this._reloadCurrentKey(), 5000);
         } else {
             const cdPath = path.join(WORKSPACE_DIR, bpPath);
             const terminal = vscode.window.createTerminal({
