@@ -628,7 +628,11 @@ export async function ensureAutomationImageReady(
   const normalizedName = sanitizeName(automationName);
 
   // Build fully disambiguated image tag: internal/{workspace}-{bp}-{name}
-  const workspaceName = process.env.BITSWAN_WORKSPACE_NAME || 'workspace-local';
+  const hostname = process.env.HOSTNAME;
+  if (!hostname || !hostname.endsWith('-editor')) {
+    throw new Error(`Cannot determine workspace name: HOSTNAME env var is '${hostname}' (expected '*-editor')`);
+  }
+  const workspaceName = hostname.replace(/-editor$/, '');
   const bpDir = path.basename(path.dirname(automationFolderPath));
   const bpName = sanitizeName(bpDir);
   const fullImageName = `${workspaceName}-${bpName}-${normalizedName}`;
