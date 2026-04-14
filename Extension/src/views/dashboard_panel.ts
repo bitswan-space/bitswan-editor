@@ -279,12 +279,15 @@ export class DashboardPanel {
                 break;
             case 'deployToDev': {
                 if (msg.name) {
+                    // Always deploy from the main workspace path (not worktree)
+                    // so the deployment ID matches the standard format
                     const bpDir = this.bpMap.get(this.currentKey);
                     if (bpDir) {
                         const bpName = path.basename(bpDir);
                         const sourceName = `${bpName}/${msg.name}`;
-                        const autoDir = path.join(bpDir, msg.name);
-                        const item = new AutomationSourceItem(sourceName, vscode.Uri.file(autoDir), bpName);
+                        // Use main workspace path regardless of whether we're in a worktree
+                        const mainAutoDir = path.join(WORKSPACE_DIR, bpName, msg.name);
+                        const item = new AutomationSourceItem(sourceName, vscode.Uri.file(mainAutoDir), bpName);
                         vscode.commands.executeCommand('bitswan.deployAutomation', item);
                     }
                 }
