@@ -927,7 +927,8 @@ export class DashboardPanel {
         .auto-card-state.running { background:var(--status-pass); color:#fff; }
         .auto-card-state.exited, .auto-card-state.dead { background:var(--status-fail); color:#fff; }
         .auto-card-state.not-deployed { background:var(--status-proposed); color:#fff; }
-        .auto-card-actions { display:flex; gap:6px; border-top:1px solid var(--border); padding:10px 16px; }
+        .auto-card-actions { display:flex; gap:4px; flex-wrap:wrap; border-top:1px solid var(--border); padding:8px 12px; }
+        .auto-card-actions .btn { font-size:11px; padding:3px 6px; }
 
 
         /* Buttons */
