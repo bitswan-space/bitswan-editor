@@ -108,7 +108,7 @@ export class DashboardPanel {
 
         this.panel = vscode.window.createWebviewPanel(
             'bitswan-workspace',
-            'Workspace',
+            'Bitswan Workspace',
             vscode.ViewColumn.Active,
             {
                 enableScripts: true,
@@ -116,6 +116,7 @@ export class DashboardPanel {
                 localResourceRoots: [asciinemaDir, codiconDir, markedDir, mermaidDir],
             },
         );
+        this.panel.iconPath = vscode.Uri.file(path.join(context.extensionPath, 'resources', 'bitswan-logo.svg'));
 
         this.playerJsUri = this.panel.webview.asWebviewUri(vscode.Uri.file(
             path.join(context.extensionPath, 'node_modules', 'asciinema-player', 'dist', 'bundle', 'asciinema-player.min.js')
