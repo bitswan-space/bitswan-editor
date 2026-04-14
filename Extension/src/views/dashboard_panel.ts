@@ -644,22 +644,28 @@ export class DashboardPanel {
         const anon = this.context.globalState.get<boolean>('agentAnonMode', false);
         const logged = anon ? 'false' : 'true';
 
-        // Build the SSH command with env vars inline — no temp script needed
-        const envParts = [
-            `SSH_USER_EMAIL="${userEmail}"`,
-            `SSH_LOGGED="${logged}"`,
-            `SSH_WORKTREE="${worktree}"`,
+        // Write a temp script to avoid quoting issues
+        const tmpDir = '/tmp/bitswan-terminals';
+        if (!fs.existsSync(tmpDir)) { fs.mkdirSync(tmpDir, { recursive: true }); }
+        const scriptPath = path.join(tmpDir, `agent-${Date.now()}.sh`);
+        const scriptLines = [
+            `export SSH_USER_EMAIL="${userEmail}"`,
+            `export SSH_LOGGED="${logged}"`,
+            `export SSH_WORKTREE="${worktree}"`,
         ];
         if (autoCmd) {
             const b64 = Buffer.from(autoCmd).toString('base64');
-            envParts.push(`SSH_AUTO_CMD="$(echo ${b64} | base64 -d)"`);
+            scriptLines.push(`export SSH_AUTO_CMD="$(echo ${b64} | base64 -d)"`);
         }
-        const exportLine = envParts.map(e => `export ${e}`).join(' && ');
-        const sshCmd = `ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`;
+        scriptLines.push(`exec ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
+        fs.writeFileSync(scriptPath, scriptLines.join('\n') + '\n');
 
-        const terminal = vscode.window.createTerminal({ name });
+        const terminal = vscode.window.createTerminal({
+            name,
+            shellPath: '/usr/bin/env',
+            shellArgs: ['bash', scriptPath],
+        });
         terminal.show(true);
-        terminal.sendText(`${exportLine} && exec ${sshCmd}`);
 
         // Track active session
         const termName = terminal.name;
