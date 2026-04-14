@@ -658,12 +658,11 @@ export class DashboardPanel {
             scriptLines.push(`export SSH_AUTO_CMD="$(echo ${b64} | base64 -d)"`);
         }
         scriptLines.push(`exec ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
-        fs.writeFileSync(scriptPath, scriptLines.join('\n') + '\n');
+        fs.writeFileSync(scriptPath, '#!/usr/bin/env bash\n' + scriptLines.join('\n') + '\n', { mode: 0o755 });
 
         const terminal = vscode.window.createTerminal({
             name,
-            shellPath: '/usr/bin/env',
-            shellArgs: ['bash', scriptPath],
+            shellPath: scriptPath,
         });
         terminal.show(true);
 
