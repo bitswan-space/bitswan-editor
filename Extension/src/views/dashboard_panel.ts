@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as cp from 'child_process';
 import * as toml from '@iarna/toml';
@@ -645,7 +646,8 @@ export class DashboardPanel {
         const logged = anon ? 'false' : 'true';
 
         // Write a temp script to avoid quoting issues
-        const tmpDir = '/tmp/bitswan-terminals';
+        // Use home dir instead of /tmp which may be noexec
+        const tmpDir = path.join(os.homedir(), '.bitswan-terminals');
         if (!fs.existsSync(tmpDir)) { fs.mkdirSync(tmpDir, { recursive: true }); }
         const scriptPath = path.join(tmpDir, `agent-${Date.now()}.sh`);
         const scriptLines = [
