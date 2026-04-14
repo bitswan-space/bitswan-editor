@@ -644,28 +644,18 @@ export class DashboardPanel {
         const anon = this.context.globalState.get<boolean>('agentAnonMode', false);
         const logged = anon ? 'false' : 'true';
 
-        // Write a temp script to avoid quoting issues
-        const tmpDir = '/tmp/bitswan-terminals';
-        if (!fs.existsSync(tmpDir)) { fs.mkdirSync(tmpDir, { recursive: true }); }
-        const scriptPath = path.join(tmpDir, `agent-${Date.now()}.sh`);
-        const scriptLines = [
-            `export SSH_USER_EMAIL="${userEmail}"`,
-            `export SSH_LOGGED="${logged}"`,
-            `export SSH_WORKTREE="${worktree}"`,
-        ];
+        // Set env vars and SSH inline via sendText — avoids noexec filesystem issues
+        const sshArgs = `-t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD'`;
+        let cmd = `export SSH_USER_EMAIL="${userEmail}" SSH_LOGGED="${logged}" SSH_WORKTREE="${worktree}"`;
         if (autoCmd) {
             const b64 = Buffer.from(autoCmd).toString('base64');
-            scriptLines.push(`export SSH_AUTO_CMD="$(echo ${b64} | base64 -d)"`);
+            cmd += ` SSH_AUTO_CMD="$(echo ${b64} | base64 -d)"`;
         }
-        scriptLines.push(`exec ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
-        fs.writeFileSync(scriptPath, scriptLines.join('\n') + '\n');
+        cmd += ` && exec ssh ${sshArgs} agent@${agentHost}`;
 
-        const terminal = vscode.window.createTerminal({
-            name,
-            shellPath: '/usr/bin/env',
-            shellArgs: ['bash', scriptPath],
-        });
+        const terminal = vscode.window.createTerminal({ name });
         terminal.show(true);
+        terminal.sendText(cmd);
 
         // Track active session
         const termName = terminal.name;
