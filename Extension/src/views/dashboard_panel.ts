@@ -766,11 +766,12 @@ export class DashboardPanel {
     }
 
     private async syncWorktree(worktree: string): Promise<void> {
+        const prompt = 'Please sync this worktree with main. First commit any uncommitted changes with: bitswan-coding-agent vcs commit -m "pre-sync commit" then run: bitswan-coding-agent vcs rebase-and-merge. If there are conflicts, resolve them and run: bitswan-coding-agent vcs rebase-continue. Tell me when done.';
         const autoCmd = [
             `cd /workspace/worktrees/${worktree}`,
             'mkdir -p ~/.claude',
-            `printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json`,
-            `exec claude --dangerously-skip-permissions -p "Please sync this worktree with main. Run: bitswan-coding-agent vcs commit -m 'pre-sync commit' then bitswan-coding-agent vcs rebase-and-merge. If there are conflicts, resolve them and run bitswan-coding-agent vcs rebase-continue. Tell me when done."`,
+            `echo '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json`,
+            `exec claude --dangerously-skip-permissions "${prompt}"`,
         ].join(' && ');
         await this.openSSHTerminal(`Sync: ${worktree}`, worktree, autoCmd);
     }
@@ -783,16 +784,14 @@ export class DashboardPanel {
         );
         if (confirm !== 'Merge & Delete') { return; }
 
+        const prompt = 'Please merge this worktree into main. First commit any uncommitted changes with: bitswan-coding-agent vcs commit -m "pre-merge commit" then run: bitswan-coding-agent vcs rebase-and-merge. If there are conflicts, resolve them and run: bitswan-coding-agent vcs rebase-continue. Tell me when the merge is complete.';
         const autoCmd = [
             `cd /workspace/worktrees/${worktree}`,
             'mkdir -p ~/.claude',
-            `printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json`,
-            `exec claude --dangerously-skip-permissions -p "Please merge this worktree into main and clean up. Run: bitswan-coding-agent vcs commit -m 'pre-merge commit' then bitswan-coding-agent vcs rebase-and-merge. If there are conflicts, resolve them and run bitswan-coding-agent vcs rebase-continue. Tell me when the merge is complete."`,
+            `echo '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json`,
+            `exec claude --dangerously-skip-permissions "${prompt}"`,
         ].join(' && ');
         await this.openSSHTerminal(`Merge: ${worktree}`, worktree, autoCmd);
-
-        // After the terminal closes, the worktree deletion will be handled
-        // by the user confirming in the terminal session
     }
 
 
