@@ -155,8 +155,12 @@ export class DashboardPanel {
         readmeWatcher.onDidChange(() => this._reloadCurrentKey());
         context.subscriptions.push(readmeWatcher);
 
+        // Poll for sync status changes (git commits can't be detected by file watchers)
+        const syncPollInterval = setInterval(() => this._reloadCurrentKey(), 10000);
+
         this.panel.onDidDispose(() => {
             this.disposed = true;
+            clearInterval(syncPollInterval);
             if (this.fileWatcher) { this.fileWatcher.dispose(); }
             DashboardPanel.currentPanel = undefined;
         });
