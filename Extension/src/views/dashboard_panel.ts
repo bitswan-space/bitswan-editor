@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import * as cp from 'child_process';
 import * as toml from '@iarna/toml';
@@ -645,28 +644,22 @@ export class DashboardPanel {
         const anon = this.context.globalState.get<boolean>('agentAnonMode', false);
         const logged = anon ? 'false' : 'true';
 
-        // Write a temp script to avoid quoting issues
-        // Use home dir instead of /tmp which may be noexec
-        const tmpDir = path.join(os.homedir(), '.bitswan-terminals');
-        if (!fs.existsSync(tmpDir)) { fs.mkdirSync(tmpDir, { recursive: true }); }
-        const scriptPath = path.join(tmpDir, `agent-${Date.now()}.sh`);
-        const scriptLines = [
-            `export SSH_USER_EMAIL="${userEmail}"`,
-            `export SSH_LOGGED="${logged}"`,
-            `export SSH_WORKTREE="${worktree}"`,
+        // Build the SSH command with env vars inline — no temp script needed
+        const envParts = [
+            `SSH_USER_EMAIL="${userEmail}"`,
+            `SSH_LOGGED="${logged}"`,
+            `SSH_WORKTREE="${worktree}"`,
         ];
         if (autoCmd) {
             const b64 = Buffer.from(autoCmd).toString('base64');
-            scriptLines.push(`export SSH_AUTO_CMD="$(echo ${b64} | base64 -d)"`);
+            envParts.push(`SSH_AUTO_CMD="$(echo ${b64} | base64 -d)"`);
         }
-        scriptLines.push(`exec ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`);
-        fs.writeFileSync(scriptPath, '#!/usr/bin/env bash\n' + scriptLines.join('\n') + '\n', { mode: 0o755 });
+        const exportLine = envParts.map(e => `export ${e}`).join(' && ');
+        const sshCmd = `ssh -t -i /workspace/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o 'SendEnv=SSH_USER_EMAIL SSH_LOGGED SSH_WORKTREE SSH_AUTO_CMD' agent@${agentHost}`;
 
-        const terminal = vscode.window.createTerminal({
-            name,
-            shellPath: scriptPath,
-        });
+        const terminal = vscode.window.createTerminal({ name });
         terminal.show(true);
+        terminal.sendText(`${exportLine} && exec ${sshCmd}`);
 
         // Track active session
         const termName = terminal.name;
