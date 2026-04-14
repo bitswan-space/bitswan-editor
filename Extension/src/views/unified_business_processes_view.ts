@@ -726,24 +726,17 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         console.log(`[DEBUG] getOtherAutomationSources - checking ${automations.length} automations for orphaned status`);
         console.log(`[DEBUG] Available automation sources: ${allAutomationSources.map(s => s.name).join(', ')}`);
         
-        // Build a set of deployment IDs that stages actually claim (new format only).
-        // Old-format deployments will fall through to Other since stages can't match them.
-        const claimedDeploymentIds = new Set<string>();
+        // Build a set of known automation names from sources
+        const knownAutomationNames = new Set<string>();
         for (const source of allAutomationSources) {
             const srcName = source.name.split('/').pop() || source.name;
-            const sanitized = sanitizeName(srcName);
-            const pathParts = source.name.split('/');
-            const bp = pathParts.length >= 2 ? sanitizeName(pathParts[0]) : '';
-            const bpPfx = bp ? `${bp}-` : '';
-            claimedDeploymentIds.add(`${sanitized}-${bpPfx}dev`);
-            claimedDeploymentIds.add(`${sanitized}-${bpPfx}staging`);
-            claimedDeploymentIds.add(`${sanitized}-${bp || 'production'}`);
+            knownAutomationNames.add(sanitizeName(srcName));
         }
 
-        // An automation is orphaned if its deployment_id isn't claimed by any stage
+        // An automation is orphaned if its automation_name doesn't match any known source
         const orphanedAutomations = automations.filter(automation => {
-            const depId = automation.deployment_id || automation.deploymentId || '';
-            return !claimedDeploymentIds.has(depId);
+            const autoName = automation.automation_name || automation.automationName || '';
+            return !autoName || !knownAutomationNames.has(autoName);
         });
 
         // Add orphaned automations directly to the result
@@ -828,28 +821,19 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             }
         } else {
             // Main mode: 3 stages (live-dev is worktree-only, managed in the Workspace panel)
-            const bpPrefix = sanitizedBpName ? `${sanitizedBpName}-` : '';
-            const stageDeploymentIds: Record<string, string> = {
-                dev: `${sanitizedSourceName}-${bpPrefix}dev`,
-                staging: `${sanitizedSourceName}-${bpPrefix}staging`,
-                production: `${sanitizedSourceName}-${sanitizedBpName || 'production'}`
-            };
-
             const stagesList: Array<'dev' | 'staging' | 'production'> = ['dev', 'staging', 'production'];
 
             for (const stage of stagesList) {
-                const deploymentId = stageDeploymentIds[stage];
-
+                // Match by structured fields: automation_name + stage
                 const automation = automations.find(a => {
-                    const matches = a.deployment_id === deploymentId || a.deploymentId === deploymentId;
-                    if (!matches && stage === 'production') {
-                        const automationSourceFromPath = a.relativePath?.split('/').pop() || '';
-                        const sanitizedAutomationSource = sanitizeName(automationSourceFromPath);
-                        return sanitizedAutomationSource === sanitizedSourceName &&
-                               (a.stage === '' || a.stage === 'production' || !a.stage);
-                    }
-                    return matches;
+                    const aName = a.automation_name || a.automationName || '';
+                    const aStage = a.stage || 'production';
+                    const normalizedStage = aStage === '' ? 'production' : aStage;
+                    return aName === sanitizedSourceName && normalizedStage === stage;
                 });
+                const deploymentId = automation
+                    ? (automation.deployment_id || automation.deploymentId || '')
+                    : '';
 
                 if (automation) {
                     const automationItem = new AutomationItem(
