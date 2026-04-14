@@ -6,6 +6,7 @@ import * as toml from '@iarna/toml';
 import axios from 'axios';
 import { getUserEmail } from '../services/user_info';
 import { getDeployDetails } from '../deploy_details';
+import { startLiveDevServerCommand } from '../commands/deployments';
 import { AutomationItem } from './automations_view';
 import { AutomationSourceItem } from './unified_business_processes_view';
 
@@ -198,22 +199,9 @@ export class DashboardPanel {
                 break;
             case 'startLiveDev': {
                 if (msg.relativePath && msg.worktree) {
-                    try {
-                        const { startLiveDev } = require('../lib');
-                        const details = await getDeployDetails(this.context);
-                        if (details) {
-                            const result = await startLiveDev(details.deployUrl, details.deploySecret, msg.relativePath, msg.worktree);
-                            if (result.success) {
-                                vscode.window.showInformationMessage(`Live dev started for ${msg.name || 'automation'}`);
-                                // Refresh after deploy completes
-                                setTimeout(() => this._reloadCurrentKey(), 5000);
-                            } else {
-                                vscode.window.showErrorMessage('Failed to start live dev');
-                            }
-                        }
-                    } catch (err: any) {
-                        vscode.window.showErrorMessage(`Failed to start live dev: ${err.message}`);
-                    }
+                    const folderPath = path.join(WORKSPACE_DIR, msg.relativePath);
+                    await startLiveDevServerCommand(this.context, folderPath, undefined, msg.worktree);
+                    this._reloadCurrentKey();
                 }
                 break;
             }
