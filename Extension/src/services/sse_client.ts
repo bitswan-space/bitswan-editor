@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import axios from 'axios';
 import { deployState } from './deploy_state';
+import { DashboardPanel } from '../views/dashboard_panel';
 
 /**
  * Stable JSON serialisation: sorts object keys and array elements so that
@@ -116,6 +117,8 @@ export class GitOpsSSEClient {
             }
         } else if (event === 'deploy_progress') {
             deployState.handleDeployProgress(data);
+        } else if (event === 'worktrees') {
+            DashboardPanel.currentPanel?.onWorktreeChanged();
         }
     }
 

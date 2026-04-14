@@ -80,7 +80,7 @@ interface ActiveSession {
 const activeSessions: ActiveSession[] = [];
 
 export class DashboardPanel {
-    private static currentPanel: DashboardPanel | undefined;
+    public static currentPanel: DashboardPanel | undefined;
 
     private readonly panel: vscode.WebviewPanel;
     private readonly context: vscode.ExtensionContext;
@@ -155,12 +155,8 @@ export class DashboardPanel {
         readmeWatcher.onDidChange(() => this._reloadCurrentKey());
         context.subscriptions.push(readmeWatcher);
 
-        // Poll for sync status changes (git commits can't be detected by file watchers)
-        const syncPollInterval = setInterval(() => this._reloadCurrentKey(), 10000);
-
         this.panel.onDidDispose(() => {
             this.disposed = true;
-            clearInterval(syncPollInterval);
             if (this.fileWatcher) { this.fileWatcher.dispose(); }
             DashboardPanel.currentPanel = undefined;
         });
@@ -583,6 +579,11 @@ export class DashboardPanel {
         if (!this.disposed && this.currentKey) {
             this.loadBPContent(this.currentKey);
         }
+    }
+
+    /** Called by SSE client when worktree sync status changes. */
+    public onWorktreeChanged(): void {
+        this._reloadCurrentKey();
     }
 
     // ---- Terminals ----
