@@ -406,6 +406,17 @@ export class DashboardPanel {
             try { readme = fs.readFileSync(readmePath, 'utf-8'); } catch { /* */ }
         }
 
+        // Parse key to get worktree and bpPath
+        let worktree = '';
+        let bpPath = '';
+        if (key.startsWith('worktree:')) {
+            const parts = key.split(':');
+            worktree = parts[1] || '';
+            bpPath = parts.slice(2).join(':');
+        } else if (key.startsWith('workspace:')) {
+            bpPath = key.substring('workspace:'.length);
+        }
+
         // Automations — match by relative_path
         const allAutomations = this.context.globalState.get<any[]>('automations', []);
         const automations: AutomationInfo[] = [];
@@ -445,17 +456,6 @@ export class DashboardPanel {
                 relativePath: relFromWorkspace,
                 icon: inferAutomationIcon(autoDir),
             });
-        }
-
-        // Parse key to get worktree and bpPath
-        let worktree = '';
-        let bpPath = '';
-        if (key.startsWith('worktree:')) {
-            const parts = key.split(':');
-            worktree = parts[1] || '';
-            bpPath = parts.slice(2).join(':');
-        } else if (key.startsWith('workspace:')) {
-            bpPath = key.substring('workspace:'.length);
         }
 
         // Agent sessions for this worktree
