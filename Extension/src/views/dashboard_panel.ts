@@ -690,15 +690,18 @@ export class DashboardPanel {
     }
 
     private async openCodingAgentTerminal(worktree: string, bpPath: string): Promise<void> {
+        // Shell-safe prompt: no single quotes in the text
+        const initialPrompt = 'You are a BitSwan coding agent. Start by running: bitswan-coding-agent --help. Then read the README.md in your working directory (if it exists). Then read the testable requirements: bitswan-coding-agent requirements list. Then check deployments: bitswan-coding-agent deployments list. After reviewing all of this context, ask the user what they would like you to work on.';
+
         if (worktree) {
             const cdPath = `/workspace/worktrees/${worktree}/${bpPath}`;
-            const autoCmd = `cd ${cdPath} && mkdir -p ~/.claude && echo '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions`;
+            const autoCmd = `cd ${cdPath} && mkdir -p ~/.claude && echo '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions '${initialPrompt}'`;
             await this.openSSHTerminal(`Claude: ${worktree}/${bpPath}`, worktree, autoCmd);
         } else {
             const cdPath = path.join(WORKSPACE_DIR, bpPath);
             const terminal = vscode.window.createTerminal({ name: `Claude: ${bpPath}`, cwd: cdPath });
             terminal.show(true);
-            terminal.sendText(`mkdir -p ~/.claude && echo '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions`);
+            terminal.sendText(`mkdir -p ~/.claude && echo '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions '${initialPrompt}'`);
         }
     }
 
