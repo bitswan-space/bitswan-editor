@@ -416,9 +416,16 @@ export class DashboardPanel {
             const autoName = path.basename(autoDir);
             const relFromWorkspace = path.relative(WORKSPACE_DIR, autoDir);
             // Find matching automation from global state
+            // In worktree mode, only match live-dev deployments for this worktree
             const match = allAutomations?.find(a => {
                 const aPath = a.relative_path || a.relativePath || '';
-                return aPath === relFromWorkspace || aPath.endsWith('/' + relFromWorkspace);
+                const pathMatch = aPath === relFromWorkspace || aPath.endsWith('/' + relFromWorkspace);
+                if (!pathMatch) { return false; }
+                if (worktree) {
+                    const aStage = a.stage || '';
+                    return aStage === 'live-dev';
+                }
+                return true;
             });
             let state = 'not deployed';
             if (match) {
