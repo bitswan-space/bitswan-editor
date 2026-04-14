@@ -914,7 +914,7 @@ export class DashboardPanel {
         .action-card .card-desc { font-size:11px; color:var(--vscode-descriptionForeground); margin-top:2px; }
 
         /* Automation cards */
-        .auto-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
+        .auto-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px; }
         .auto-card { display:flex; flex-direction:column; border:1px solid var(--border); border-radius:10px; transition: border-color 0.15s, box-shadow 0.15s; overflow:hidden; }
         .auto-card:hover { border-color:var(--vscode-focusBorder, #007acc); box-shadow:0 2px 8px rgba(0,0,0,0.1); }
         .auto-card-top { padding:16px; position:relative; }
@@ -927,8 +927,10 @@ export class DashboardPanel {
         .auto-card-state.running { background:var(--status-pass); color:#fff; }
         .auto-card-state.exited, .auto-card-state.dead { background:var(--status-fail); color:#fff; }
         .auto-card-state.not-deployed { background:var(--status-proposed); color:#fff; }
-        .auto-card-actions { display:flex; gap:4px; flex-wrap:wrap; border-top:1px solid var(--border); padding:8px 12px; }
-        .auto-card-actions .btn { font-size:11px; padding:3px 6px; }
+        .auto-card-actions { display:flex; border-top:1px solid var(--border); }
+        .auto-card-actions .btn { flex:1; border:none; border-radius:0; border-right:1px solid var(--border); padding:8px 4px; font-size:11px; text-align:center; background:transparent; color:var(--vscode-foreground); cursor:pointer; white-space:nowrap; }
+        .auto-card-actions .btn:last-child { border-right:none; }
+        .auto-card-actions .btn:hover { background:var(--vscode-list-hoverBackground, rgba(128,128,128,0.08)); }
 
 
         /* Buttons */
