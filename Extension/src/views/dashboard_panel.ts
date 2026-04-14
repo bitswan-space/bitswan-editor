@@ -452,7 +452,22 @@ export class DashboardPanel {
         // Agent sessions for this worktree
         const sessions = worktree ? this._scanSessions(worktree) : [];
 
-        this.postMessage({ type: 'bpContent', key, requirements, automations, readme, worktree, bpPath, sessions });
+        // Sync status
+        let synced = false;
+        if (worktree) {
+            try {
+                const details = await getDeployDetails(this.context);
+                if (details) {
+                    const resp = await axios.get(`${details.deployUrl}/worktrees/`, {
+                        headers: { Authorization: `Bearer ${details.deploySecret}` },
+                    });
+                    const wt = (resp.data || []).find((w: any) => w.name === worktree);
+                    synced = wt?.synced === true;
+                }
+            } catch { /* */ }
+        }
+
+        this.postMessage({ type: 'bpContent', key, requirements, automations, readme, worktree, bpPath, sessions, synced });
     }
 
     private _scanSessions(worktree: string): { timestamp: string; userEmail: string; worktree: string; castFile: string; logged: boolean }[] {
@@ -949,6 +964,7 @@ export class DashboardPanel {
         var currentBpKey = '';
         var bpData = null; // { requirements, automations, readme, worktree, bpPath, sessions }
         var anonMode = false;
+        var isSynced = false;
         var activeSessionsList = [];
 
         function renderActiveSessions(container) {
@@ -1018,9 +1034,9 @@ export class DashboardPanel {
 
                 var syncBtn = document.createElement('div');
                 syncBtn.className = 'tab';
-                syncBtn.textContent = '\u{1F504} Sync';
-                syncBtn.title = 'Rebase worktree onto main and fast-forward main';
-                syncBtn.style.cssText = 'font-size:11px; padding:6px 10px;';
+                syncBtn.textContent = isSynced ? '\u{2705} Synced' : '\u{1F504} Sync';
+                syncBtn.title = isSynced ? 'Worktree is synced with main' : 'Rebase worktree onto main and fast-forward main';
+                syncBtn.style.cssText = 'font-size:11px; padding:6px 10px;' + (isSynced ? ' color:var(--status-pass);' : '');
                 syncBtn.addEventListener('click', function() {
                     var wt = getActiveWorktree();
                     if (wt) { vscodeApi.postMessage({ type: 'syncWorktree', worktree: wt }); }
@@ -1176,13 +1192,22 @@ export class DashboardPanel {
                             actions.appendChild(startBtn);
                         }
 
-                        // Deploy to Dev button
+                        // Deploy to Dev button — only works when synced
                         var deployBtn = mkEl('button', 'btn', '');
-                        deployBtn.innerHTML = '<span class="codicon codicon-cloud-upload"></span> Deploy';
-                        deployBtn.title = 'Deploy to dev stage';
-                        deployBtn.addEventListener('click', function() {
-                            vscodeApi.postMessage({ type: 'deployToDev', name: auto.name, relativePath: auto.relativePath });
-                        });
+                        if (bpData.worktree && !isSynced) {
+                            deployBtn.innerHTML = '<span class="codicon codicon-cloud-upload"></span> Sync first';
+                            deployBtn.title = 'Worktree must be synced with main before deploying';
+                            deployBtn.style.opacity = '0.5';
+                            deployBtn.addEventListener('click', function() {
+                                vscodeApi.postMessage({ type: 'syncWorktree', worktree: bpData.worktree });
+                            });
+                        } else {
+                            deployBtn.innerHTML = '<span class="codicon codicon-cloud-upload"></span> Deploy';
+                            deployBtn.title = 'Deploy to dev stage';
+                            deployBtn.addEventListener('click', function() {
+                                vscodeApi.postMessage({ type: 'deployToDev', name: auto.name, relativePath: auto.relativePath });
+                            });
+                        }
                         actions.appendChild(deployBtn);
 
                         // Promotion Manager button
@@ -1488,6 +1513,12 @@ export class DashboardPanel {
                 case 'bpContent':
                     if (msg.key === currentBpKey) {
                         bpData = msg;
+                        var newSynced = !!msg.synced;
+                        if (newSynced !== isSynced) {
+                            isSynced = newSynced;
+                            renderTabs();
+                        }
+                        isSynced = newSynced;
                         renderContent();
                     }
                     break;
