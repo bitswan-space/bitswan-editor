@@ -588,7 +588,11 @@ export class DashboardPanel {
      * Returns the agent hostname, or null if it couldn't be started.
      */
     private async ensureAgentRunning(): Promise<string | null> {
-        const workspaceName = process.env.HOSTNAME?.replace('-editor', '') || 'workspace';
+        const workspaceName = process.env.BITSWAN_WORKSPACE_NAME;
+        if (!workspaceName) {
+            vscode.window.showErrorMessage('BITSWAN_WORKSPACE_NAME env var is not set');
+            return null;
+        }
         const agentHost = `${workspaceName}-coding-agent`;
 
         const isReachable = () => new Promise<boolean>(resolve => {
