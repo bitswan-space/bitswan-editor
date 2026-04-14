@@ -765,69 +765,14 @@ export class DashboardPanel {
         vscode.commands.executeCommand('bitswan.openAutomationTemplates', relPath);
     }
 
-    /**
-     * Rebase worktree onto main and fast-forward main.
-     * If deleteAfter is true, deletes the worktree on success.
-     * On conflicts, launches Claude to resolve them.
-     */
-    private async rebaseAndMerge(worktree: string, deleteAfter: boolean): Promise<void> {
-        const details = await getDeployDetails(this.context);
-        if (!details) { return; }
-
-        const action = deleteAfter ? 'Merge & Delete' : 'Sync';
-
-        try {
-            // Commit any uncommitted changes
-            try {
-                await axios.post(
-                    `${details.deployUrl}/agent/worktrees/${worktree}/vcs/commit`,
-                    { message: `Pre-${action.toLowerCase()} commit` },
-                    { headers: { Authorization: `Bearer ${details.deploySecret}` } },
-                );
-            } catch { /* nothing to commit */ }
-
-            // Rebase and fast-forward main
-            const result = await axios.post(
-                `${details.deployUrl}/agent/worktrees/${worktree}/rebase-and-merge`,
-                {},
-                {
-                    headers: { Authorization: `Bearer ${details.deploySecret}` },
-                    validateStatus: () => true,
-                },
-            );
-
-            const data = result.data;
-
-            if (data.status === 'merged' || data.status === 'success') {
-                const merged_into = data.merged_into || 'main';
-                if (deleteAfter) {
-                    try {
-                        await axios.delete(
-                            `${details.deployUrl}/worktrees/${worktree}`,
-                            { headers: { Authorization: `Bearer ${details.deploySecret}` } },
-                        );
-                        vscode.window.showInformationMessage(`Worktree "${worktree}" merged into ${merged_into} and deleted.`);
-                    } catch (err: any) {
-                        vscode.window.showWarningMessage(`Merged but failed to delete worktree: ${err.message}`);
-                    }
-                    await this.loadBusinessProcesses();
-                } else {
-                    vscode.window.showInformationMessage(`Worktree "${worktree}" synced with ${merged_into}.`);
-                }
-            } else if (data.status === 'conflicts') {
-                const conflictedFiles = (data.conflicted_files || []).join(', ');
-                vscode.window.showWarningMessage(`Conflicts in: ${conflictedFiles}. Launching Claude to resolve.`);
-                await this.launchMergeConflictAgent(worktree, data.conflicted_files || []);
-            } else {
-                vscode.window.showErrorMessage(`${action} failed: ${data.detail || data.message || JSON.stringify(data)}`);
-            }
-        } catch (err: any) {
-            vscode.window.showErrorMessage(`${action} failed: ${err.message}`);
-        }
-    }
-
     private async syncWorktree(worktree: string): Promise<void> {
-        await this.rebaseAndMerge(worktree, false);
+        const autoCmd = [
+            `cd /workspace/worktrees/${worktree}`,
+            'mkdir -p ~/.claude',
+            `printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json`,
+            `exec claude --dangerously-skip-permissions -p "Please sync this worktree with main. Run: bitswan-coding-agent vcs commit -m 'pre-sync commit' then bitswan-coding-agent vcs rebase-and-merge. If there are conflicts, resolve them and run bitswan-coding-agent vcs rebase-continue. Tell me when done."`,
+        ].join(' && ');
+        await this.openSSHTerminal(`Sync: ${worktree}`, worktree, autoCmd);
     }
 
     private async mergeWorktree(worktree: string): Promise<void> {
@@ -837,28 +782,20 @@ export class DashboardPanel {
             'Merge & Delete',
         );
         if (confirm !== 'Merge & Delete') { return; }
-        await this.rebaseAndMerge(worktree, true);
-    }
 
-    private async launchMergeConflictAgent(worktree: string, conflictedFiles: string[]): Promise<void> {
-        const wtPath = `/workspace/worktrees/${worktree}`;
-        const conflictList = conflictedFiles.map(f => `  - ${f}`).join('\n');
-        const claudePrompt = [
-            `A rebase-and-merge is in progress for worktree "${worktree}" and there are conflicts.`,
-            ``,
-            `Conflicted files:`,
-            conflictList,
-            ``,
-            `Please:`,
-            `1. Open each conflicted file and resolve the conflict markers (<<<<<<<, =======, >>>>>>>)`,
-            `2. After resolving ALL conflicts, run: bitswan-coding-agent vcs rebase-continue`,
-            `3. If more conflicts arise, repeat`,
-            `4. Once the merge is complete, tell the user it's done`,
-        ].join('\\n');
-
-        const autoCmd = `cd ${wtPath} && mkdir -p ~/.claude && echo '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json && exec claude --dangerously-skip-permissions -p "${claudePrompt}"`;
+        const autoCmd = [
+            `cd /workspace/worktrees/${worktree}`,
+            'mkdir -p ~/.claude',
+            `printf '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json`,
+            `exec claude --dangerously-skip-permissions -p "Please merge this worktree into main and clean up. Run: bitswan-coding-agent vcs commit -m 'pre-merge commit' then bitswan-coding-agent vcs rebase-and-merge. If there are conflicts, resolve them and run bitswan-coding-agent vcs rebase-continue. Tell me when the merge is complete."`,
+        ].join(' && ');
         await this.openSSHTerminal(`Merge: ${worktree}`, worktree, autoCmd);
+
+        // After the terminal closes, the worktree deletion will be handled
+        // by the user confirming in the terminal session
     }
+
+
 
     private sendActiveSessions(): void {
         this.postMessage({ type: 'activeSessions', sessions: activeSessions });
