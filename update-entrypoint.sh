@@ -237,6 +237,12 @@ if [ "$BITSWAN_DEV_MODE" = "true" ] && [ -n "$BITSWAN_EXTENSION_DEV_DIR" ] && [ 
     echo "DEV MODE: Setting up extension development environment"
     echo "========================================"
 
+    # Resolve the actual extension root — it may be the repo root with an Extension/ subdir
+    if [ -f "$BITSWAN_EXTENSION_DEV_DIR/Extension/package.json" ] && [ ! -f "$BITSWAN_EXTENSION_DEV_DIR/package.json" ]; then
+        BITSWAN_EXTENSION_DEV_DIR="$BITSWAN_EXTENSION_DEV_DIR/Extension"
+        echo "Resolved extension dev dir to: $BITSWAN_EXTENSION_DEV_DIR"
+    fi
+
     # Extract extension info from the dev directory
     DEV_PACKAGE_JSON="$BITSWAN_EXTENSION_DEV_DIR/package.json"
     if [ -f "$DEV_PACKAGE_JSON" ]; then
