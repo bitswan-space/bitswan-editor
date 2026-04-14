@@ -766,7 +766,7 @@ export class DashboardPanel {
     }
 
     private async syncWorktree(worktree: string): Promise<void> {
-        const prompt = 'Please sync this worktree with main. First commit any uncommitted changes with: bitswan-coding-agent vcs commit -m "pre-sync commit" then run: bitswan-coding-agent vcs rebase-and-merge. If there are conflicts, resolve them and run: bitswan-coding-agent vcs rebase-continue. Tell me when done.';
+        const prompt = 'IMPORTANT: git is not installed. Use ONLY bitswan-coding-agent commands. Sync this worktree: 1) bitswan-coding-agent vcs commit -m pre-sync-commit 2) bitswan-coding-agent vcs rebase-and-merge 3) If conflicts, resolve and run bitswan-coding-agent vcs rebase-continue. Tell me when done.';
         const autoCmd = [
             `cd /workspace/worktrees/${worktree}`,
             'mkdir -p ~/.claude',
@@ -784,7 +784,7 @@ export class DashboardPanel {
         );
         if (confirm !== 'Merge & Delete') { return; }
 
-        const prompt = 'Please merge this worktree into main. First commit any uncommitted changes with: bitswan-coding-agent vcs commit -m "pre-merge commit" then run: bitswan-coding-agent vcs rebase-and-merge. If there are conflicts, resolve them and run: bitswan-coding-agent vcs rebase-continue. Tell me when the merge is complete.';
+        const prompt = 'IMPORTANT: git is not installed. Use ONLY bitswan-coding-agent commands. Merge this worktree into main: 1) bitswan-coding-agent vcs commit -m pre-merge-commit 2) bitswan-coding-agent vcs rebase-and-merge 3) If conflicts, resolve and run bitswan-coding-agent vcs rebase-continue. Tell me when merge is complete.';
         const autoCmd = [
             `cd /workspace/worktrees/${worktree}`,
             'mkdir -p ~/.claude',
