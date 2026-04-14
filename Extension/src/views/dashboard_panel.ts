@@ -276,6 +276,28 @@ export class DashboardPanel {
             case 'mergeWorktree':
                 await this.mergeWorktree(msg.worktree);
                 break;
+            case 'deployToDev': {
+                // Deploy using the same command as the sidebar
+                if (msg.name) {
+                    vscode.commands.executeCommand('bitswan.deployAutomation', {
+                        name: msg.name,
+                        resourceUri: msg.relativePath ? vscode.Uri.file(path.join(this.bpMap.get(this.currentKey) || '', msg.name)) : undefined,
+                        urlSlug: () => msg.name,
+                    });
+                }
+                break;
+            }
+            case 'openPromotionManager': {
+                if (msg.name) {
+                    const bpDir = this.bpMap.get(this.currentKey);
+                    if (bpDir) {
+                        const bpName = path.basename(bpDir);
+                        const sourceName = `${bpName}/${msg.name}`;
+                        vscode.commands.executeCommand('bitswan.openPromotionManager', { automationSourceName: sourceName });
+                    }
+                }
+                break;
+            }
             case 'editReadme': {
                 const bpDir = this.bpMap.get(msg.key);
                 if (bpDir) {
@@ -859,6 +881,8 @@ export class DashboardPanel {
         .codicon-link-external::before { content: "\\eb14"; }
         .codicon-folder-opened::before { content: "\\eaf7"; }
         .codicon-edit::before { content: "\\ea73"; }
+        .codicon-cloud-upload::before { content: "\\eac3"; }
+        .codicon-graph::before { content: "\\eb03"; }
         :root { color-scheme: light dark; font-family: var(--vscode-font-family, sans-serif);
             --status-pass: #3fb950; --status-fail: #f85149; --status-pending: #d29922; --status-retest: #a371f7; --status-proposed: #768390; --border: var(--vscode-editorWidget-border, rgba(128,128,128,0.3)); }
         * { box-sizing: border-box; }
@@ -1042,6 +1066,35 @@ export class DashboardPanel {
                 vscodeApi.postMessage({ type: 'createWorktree' });
             });
             tabBar.appendChild(addWtTab);
+
+            // Sync and Merge & Delete buttons (right-aligned)
+            if (structure.length > 0) {
+                var spacer = document.createElement('div');
+                spacer.style.flex = '1';
+                tabBar.appendChild(spacer);
+
+                var syncBtn = document.createElement('div');
+                syncBtn.className = 'tab';
+                syncBtn.textContent = '\u{1F504} Sync';
+                syncBtn.title = 'Rebase worktree onto main and fast-forward main';
+                syncBtn.style.cssText = 'font-size:11px; padding:6px 10px;';
+                syncBtn.addEventListener('click', function() {
+                    var wt = getActiveWorktree();
+                    if (wt) { vscodeApi.postMessage({ type: 'syncWorktree', worktree: wt }); }
+                });
+                tabBar.appendChild(syncBtn);
+
+                var mergeBtn = document.createElement('div');
+                mergeBtn.className = 'tab';
+                mergeBtn.textContent = '\u{1F500} Merge & Delete';
+                mergeBtn.title = 'Merge into main and delete worktree';
+                mergeBtn.style.cssText = 'font-size:11px; padding:6px 10px;';
+                mergeBtn.addEventListener('click', function() {
+                    var wt = getActiveWorktree();
+                    if (wt) { vscodeApi.postMessage({ type: 'mergeWorktree', worktree: wt }); }
+                });
+                tabBar.appendChild(mergeBtn);
+            }
         }
 
         function getActiveWorktree() {
@@ -1125,22 +1178,6 @@ export class DashboardPanel {
                 });
                 actionsRow.appendChild(filesCard);
 
-                if (bpData.worktree) {
-                    var syncCard = mkEl('div', 'action-card');
-                    syncCard.innerHTML = '<div class="card-icon">\\u{1F504}</div><div class="card-label">Sync</div><div class="card-desc">Rebase onto main branch</div>';
-                    syncCard.addEventListener('click', function() {
-                        vscodeApi.postMessage({ type: 'syncWorktree', worktree: bpData.worktree });
-                    });
-                    actionsRow.appendChild(syncCard);
-
-                    var mergeDeleteCard = mkEl('div', 'action-card');
-                    mergeDeleteCard.innerHTML = '<div class="card-icon">\\u{1F500}</div><div class="card-label">Merge & Delete</div><div class="card-desc">Merge into main and delete worktree</div>';
-                    mergeDeleteCard.addEventListener('click', function() {
-                        vscodeApi.postMessage({ type: 'mergeWorktree', worktree: bpData.worktree });
-                    });
-                    actionsRow.appendChild(mergeDeleteCard);
-                }
-
                 actionsSection.appendChild(actionsRow);
                 content.appendChild(actionsSection);
             }
@@ -1195,6 +1232,25 @@ export class DashboardPanel {
                             });
                             actions.appendChild(startBtn);
                         }
+
+                        // Deploy to Dev button
+                        var deployBtn = mkEl('button', 'btn', '');
+                        deployBtn.innerHTML = '<span class="codicon codicon-cloud-upload"></span> Deploy';
+                        deployBtn.title = 'Deploy to dev stage';
+                        deployBtn.addEventListener('click', function() {
+                            vscodeApi.postMessage({ type: 'deployToDev', name: auto.name, relativePath: auto.relativePath });
+                        });
+                        actions.appendChild(deployBtn);
+
+                        // Promotion Manager button
+                        var promoteBtn = mkEl('button', 'btn', '');
+                        promoteBtn.innerHTML = '<span class="codicon codicon-graph"></span> Promote';
+                        promoteBtn.title = 'Open Promotion Manager';
+                        promoteBtn.addEventListener('click', function() {
+                            vscodeApi.postMessage({ type: 'openPromotionManager', name: auto.name, relativePath: auto.relativePath });
+                        });
+                        actions.appendChild(promoteBtn);
+
                         card.appendChild(actions);
 
                         autoCards.appendChild(card);
