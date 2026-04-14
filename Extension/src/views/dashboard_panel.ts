@@ -7,6 +7,7 @@ import axios from 'axios';
 import { getUserEmail } from '../services/user_info';
 import { getDeployDetails } from '../deploy_details';
 import { AutomationItem } from './automations_view';
+import { AutomationSourceItem } from './unified_business_processes_view';
 
 const REQUIREMENTS_FILENAME = 'testable-requirements.toml';
 const WORKSPACE_DIR = '/workspace/workspace';
@@ -277,13 +278,15 @@ export class DashboardPanel {
                 await this.mergeWorktree(msg.worktree);
                 break;
             case 'deployToDev': {
-                // Deploy using the same command as the sidebar
                 if (msg.name) {
-                    vscode.commands.executeCommand('bitswan.deployAutomation', {
-                        name: msg.name,
-                        resourceUri: msg.relativePath ? vscode.Uri.file(path.join(this.bpMap.get(this.currentKey) || '', msg.name)) : undefined,
-                        urlSlug: () => msg.name,
-                    });
+                    const bpDir = this.bpMap.get(this.currentKey);
+                    if (bpDir) {
+                        const bpName = path.basename(bpDir);
+                        const sourceName = `${bpName}/${msg.name}`;
+                        const autoDir = path.join(bpDir, msg.name);
+                        const item = new AutomationSourceItem(sourceName, vscode.Uri.file(autoDir), bpName);
+                        vscode.commands.executeCommand('bitswan.deployAutomation', item);
+                    }
                 }
                 break;
             }
@@ -293,7 +296,8 @@ export class DashboardPanel {
                     if (bpDir) {
                         const bpName = path.basename(bpDir);
                         const sourceName = `${bpName}/${msg.name}`;
-                        vscode.commands.executeCommand('bitswan.openPromotionManager', { automationSourceName: sourceName });
+                        // Command expects item.name to be "BPName/automationName"
+                        vscode.commands.executeCommand('bitswan.openPromotionManager', { name: sourceName });
                     }
                 }
                 break;
