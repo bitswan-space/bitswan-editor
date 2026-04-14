@@ -627,8 +627,14 @@ export async function ensureAutomationImageReady(
   const automationName = path.basename(automationFolderPath);
   const normalizedName = sanitizeName(automationName);
 
+  // Build fully disambiguated image tag: internal/{workspace}-{bp}-{name}
+  const workspaceName = process.env.BITSWAN_WORKSPACE_NAME || 'workspace-local';
+  const bpDir = path.basename(path.dirname(automationFolderPath));
+  const bpName = sanitizeName(bpDir);
+  const fullImageName = `${workspaceName}-${bpName}-${normalizedName}`;
+
   const checksum = calculateGitTreeHash(imageFolder, outputChannel, ignorePatterns);
-  const expectedTag = `internal/${normalizedName}:sha${checksum}`;
+  const expectedTag = `internal/${fullImageName}:sha${checksum}`;
 
   // Get current image value from either config format
   const configState = getCurrentImageValue(automationFolderPath);
@@ -685,7 +691,7 @@ export async function ensureAutomationImageReady(
       details,
       automationFolderPath,
       checksum,
-      normalizedName,
+      fullImageName,
       outputChannel,
       ignorePatterns
     );

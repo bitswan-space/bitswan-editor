@@ -34,7 +34,10 @@ export function isImageMatchingSource(imageName: string, sourceName: string): bo
         return false;
     }
 
-    const sourceFolderName = sourceName.split('/').pop() || sourceName;
+    // sourceName is like "BP/backend" or just "backend"
+    const sourceParts = sourceName.split('/');
+    const sourceFolderName = sourceParts.pop() || sourceName;
+    const bpName = sourceParts.length > 0 ? sourceParts[0] : '';
 
     const normalizedImageName = normalizeName(imageSourcePart);
     const normalizedSourceName = normalizeName(sourceFolderName);
@@ -43,21 +46,23 @@ export function isImageMatchingSource(imageName: string, sourceName: string): bo
         return false;
     }
 
+    // New format: internal/{workspace}-{bp}-{name}:sha{checksum}
+    // Match by checking the image tag ends with -{bp}-{name} or -{name}
+    if (bpName) {
+        const expectedSuffix = normalizeName(`${bpName}-${sourceFolderName}`);
+        if (normalizedImageName.endsWith(expectedSuffix)) {
+            return true;
+        }
+    }
+
+    // Exact match (legacy: internal/{name})
     if (normalizedImageName === normalizedSourceName) {
         return true;
     }
 
-    if (normalizedImageName.includes(normalizedSourceName) || normalizedSourceName.includes(normalizedImageName)) {
+    // Suffix match: image tag ends with the source name (handles workspace prefix)
+    if (normalizedImageName.endsWith(normalizedSourceName)) {
         return true;
-    }
-
-    const imageVariations = generateNameVariations(normalizedImageName);
-    const sourceVariations = generateNameVariations(normalizedSourceName);
-
-    for (const imageVar of imageVariations) {
-        if (sourceVariations.includes(imageVar)) {
-            return true;
-        }
     }
 
     return false;
