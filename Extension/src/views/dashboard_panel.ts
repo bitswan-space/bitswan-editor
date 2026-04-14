@@ -432,10 +432,20 @@ export class DashboardPanel {
                 const aPath = a.relative_path || a.relativePath || '';
                 return aPath === relFromWorkspace || aPath.endsWith('/' + relFromWorkspace);
             });
+            let state = 'not deployed';
+            if (match) {
+                const dockerState = match.state || '';
+                if (dockerState === 'running') { state = 'running'; }
+                else if (dockerState === 'exited' || dockerState === 'dead') { state = 'stopped'; }
+                else if (dockerState === 'restarting') { state = 'restarting'; }
+                else if (dockerState === 'created' || dockerState === 'paused') { state = dockerState; }
+                else if (dockerState) { state = dockerState; }
+                else { state = 'starting'; }
+            }
             automations.push({
                 name: autoName,
                 deploymentId: match ? (match.deployment_id || match.deploymentId || '') : '',
-                state: match ? (match.state || 'not deployed') : 'not deployed',
+                state,
                 url: match ? (match.automation_url || match.automationUrl || '') : '',
                 relativePath: relFromWorkspace,
                 icon: inferAutomationIcon(autoDir),
