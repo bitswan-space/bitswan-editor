@@ -1211,7 +1211,7 @@ export class DashboardPanel {
                         // Deploy to Dev button — only works when synced
                         var deployBtn = mkEl('button', 'btn', '');
                         if (bpData.worktree && !isSynced) {
-                            deployBtn.innerHTML = '<span class="codicon codicon-cloud-upload"></span> Deploy (sync first)';
+                            deployBtn.innerHTML = '<span class="codicon codicon-cloud-upload"></span> Deploy<br><small>sync first</small>';
                             deployBtn.title = 'Worktree must be synced with main before deploying';
                             deployBtn.style.opacity = '0.5';
                             deployBtn.addEventListener('click', function() {
