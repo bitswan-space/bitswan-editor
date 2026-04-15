@@ -1318,35 +1318,9 @@ export const promoteAutomation = async (
   if (context) {
     form.append('context', context);
   }
-  // Send automation config for live-dev (so server doesn't need to read from filesystem)
-  if (automationConfig) {
-    if (automationConfig.image) {
-      form.append('image', automationConfig.image);
-    }
-    if (automationConfig.expose !== undefined) {
-      form.append('expose', automationConfig.expose.toString());
-    }
-    if (automationConfig.exposeTo && automationConfig.exposeTo.length > 0) {
-      form.append('expose_to', JSON.stringify(automationConfig.exposeTo));
-    }
-    if (automationConfig.port !== undefined) {
-      form.append('port', automationConfig.port.toString());
-    }
-    if (automationConfig.mountPath) {
-      form.append('mount_path', automationConfig.mountPath);
-    }
-    if (automationConfig.secretGroups && automationConfig.secretGroups.length > 0) {
-      form.append('secret_groups', automationConfig.secretGroups.join(','));
-    }
-    if (automationConfig.automationId) {
-      form.append('automation_id', automationConfig.automationId);
-    }
-    if (automationConfig.auth !== undefined) {
-      form.append('auth', automationConfig.auth.toString());
-    }
-    if (automationConfig.services) {
-      form.append('services', JSON.stringify(automationConfig.services));
-    }
+  // Send services so the server can auto-enable infra (postgres, minio, etc.)
+  if (automationConfig?.services) {
+    form.append('services', JSON.stringify(automationConfig.services));
   }
 
   const response = await axios.post(deployUrl, form, {
