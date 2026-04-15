@@ -1266,11 +1266,13 @@ export const startLiveDev = async (
   secret: string,
   relativePath: string,
   worktree?: string,
+  automationToml?: string,
 ): Promise<DeployResponse> => {
   const base = agentBaseUrl.replace(/\/+$/, '');
   const url = `${base}/automations/start-live-dev`;
   const body: Record<string, string> = { relative_path: relativePath };
   if (worktree) { body.worktree = worktree; }
+  if (automationToml) { body.automation_toml = automationToml; }
   const response = await axios.post(url, body, {
     headers: { 'Authorization': `Bearer ${secret}` },
     validateStatus: (status) => status === 200 || status === 202 || status === 409,

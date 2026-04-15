@@ -487,9 +487,14 @@ export async function startLiveDevServerCommand(
             progress.report({ increment: 70, message: "Starting live dev server..." });
 
             // Deploy to live-dev stage.
-            // The server constructs the deployment ID — we send structured data.
+            // Send the raw automation.toml so the server has all config.
+            let automationToml: string | undefined;
+            const tomlPath = path.join(folderPath, 'automation.toml');
+            if (fs.existsSync(tomlPath)) {
+                automationToml = fs.readFileSync(tomlPath, 'utf-8');
+            }
             const deployResult = await startLiveDev(
-                details.deployUrl, details.deploySecret, relativePath, worktreeName
+                details.deployUrl, details.deploySecret, relativePath, worktreeName, automationToml
             );
             const liveDevDeploymentId = deployResult.deployment_id || relativePath;
 
