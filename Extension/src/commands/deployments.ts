@@ -92,10 +92,15 @@ export async function deployCommandAbstract(
     // Read automation config early so we have ignore patterns for pre-flight and image build
     let ignorePatterns: string[] | undefined;
     if (itemSet === "automations") {
-        const automationConfig = getAutomationDeployConfig(folderPath);
-        ignorePatterns = automationConfig.ignore;
-        if (ignorePatterns && ignorePatterns.length > 0) {
-            outputChannel.appendLine(`Ignore patterns from config: ${ignorePatterns.join(', ')}`);
+        try {
+            const automationConfig = getAutomationDeployConfig(folderPath);
+            ignorePatterns = automationConfig.ignore;
+            if (ignorePatterns && ignorePatterns.length > 0) {
+                outputChannel.appendLine(`Ignore patterns from config: ${ignorePatterns.join(', ')}`);
+            }
+        } catch (configError: any) {
+            vscode.window.showErrorMessage(`Syntax error in automation.toml: ${configError.message}`);
+            return;
         }
 
         // Pre-flight check on image/ directory
@@ -431,7 +436,13 @@ export async function startLiveDevServerCommand(
     const normalizedFolderName = sanitizeName(folderName);
 
     // Read automation config before withProgress so we have ignore patterns for pre-flight
-    const automationConfig = getAutomationDeployConfig(folderPath);
+    let automationConfig: ReturnType<typeof getAutomationDeployConfig>;
+    try {
+        automationConfig = getAutomationDeployConfig(folderPath);
+    } catch (configError: any) {
+        vscode.window.showErrorMessage(`Syntax error in automation.toml: ${configError.message}`);
+        return;
+    }
     const ignorePatterns = automationConfig.ignore;
     if (ignorePatterns && ignorePatterns.length > 0) {
         outputChannel.appendLine(`Ignore patterns from config: ${ignorePatterns.join(', ')}`);
