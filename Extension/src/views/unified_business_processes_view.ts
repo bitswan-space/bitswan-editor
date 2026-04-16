@@ -326,6 +326,7 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
     private _selectedWorktree: string | undefined;
     private _view: vscode.TreeView<UnifiedTreeItem> | undefined;
     private _worktreesProvider: { getChildren(): Promise<WorktreeItem[]> } | undefined;
+    private readonly _tomlDiagnostics = vscode.languages.createDiagnosticCollection('automation-toml');
 
     get selectedWorktree(): string | undefined { return this._selectedWorktree; }
 
@@ -755,7 +756,7 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         return result;
     }
 
-    private async getStagesForSource(sourceName: string): Promise<StageItem[]> {
+    private async getStagesForSource(sourceName: string): Promise<(StageItem | vscode.TreeItem)[]> {
         const automations = this.context.globalState.get<any[]>('automations', []);
 
         // Extract automation name and business process name from sourceName
@@ -771,10 +772,13 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             : undefined;
 
         // Read service dependencies from automation.toml
+        let tomlErrorItem: vscode.TreeItem | undefined;
         const serviceNames: string[] = [];
         if (sourceUri) {
+            const tomlUri = vscode.Uri.file(path.join(sourceUri.fsPath, 'automation.toml'));
             try {
                 const config = getAutomationDeployConfig(sourceUri.fsPath);
+                this._tomlDiagnostics.delete(tomlUri);
                 if (config.services) {
                     for (const [svcName, svcConf] of Object.entries(config.services)) {
                         if (svcConf.enabled) {
@@ -782,8 +786,13 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                         }
                     }
                 }
-            } catch (e) {
-                // ignore
+            } catch (e: any) {
+                this._tomlDiagnostics.set(tomlUri, [
+                    new vscode.Diagnostic(new vscode.Range(0, 0, 0, 0), `Syntax error in automation.toml: ${e.message}`, vscode.DiagnosticSeverity.Error)
+                ]);
+                tomlErrorItem = new vscode.TreeItem(`automation.toml: ${e.message}`, vscode.TreeItemCollapsibleState.None);
+                tomlErrorItem.iconPath = new vscode.ThemeIcon('error');
+                tomlErrorItem.tooltip = e.message;
             }
         }
 
@@ -853,7 +862,7 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
             }
         }
 
-        return stages;
+        return tomlErrorItem ? [tomlErrorItem, ...stages] : stages;
     }
 
     private getImagesForAutomationSource(sourceName: string): AutomationSourceImageItem[] {
