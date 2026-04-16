@@ -49,7 +49,8 @@ function inferAutomationIcon(autoDir: string): string {
         if (hasExpose) { return '\u{2699}\u{FE0F}'; }               // ⚙️ backend (exposed API)
         if (hasKafka) { return '\u{26A1}'; }                         // ⚡ kafka/streaming
         return '\u{1F4E6}';                                          // 📦 default
-    } catch {
+    } catch (e: any) {
+        vscode.window.showWarningMessage(`Syntax error in automation.toml at ${configPath}: ${e.message}`);
         return '\u{1F4E6}';
     }
 }
