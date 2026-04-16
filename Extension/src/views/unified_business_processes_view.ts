@@ -829,16 +829,18 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                 stages.push(new StageItem('live-dev', sourceName, null, deploymentId, null, wtSourceUri, serviceNames, wtName));
             }
         } else {
-            // Main mode: 3 stages (live-dev is worktree-only, managed in the Workspace panel)
-            const stagesList: Array<'dev' | 'staging' | 'production'> = ['dev', 'staging', 'production'];
+            // Main mode: 4 stages — live-dev, dev, staging, production
+            const stagesList: Array<'live-dev' | 'dev' | 'staging' | 'production'> = ['live-dev', 'dev', 'staging', 'production'];
 
             for (const stage of stagesList) {
                 // Match by structured fields: automation_name + stage
+                // Exclude worktree automations (their relative_path starts with "worktrees/")
                 const automation = automations.find(a => {
                     const aName = a.automation_name || a.automationName || '';
                     const aStage = a.stage || 'production';
                     const normalizedStage = aStage === '' ? 'production' : aStage;
-                    return aName === sanitizedSourceName && normalizedStage === stage;
+                    const relPath = a.relative_path || a.relativePath || '';
+                    return aName === sanitizedSourceName && normalizedStage === stage && !relPath.startsWith('worktrees/');
                 });
                 const deploymentId = automation
                     ? (automation.deployment_id || automation.deploymentId || '')
