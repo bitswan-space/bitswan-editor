@@ -120,9 +120,20 @@ export class GitOpsSSEClient {
         } else if (event === 'worktrees') {
             DashboardPanel.currentPanel?.onWorktreeChanged();
         } else if (event === 'security_warning') {
-            const msg = data.type === 'brute_force_attempt'
-                ? `Security: ${data.failures} failed auth attempts from ${data.source_ip} in ${data.window_seconds}s`
-                : `Security warning: ${JSON.stringify(data)}`;
+            let msg: string;
+            switch (data.type) {
+                case 'brute_force_attempt':
+                    msg = `Security: ${data.failures} failed auth attempts from ${data.source_ip} in ${data.window_seconds}s`;
+                    break;
+                case 'endpoint_spray_detected':
+                    msg = `Security: Endpoint probing detected — ${data.count} unknown URLs from ${data.source_ip}`;
+                    break;
+                case 'endpoint_spray_blocked':
+                    msg = `Security: Endpoint spray BLOCKED — ${data.count} probes from ${data.source_ip}. IP blocked for 5 minutes.`;
+                    break;
+                default:
+                    msg = `Security warning: ${JSON.stringify(data)}`;
+            }
             vscode.window.showWarningMessage(msg);
             // Store for the dashboard to display
             const warnings = this.context.globalState.get<any[]>('security_warnings', []);
