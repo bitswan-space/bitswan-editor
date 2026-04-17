@@ -119,6 +119,17 @@ export class GitOpsSSEClient {
             deployState.handleDeployProgress(data);
         } else if (event === 'worktrees') {
             DashboardPanel.currentPanel?.onWorktreeChanged();
+        } else if (event === 'security_warning') {
+            const msg = data.type === 'brute_force_attempt'
+                ? `Security: ${data.failures} failed auth attempts from ${data.source_ip} in ${data.window_seconds}s`
+                : `Security warning: ${JSON.stringify(data)}`;
+            vscode.window.showWarningMessage(msg);
+            // Store for the dashboard to display
+            const warnings = this.context.globalState.get<any[]>('security_warnings', []);
+            warnings.push({ ...data, seen: false });
+            // Keep last 50 warnings
+            if (warnings.length > 50) { warnings.splice(0, warnings.length - 50); }
+            this.context.globalState.update('security_warnings', warnings);
         }
     }
 
