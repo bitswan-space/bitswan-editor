@@ -31,17 +31,17 @@ The table below shows how automations are accessed based on their stage and expo
 
 |                              | `expose=true`              | `expose_to=["groups"]`     | `expose_to` + `expose_to_internet=true` | No exposure settings |
 |------------------------------|---------------------------|---------------------------|----------------------------------------|---------------------|
-| **live-dev**                 | VPN only                  | VPN + SSO                 | VPN + SSO                              | VPN only (no URL)   |
-| **dev**                      | VPN only                  | VPN + SSO                 | VPN + SSO                              | VPN only (no URL)   |
-| **staging**                  | Public internet           | VPN + SSO                 | Public internet + SSO                  | VPN only (no URL)   |
-| **production**               | Public internet           | VPN + SSO                 | Public internet + SSO                  | VPN only (no URL)   |
+| **live-dev**                 | VPN only                  | VPN + SSO                 | VPN + SSO                              | Not exposed          |
+| **dev**                      | VPN only                  | VPN + SSO                 | VPN + SSO                              | Not exposed          |
+| **staging**                  | Public internet           | VPN + SSO                 | Public internet + SSO                  | Not exposed          |
+| **production**               | Public internet           | VPN + SSO                 | Public internet + SSO                  | Not exposed          |
 
 **Key:**
 - **VPN only** -- accessible only through the WireGuard VPN tunnel. No authentication beyond VPN access.
 - **VPN + SSO** -- accessible through VPN, protected by OAuth2/Keycloak. Users must belong to the specified groups.
 - **Public internet + SSO** -- accessible from the internet, protected by OAuth2/Keycloak.
 - **Public internet** -- accessible from the internet with no authentication (use for public-facing services).
-- **VPN only (no URL)** -- container runs but has no HTTP route. Reachable only by other containers on the same stage network.
+- **Not exposed** -- no HTTP route, no port published. The container runs but is only reachable by other containers on the same stage network via Docker DNS.
 
 **Security defaults:**
 - `live-dev` and `dev` are **always internal** (VPN only), regardless of exposure settings
