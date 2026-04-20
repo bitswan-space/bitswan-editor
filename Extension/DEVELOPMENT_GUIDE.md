@@ -1,348 +1,327 @@
-# BitSwan Automations 
+# BitSwan Development Guide
 
-BitSwan is a platform for building automations and microservices directly in Jupyter Notebooks, and deploying them with a single click.
+BitSwan is a platform for building automations and microservices, deploying them with a single click, and promoting them through staged environments with network isolation and access control.
 
-**Key Use Cases:**
-- Automation of processes
-- Batch / real-time processing of data
-- Simple web applications
+## Workspace Overview
 
-## Jupyter notebooks
-- Step‑by‑step execution: run cells interactively to debug each step
-- Clear separation: code, text, and outputs in one place
+When you open BitSwan in VS Code, the **Bitswan Workspace** tab is your home. It shows:
 
-## What is a BitSwan automation
+- **Worktrees** (feature branches) in the sidebar, each isolated with its own deployments
+- **Business Processes** containing one or more automations
+- **Automations** with their deployment status across stages (live-dev, dev, staging, production)
+- **Requirements** and **README** for each business process
 
-A BitSwan automation processes events from a Source, runs them through a sequence of notebook cells (steps), and emits results via a Sink.
+Each automation shows an icon reflecting its type: web frontends, backend APIs, streaming/Kafka services, or generic automations.
 
-**How it works:**
+### Worktrees
 
-  flowchart LR
-    A[Source] --> B[Cells / Steps]
-    B --> C[Sink]
+Worktrees are git branches with isolated deployment copies. Create one for each feature:
 
-- **Source**: where events come from (e.g., WebForm, Webhook, Kafka, Cron/time trigger)
-- **Cells**: cells after `auto_pipeline(...)` process each event in order
-- **Sink**: where side‑effects happen (e.g., HTTP call, DB write, file/log)
+1. Click **Create Worktree** in the sidebar
+2. Develop and test in the worktree's live-dev environment
+3. When ready, **Sync** (rebase onto main) and **Merge** back
 
-## Types of automations (triggers)
+Each worktree gets its own set of live-dev containers, separate from the main branch's dev/staging/production deployments.
 
-### Time-triggered automations
-Automations that run on a schedule using cron expressions. Ideal for periodic tasks, reporting, cleanup jobs, and scheduled notifications.
+## Exposure and Access Control
 
-**CronSource** (`examples/TimeTrigger`): Triggers pipelines based on cron expressions (e.g., every Monday at 14:20). Built on `CronTrigger` for stable time-based scheduling.
+The table below shows how automations are accessed based on their stage and exposure configuration. This is the central security model.
 
-### Manually triggered automations
-Automations that wait for user input or HTTP requests. Perfect for web forms, REST APIs, and interactive tools.
+### Routing Matrix
 
-**WebFormSource** (`examples/WebForms`): Serves a web form with various field types (text, number, date, checkboxes, repeatable lists). Processes form submissions asynchronously.
+|                              | `expose=true`              | `expose_to=["groups"]`     | `expose_to` + `expose_to_internet=true` | No exposure settings |
+|------------------------------|---------------------------|---------------------------|----------------------------------------|---------------------|
+| **live-dev**                 | VPN only                  | VPN + SSO                 | VPN + SSO                              | VPN only (no URL)   |
+| **dev**                      | VPN only                  | VPN + SSO                 | VPN + SSO                              | VPN only (no URL)   |
+| **staging**                  | Public internet           | VPN + SSO                 | Public internet + SSO                  | VPN only (no URL)   |
+| **production**               | Public internet           | VPN + SSO                 | Public internet + SSO                  | VPN only (no URL)   |
 
-**ProtectedWebFormSource** (`examples/ProtectedWebForm`): Web form protected with a secret key. 
+**Key:**
+- **VPN only** -- accessible only through the WireGuard VPN tunnel. No authentication beyond VPN access.
+- **VPN + SSO** -- accessible through VPN, protected by OAuth2/Keycloak. Users must belong to the specified groups.
+- **Public internet + SSO** -- accessible from the internet, protected by OAuth2/Keycloak.
+- **Public internet** -- accessible from the internet with no authentication (use for public-facing services).
+- **VPN only (no URL)** -- container runs but has no HTTP route. Reachable only by other containers on the same stage network.
 
-**FileField** (`examples/Filefield`): Example of how to add a file upload field to a webform and handle uploaded files in your automation
+**Security defaults:**
+- `live-dev` and `dev` are **always internal** (VPN only), regardless of exposure settings
+- `staging` and `production` go external only when explicitly exposed
+- When VPN is not configured, the system falls back to single-ingress routing
 
-### Event-triggered automations
-Automations that react to messages from streaming platforms, message queues, or real-time data sources. Best for event-driven architectures and data pipelines.
+### Configuration Examples
 
-**KafkaSource**  (`examples/Kafka2Kafka`): Consumes events from Kafka topics. Processes and optionally forwards to other Kafka topics or systems.
-
-## Project structure (suggested)
+**Public API (staging + production on the internet, dev behind VPN):**
+```toml
+[deployment]
+port = 8080
+expose = true
 ```
-automation/
-  main.ipynb                # main notebook
-  automation.toml           # deployment config, secrets, and services
-  image/
-    Dockerfile              # ~ can be used to install extra dependencies for the notebook.
+
+**Internal tool with SSO (VPN-only at all stages):**
+```toml
+[deployment]
+port = 3000
+
+[expose_to]
+dev = ["/MyOrg/developers"]
+staging = ["/MyOrg/developers", "/MyOrg/qa"]
+production = ["/MyOrg/all-staff"]
 ```
 
-- `main.ipynb`: the primary notebook where `auto_pipeline(...)` is called. Cells below it implement the processing steps; helper functions (or imports of helper functions) are typically defined before the `auto_pipeline(...)` call.
-- `automation.toml`: deployment configuration, secrets, and service dependencies.
-- `Dockerfile`: usually very small; the runtime environment is imported and a few extra packages are installed.
+**Customer-facing app with SSO on the internet:**
+```toml
+[deployment]
+port = 3000
+expose_to_internet = true
 
-## `auto_pipeline` anatomy
-The notebook typically has:
-1) Imports and helper functions 
-2) `auto_pipeline(...)` call to register Source and Sink
-3) Cells after `auto_pipeline(...)` that process each event
+[expose_to]
+dev = ["/MyOrg/developers"]
+staging = ["/MyOrg/qa"]
+production = ["/MyOrg/customers"]
+```
 
-**CELL 1: Example imports**
+> `expose` and `expose_to` are mutually exclusive. Use `expose=true` for public services, `expose_to` for SSO-protected services.
+
+## Deployment Stages
+
+### live-dev (worktree development)
+
+Your source code is **mounted directly** into the container. Edits are reflected immediately (or after a restart). This is where you develop and test.
+
+- Start via the **Start Live Dev** button in the workspace
+- Source code mounted at `/app/`
+- Always on the `{workspace}-dev` Docker network
+- Accessible via VPN only
+
+### dev (main branch)
+
+Deployed from the main branch. Same network isolation as live-dev but runs the committed code, not live-mounted source.
+
+### staging
+
+Pre-production testing. Deployed from a specific checksum (immutable). Can be exposed to the internet with `expose=true` or kept VPN-only.
+
+### production
+
+Live deployment. Same exposure rules as staging. Production deployments have no stage suffix in their deployment ID (e.g., `my-app-mybp` instead of `my-app-mybp-staging`).
+
+### Promotion Flow
+
+```
+live-dev (worktree) --> dev (main branch) --> staging --> production
+```
+
+1. Develop in a worktree's live-dev environment
+2. Merge the worktree to main (creates a dev deployment)
+3. Right-click the dev stage in the sidebar --> **Promote to Staging**
+4. Test in staging, then right-click --> **Promote to Production**
+
+Each promotion creates an immutable snapshot (checksum) of the code.
+
+## Network Isolation
+
+Each workspace has three isolated Docker networks:
+
+| Network | Contains | Isolation |
+|---------|----------|-----------|
+| `{workspace}-dev` | live-dev + dev automations, dev infra services | Cannot reach staging or production |
+| `{workspace}-staging` | staging automations, staging infra services | Cannot reach dev or production |
+| `{workspace}-production` | production automations, production infra services | Cannot reach dev or staging |
+
+**Containers on the same stage network CAN communicate** (e.g., a dev app can reach its dev Postgres). Containers on different stage networks CANNOT communicate -- enforced by Docker network boundaries.
+
+Management services (editor, gitops, coding agent) are on a separate `bitswan_network` and cannot be reached by automation containers.
+
+## What is a BitSwan Automation
+
+A BitSwan automation processes events from a Source, runs them through processing steps, and emits results via a Sink.
+
+```
+Source --> Processing Steps --> Sink
+```
+
+- **Source**: where events come from (WebForm, Webhook, Kafka, Cron trigger)
+- **Processing Steps**: cells/functions that transform each event
+- **Sink**: where results go (HTTP response, DB write, Kafka topic, log)
+
+### Types of Automations
+
+**Time-triggered** -- run on a schedule using cron expressions. Ideal for periodic tasks, reporting, and cleanup.
+
+**Manually triggered** -- wait for HTTP requests or form submissions. Use `WebFormSource` for interactive forms, `ProtectedWebFormSource` for secret-protected forms.
+
+**Event-triggered** -- react to Kafka messages or streaming data. Best for event-driven architectures and data pipelines.
+
+## Project Structure
+
+```
+MyBusinessProcess/
+  my-automation/
+    automation.toml           # deployment config
+    main.ipynb                # main notebook (or main.py for non-notebook apps)
+    image/
+      Dockerfile              # custom image (optional)
+      requirements.txt        # dependencies (optional)
+  another-automation/
+    automation.toml
+    app/
+      main.py
+    image/
+      Dockerfile
+```
+
+### `auto_pipeline` (Notebook Automations)
+
 ```python
 from bspump.jupyter import *
 from bspump.http.web.server import *
-from bspump.cron import CronSource
-from bspump.common.print import PPrintSink
-```
 
-**CELL 2: auto_pipeline call**
-```python
-# Example: WebForm pipeline
 auto_pipeline(
-    source=lambda app, pipeline: ProtectedWebFormSource(
-        app, pipeline, route="/",
-        fields=[
-            # ... define fields, e.g. TextField("subject") 
-            #  more in: bspump\http\web\components
-        ],
-        config={"secret": os.getenv("WEBFORM_SECRET", "")}
-    ),
+    source=lambda app, pipeline: WebFormSource(app, pipeline, route="/",
+        fields=[TextField("name"), TextField("email")]),
     sink=lambda app, pipeline: WebSink(app, pipeline),
-    name="FormPipeline"
-)
-# ... cells below run for each incoming form submission
-# event["form"] contains submitted data; set event["content_type"] if returning a body
-```
-**Alternate CELL 2: auto_pipeline call with a CronSource**
-```python
-# Example: Cron pipeline
-auto_pipeline(
-    source=lambda app, pipeline: CronSource(app, pipeline, config={"when": "20 14 * * 1"}),
-    sink=lambda app, pipeline: PPrintSink(app, pipeline),
-    name="WeeklyPipeline"
+    name="MyForm"
 )
 
-# ... cells below run on schedule and emit via Sink
+# Cells below run for each form submission
+# event["form"] contains the submitted data
 ```
 
-Note: Locally, create and activate a Python venv and ensure imports resolve. Dependency management is usually defined in your project (e.g., `pyproject.toml`). In AOC, the same imports work inside the runtime environment image.
+### Custom Image (Non-notebook Apps)
 
-### Event object (common patterns)
-- Dict‑like; typical keys include `event["form"]`, `event["payload"]`, `event["content_type"]`
-- Cells can add/modify keys; the Sink consumes them (e.g., `payload`)
-
-Tip: during development, simulate events to enable step‑by‑step execution of cells (e.g., set `event = {...}` or use helpers like `sample_events([...])`).
-
-## Dependencies and build
-
-- Dockerfile: build an image for AOC with your minimal extra deps installed
-
-`Dockerfile` (typical deployed automation)
-```dockerfile
-FROM bitswan/pipeline-runtime-environment:2025-17915492359-git-e5c422a #image with which was the automation created
-RUN pip install -U openai #Further installs for the automations container
-```
-
-## Configuration Files
-
-BitSwan supports two configuration formats for automations:
-
-### `automation.toml` (Recommended)
-
-The new simplified TOML format for automation deployment configuration. This format is preferred for new automations.
+For FastAPI, React, or any other framework, create an `image/` directory:
 
 ```toml
-[deployment]
-port = 8080  # Application port (default: 8080)
-expose = true  # Public internet access (no OAuth2)
-
-[expose_to]
-dev = ["/Example Org/developers"]
-staging = ["/Example Org/developers", "/Example Org/qa"]
-production = ["/Example Org/admin"]
-
-[secrets]
-dev = ["dev-secrets", "dev-db"]           # Secret groups for dev stage (also used by live-dev)
-staging = ["staging-secrets"]              # Secret groups for staging stage
-production = ["prod-secrets", "prod-db"]   # Secret groups for production stage
-```
-
-**Options:**
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `image` | string | Docker image for the automation runtime (optional if using `image/` directory) |
-| `port` | integer | Application port (default: 8080) |
-| `expose` | boolean | Expose publicly to internet (no OAuth2) |
-| `[expose_to]` | section | Per-stage OAuth2 access control groups (see below) |
-
-**Per-stage `[expose_to]`:**
-
-The `[expose_to]` section defines OAuth2/Keycloak groups allowed to access the automation at each stage. Setting groups for a stage automatically enables exposure with OAuth2 protection. The `live-dev` stage falls back to `dev` groups if not specified.
-
-```toml
-[expose_to]
-dev = ["/Example Org/developers"]
-staging = ["/Example Org/developers", "/Example Org/qa"]
-production = ["/Example Org/admin"]
-```
-
-### Custom Image with `image/` Directory
-
-Instead of specifying the `image` attribute directly, you can create an `image/` directory containing a `Dockerfile`. The image will be automatically built and used for your automation.
-
-**Project structure:**
-```
-automation/
-  automation.toml         # deployment config (no image attribute needed)
-  app/
-    main.py               # your application code
-  image/
-    Dockerfile            # custom Dockerfile
-    requirements.txt      # dependencies (optional)
-    entrypoint.sh         # entrypoint script (optional)
-```
-
-**Example `automation.toml` (no image attribute):**
-```toml
+# automation.toml
 [deployment]
 port = 8000
 expose = true
 ```
 
-**Example `image/Dockerfile`:**
 ```dockerfile
+# image/Dockerfile
 FROM python:3.12-slim
-
 WORKDIR /deps
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-
 WORKDIR /app
-
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["python", "main.py"]
 ```
 
-**How it works:**
-1. When you deploy, the extension detects the `image/` directory
-2. A custom image is built from the Dockerfile
-3. The `image` attribute in `automation.toml` is automatically set to the built image tag
-4. Your automation source code is mounted to `/app/` at runtime
+Your source code is mounted at `/app/` at runtime -- you don't need to `COPY` it in the Dockerfile.
 
-**Tips:**
-- Install dependencies during image build for faster startup (they persist across restarts)
-- Use an entrypoint script to set up symlinks or run build steps at container start
-- See `examples/ReactApp` and `examples/FastAPIApp` in the bitswan repository for complete examples
+## Configuration Reference
 
-**Secrets Options:**
+### `automation.toml`
 
-| Option | Type | Description |
-|--------|------|-------------|
-| `live-dev` | array | Secret groups for live-dev stage (falls back to `dev` if not set) |
-| `dev` | array | Secret groups for dev stage (falls back to `live-dev` if not set) |
-| `staging` | array | Secret groups for staging stage deployments |
-| `production` | array | Secret groups for production stage deployments |
-
-**Note:** The `dev` and `live-dev` stages share secrets — if one is configured but not the other, the configured groups are used for both.
-
-**Note:** `expose` and `expose_to` are mutually exclusive - use one or the other.
-
-**Key differences from `pipelines.conf`:**
-- Uses TOML syntax instead of INI
-- `image` replaces `pre` for specifying the Docker image
-- Files are mounted to `/app/` instead of `/opt/pipelines`
-- Stage-specific secrets with `dev`/`live-dev` sharing (no general `groups` fallback like in pipelines.conf)
-- No `[docker]` section (uses sensible defaults)
-
-### `pipelines.conf` (Legacy)
-
-The original INI format, still fully supported for backward compatibility.
-
-```ini
+```toml
 [deployment]
-pre=internal/<AutomationName>  # Docker image
-expose=true
-port=8080
+image = "bitswan/pipeline-runtime-environment:latest"  # Docker image (optional with image/ dir)
+port = 8080                                             # Application port
+expose = true                                           # Public internet access (no OAuth2)
+expose_to_internet = false                              # Route expose_to via external ingress
+
+[expose_to]
+dev = ["/Org/developers"]              # OAuth2 groups for dev/live-dev
+staging = ["/Org/developers", "/Org/qa"]
+production = ["/Org/all-staff"]
 
 [secrets]
-groups = group_name1 group_name2
+dev = ["dev-secrets", "dev-db"]        # Secret groups injected as env vars
+staging = ["staging-secrets"]
+production = ["prod-secrets", "prod-db"]
+
+[services]
+kafka = { enabled = true }             # Enable Kafka for this automation
+postgres = { enabled = true }          # Enable PostgreSQL
+couchdb = { enabled = true }           # Enable CouchDB
+minio = { enabled = true }             # Enable MinIO (S3-compatible storage)
 ```
 
-### Config Priority & Mount Paths
-
-| Config File | Priority | Mount Path |
-|-------------|----------|------------|
-| `automation.toml` | 1 (highest) | `/app/` |
-| `pipelines.conf` | 2 | `/opt/pipelines` |
-
-If both files exist, `automation.toml` takes precedence for deployment settings.
+| Field | Type | Description |
+|-------|------|-------------|
+| `image` | string | Docker image. Omit if using `image/` directory. |
+| `port` | integer | Application port (default: 8080) |
+| `expose` | boolean | Expose publicly on staging/production (no OAuth2) |
+| `expose_to_internet` | boolean | Route `expose_to` services via external ingress |
+| `[expose_to]` | section | Per-stage OAuth2 groups. Mutually exclusive with `expose`. |
+| `[secrets]` | section | Per-stage secret groups. `dev` and `live-dev` share secrets. |
+| `[services]` | section | Infrastructure service dependencies |
 
 ### Secrets
 
-- In AOC: secrets are mounted under a shared path and exposed to the runtime
-- Create a secret group in secrets
-- Configure which groups each stage uses in your `automation.toml` `[secrets]` section
-
-#### Managing Secrets in the VS Code Extension
-
-The BitSwan extension provides a **Secrets Manager** in the sidebar for managing secret groups and their values.
-
-**Creating a Secret Group:**
-
-1. Open the **Secrets** tab in the sidebar
-2. Click the **+** button (marked ①) to create a new secret group
-3. Enter a name for the group in the input field
-
-![Creating a secret group](resources/DEVELOPMENT_GUIDE/secrets/secrets1.png)
-
-**Adding Secrets to a Group:**
-
-1. Click on a secret group to open it
-2. Enter the secret name and value:
-   - Type the name (marked ①) and the secret in the Secret value field (marked ②)
-   - Alternativelly click **Generate Random** (marked ③) to create a random secret value if there is none yet
-3. Click **Add Secret** to create a new secret
-
-![Adding secrets to a group](resources/DEVELOPMENT_GUIDE/secrets/secrets2.png)
-
-**Managing Secrets:**
-
-Once created, you can:
-- Add new secrets using the **Add Secret** button
-- Edit existing secrets by clicking one of the buttons near the given secret
-
-![Managing secrets](resources/DEVELOPMENT_GUIDE/secrets/secrets3.png)
-
-**Reference in `automation.toml`:**
-
-After creating secret groups, reference them in your `automation.toml`:
+Create secret groups in the **Secrets** panel (sidebar), then reference them:
 
 ```toml
 [secrets]
-dev = ["group_name1", "group_name2"]
-staging = ["group_name1", "group_name2"]
-production = ["group_name1", "group_name2"]
+dev = ["my-api-keys", "my-db-creds"]
+staging = ["staging-api-keys"]
+production = ["prod-api-keys", "prod-db-creds"]
 ```
 
-## Custom PRE
-A PRE is a pre‑built component/image you can reference from your automation (e.g., custom sources/sinks/utilities). Where to register and how to author a PRE depends on your environment.
+Secrets are injected as environment variables into the container at startup. The `dev` and `live-dev` stages share the same secret groups.
 
-## Tooling
+## Infrastructure Services
 
-### BitSwan VS Code extension
-- Location: left sidebar 
-- Automations: view active/inactive; restart, pause, stop; view logs
+Automations can depend on infrastructure services declared in `automation.toml`:
 
-## Debugging & testing
-- Run step‑by‑step in Jupyter (execute cells interactively)
+| Service | What it provides |
+|---------|-----------------|
+| `postgres` | PostgreSQL database, per-stage isolated |
+| `kafka` | Apache Kafka message broker |
+| `couchdb` | CouchDB document database |
+| `minio` | S3-compatible object storage |
 
-## Deployment
-- Click "Deploy Automation" in the extension/ in AOC
-- Verify it's running in the extension or AOC
-- Check logs and metrics to confirm healthy operation
+Each service runs on the same stage network as the automation -- a dev automation gets a dev Postgres, a staging automation gets a staging Postgres. They are fully isolated.
 
-## Automation Server and AOC (overview)
+Enable in `automation.toml`:
+```toml
+[services]
+postgres = { enabled = true }
+```
 
-- **Automation Server**: runtime environment where BitSwan automations and microservices are deployed and executed.
-  - Runs on a Linux machine with Docker.
-  - Can host multiple workspaces, providing isolation between projects and teams
-  - Modes:
-    - Standalone – fully functional for development and deployment of automations
-    - Connected to AOC – integrates with the Automation Operation Center (AOC) for advanced monitoring, process specification, and management features
-  - Even when not connected to the AOC, the Automation Server runs 100% autonomously.
+## VPN Access
 
-- **Workspace / Runspace**: logical separation unit designed to isolate automations, users, and resources.
-  - GitOps – manage running automations: deploy, restart, pause, or delete automations; access and monitor logs
-  - BitSwan Editor – customized VS Code server with the BitSwan extension: develop and test automations/microservices using the BitSwan Python library and Jupyter; deploy automations with a single click
-  - User Management – workspaces are the central building block of user access management
+The workspace is accessible through a WireGuard VPN. Internal services (dev automations, editor, gitops) are only reachable via the VPN.
 
-- **Automation Operation Center (AOC)**: centralized visibility and management of BitSwan deployments.
-  - Define and specify processes
-  - Manage and monitor automations
-  - Administer automation servers and workspaces
-  - Control user access and roles
-  - When connected, Automation Servers and their workspaces continuously send information about deployed automations to the AOC.
+**First-time setup:**
+1. Visit the VPN admin page (link provided by your administrator)
+2. Download the WireGuard configuration file
+3. Download and install the CA certificate for HTTPS trust
+4. Import the config into the WireGuard client on your device
 
-Deployment models: Full Cloud, Hybrid, On‑Premise more: https://github.com/bitswan-space 
+**CA Certificate:** Download from the VPN admin page. Install it in your system/browser trust store to avoid HTTPS warnings for internal services. See the VPN admin page for per-platform installation instructions.
 
+## Coding Agent
+
+The BitSwan Coding Agent provides an AI-assisted development environment inside the workspace. It runs as a container on `bitswan_network` with access to your worktrees.
+
+- Open via **Agent Terminal** in the workspace
+- Has SSH access to the workspace repository
+- Can deploy, restart, and inspect automations via the agent API
+
+## Debugging and Testing
+
+- **Notebooks**: run cells interactively in Jupyter for step-by-step debugging
+- **Live Dev**: edit source files and restart the container to see changes
+- **Logs**: click any running automation to stream its logs (stdout in white, stderr in red)
+- **Inspect**: right-click an automation to see container details (env vars, mounts, networks)
+
+## Architecture Overview
+
+```
+Internet (untrusted)
+    |
+[External Traefik] -- ports 80/443, LetsEncrypt
+    |-- staging/production automations (expose=true)
+    |-- expose_to + expose_to_internet automations (with OAuth2)
+    +-- VPN admin page (OAuth-protected)
+
+WireGuard VPN (UDP 51820)
+    |
+[VPN Traefik] -- HTTPS with workspace CA cert
+    |-- editor, gitops (management)
+    |-- all dev/live-dev automations
+    |-- expose_to automations (with OAuth2)
+    +-- VPN admin internal page
+```
