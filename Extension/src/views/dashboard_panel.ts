@@ -820,7 +820,7 @@ export class DashboardPanel {
     }
 
     private async syncWorktree(worktree: string): Promise<void> {
-        const prompt = 'IMPORTANT: git is not installed. Use ONLY bitswan-coding-agent commands. Sync this worktree: 1) bitswan-coding-agent vcs commit -m pre-sync-commit 2) bitswan-coding-agent vcs rebase-and-merge 3) If conflicts, resolve and run bitswan-coding-agent vcs rebase-continue. Tell me when done.';
+        const prompt = 'IMPORTANT: git is not installed. Use ONLY bitswan-coding-agent commands. Sync this worktree: 1) bitswan-coding-agent vcs commit -m pre-sync-commit 2) bitswan-coding-agent vcs sync. Tell me when done.';
         const autoCmd = [
             `cd /workspace/worktrees/${worktree}`,
             'mkdir -p ~/.claude',
