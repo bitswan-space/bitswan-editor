@@ -267,6 +267,9 @@ export class DashboardPanel {
             case 'mergeWorktree':
                 await this.mergeWorktree(msg.worktree);
                 break;
+            case 'deleteWorktree':
+                await this.deleteWorktree(msg.worktree);
+                break;
             case 'deployToDev': {
                 if (msg.name) {
                     // Always deploy from the main workspace path (not worktree)
@@ -832,11 +835,11 @@ export class DashboardPanel {
 
     private async mergeWorktree(worktree: string): Promise<void> {
         const confirm = await vscode.window.showWarningMessage(
-            `Merge worktree "${worktree}" into main and delete the worktree?`,
+            `Merge worktree "${worktree}" into main?`,
             { modal: true },
-            'Merge & Delete',
+            'Merge',
         );
-        if (confirm !== 'Merge & Delete') { return; }
+        if (confirm !== 'Merge') { return; }
 
         const prompt = 'IMPORTANT: git is not installed. Use ONLY bitswan-coding-agent commands. Merge this worktree into main: 1) bitswan-coding-agent vcs commit -m pre-merge-commit 2) bitswan-coding-agent vcs rebase-and-merge 3) If conflicts, resolve and run bitswan-coding-agent vcs rebase-continue. Tell me when merge is complete.';
         const autoCmd = [
@@ -848,7 +851,13 @@ export class DashboardPanel {
         await this.openSSHTerminal(`Merge: ${worktree}`, worktree, autoCmd);
     }
 
-
+    private async deleteWorktree(worktree: string): Promise<void> {
+        if (!worktree) { return; }
+        // The registered bitswan.deleteWorktree command uses only item.name, handles
+        // its own confirmation dialog, stops live-dev deployments, and deletes via API.
+        await vscode.commands.executeCommand('bitswan.deleteWorktree', { name: worktree });
+        await this.loadBusinessProcesses();
+    }
 
     private sendActiveSessions(): void {
         this.postMessage({ type: 'activeSessions', sessions: activeSessions });
@@ -1065,7 +1074,7 @@ export class DashboardPanel {
             });
             tabBar.appendChild(addWtTab);
 
-            // Sync and Merge & Delete buttons (right-aligned) — not applicable to master
+            // Sync / Merge / Delete buttons (right-aligned) — not applicable to master
             var activeWs = structure[currentWsIdx];
             if (structure.length > 0 && activeWs && !activeWs.isMaster) {
                 var spacer = document.createElement('div');
@@ -1074,9 +1083,9 @@ export class DashboardPanel {
 
                 var syncBtn = document.createElement('div');
                 syncBtn.className = 'tab';
-                syncBtn.textContent = isSynced ? '\u{2705} Synced' : '\u{1F504} Sync';
-                syncBtn.title = isSynced ? 'Worktree is synced with main' : 'Rebase worktree onto main and fast-forward main';
-                syncBtn.style.cssText = 'font-size:11px; padding:6px 10px;' + (isSynced ? ' color:var(--status-pass);' : '');
+                syncBtn.textContent = '\u{2B07} Pull from main';
+                syncBtn.title = 'Rebase this worktree onto main to pull in the latest changes from main. Main itself is not modified.';
+                syncBtn.style.cssText = 'font-size:11px; padding:6px 10px;';
                 syncBtn.addEventListener('click', function() {
                     var wt = getActiveWorktree();
                     if (wt) { vscodeApi.postMessage({ type: 'syncWorktree', worktree: wt }); }
@@ -1085,14 +1094,27 @@ export class DashboardPanel {
 
                 var mergeBtn = document.createElement('div');
                 mergeBtn.className = 'tab';
-                mergeBtn.textContent = '\u{1F500} Merge & Delete';
-                mergeBtn.title = 'Merge into main and delete worktree';
-                mergeBtn.style.cssText = 'font-size:11px; padding:6px 10px;';
+                mergeBtn.textContent = isSynced ? '\u{2705} Merged' : '\u{2B06} Merge into main';
+                mergeBtn.title = isSynced
+                    ? 'This worktree is already merged into main (nothing to do).'
+                    : 'Rebase this worktree onto main, then fast-forward main to include this worktree’s commits. Required before deploying.';
+                mergeBtn.style.cssText = 'font-size:11px; padding:6px 10px;' + (isSynced ? ' color:var(--status-pass);' : '');
                 mergeBtn.addEventListener('click', function() {
                     var wt = getActiveWorktree();
                     if (wt) { vscodeApi.postMessage({ type: 'mergeWorktree', worktree: wt }); }
                 });
                 tabBar.appendChild(mergeBtn);
+
+                var deleteBtn = document.createElement('div');
+                deleteBtn.className = 'tab';
+                deleteBtn.textContent = '\u{1F5D1} Delete';
+                deleteBtn.title = 'Delete worktree';
+                deleteBtn.style.cssText = 'font-size:11px; padding:6px 10px;';
+                deleteBtn.addEventListener('click', function() {
+                    var wt = getActiveWorktree();
+                    if (wt) { vscodeApi.postMessage({ type: 'deleteWorktree', worktree: wt }); }
+                });
+                tabBar.appendChild(deleteBtn);
             }
         }
 
@@ -1238,14 +1260,14 @@ export class DashboardPanel {
                             actions.appendChild(startBtn);
                         }
 
-                        // Deploy to Dev button — only works when synced
+                        // Deploy to Dev button — only works when the worktree has been merged into main
                         var deployBtn = mkEl('button', 'btn', '');
                         if (bpData.worktree && !isSynced) {
-                            deployBtn.innerHTML = '<span class="codicon codicon-cloud-upload"></span> Deploy<br><small>sync first</small>';
-                            deployBtn.title = 'Worktree must be synced with main before deploying';
+                            deployBtn.innerHTML = '<span class="codicon codicon-cloud-upload"></span> Deploy<br><small>merge first</small>';
+                            deployBtn.title = 'Worktree must be merged into main before deploying';
                             deployBtn.style.opacity = '0.5';
                             deployBtn.addEventListener('click', function() {
-                                vscodeApi.postMessage({ type: 'syncWorktree', worktree: bpData.worktree });
+                                vscodeApi.postMessage({ type: 'mergeWorktree', worktree: bpData.worktree });
                             });
                         } else {
                             deployBtn.innerHTML = '<span class="codicon codicon-cloud-upload"></span> Deploy';
@@ -1554,6 +1576,11 @@ export class DashboardPanel {
             switch (msg.type) {
                 case 'structure':
                     structure = msg.workspaces || [];
+                    if (currentWsIdx >= structure.length) {
+                        currentWsIdx = 0;
+                        currentBpKey = '';
+                        bpData = null;
+                    }
                     renderTabs();
                     renderSubtabs();
                     renderContent();
