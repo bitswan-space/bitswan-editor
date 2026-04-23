@@ -341,7 +341,7 @@ export class DashboardPanel {
 
     // ---- Discovery ----
 
-    private _findBPsUnder(root: string, maxDepth: number): string[] {
+    private _findBPsUnder(root: string, maxDepth: number, skipDirs: string[] = []): string[] {
         const results: string[] = [];
         const walk = (dir: string, depth: number) => {
             if (depth > maxDepth) { return; }
@@ -349,6 +349,7 @@ export class DashboardPanel {
             try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
             for (const entry of entries) {
                 if (!entry.isDirectory() || entry.name.startsWith('.')) { continue; }
+                if (skipDirs.includes(entry.name)) { continue; }
                 const fullPath = path.join(dir, entry.name);
                 if (fs.existsSync(path.join(fullPath, 'process.toml'))) {
                     results.push(fullPath);
@@ -362,9 +363,22 @@ export class DashboardPanel {
 
     private async loadBusinessProcesses(): Promise<void> {
         this.bpMap.clear();
-        const workspaces: { name: string; bps: { key: string; label: string }[] }[] = [];
+        const workspaces: { name: string; bps: { key: string; label: string }[]; isMaster?: boolean }[] = [];
 
-        // Only show worktrees — no Main tab
+        // Master (default branch) — BPs directly under WORKSPACE_DIR, skipping the worktrees folder
+        if (fs.existsSync(WORKSPACE_DIR)) {
+            const bps = this._findBPsUnder(WORKSPACE_DIR, 4, ['worktrees']);
+            const bpEntries: { key: string; label: string }[] = [];
+            for (const dirPath of bps) {
+                const rel = path.relative(WORKSPACE_DIR, dirPath);
+                const key = `workspace:${rel}`;
+                bpEntries.push({ key, label: rel });
+                this.bpMap.set(key, dirPath);
+            }
+            workspaces.push({ name: 'master', bps: bpEntries, isMaster: true });
+        }
+
+        // Worktrees
         if (fs.existsSync(WORKTREES_DIR)) {
             let wtEntries: fs.Dirent[];
             try { wtEntries = fs.readdirSync(WORKTREES_DIR, { withFileTypes: true }); } catch { wtEntries = []; }
@@ -428,16 +442,16 @@ export class DashboardPanel {
             const autoName = path.basename(autoDir);
             const relFromWorkspace = path.relative(WORKSPACE_DIR, autoDir);
             // Find matching automation from global state
-            // In worktree mode, only match live-dev deployments for this worktree
+            // Worktree mode: only live-dev deployments. Master: anything except live-dev (those belong to worktrees).
             const match = allAutomations?.find(a => {
                 const aPath = a.relative_path || a.relativePath || '';
                 const pathMatch = aPath === relFromWorkspace || aPath.endsWith('/' + relFromWorkspace);
                 if (!pathMatch) { return false; }
+                const aStage = a.stage || '';
                 if (worktree) {
-                    const aStage = a.stage || '';
                     return aStage === 'live-dev';
                 }
-                return true;
+                return aStage !== 'live-dev';
             });
             let state = 'not deployed';
             if (match) {
@@ -767,7 +781,9 @@ export class DashboardPanel {
         });
         if (!name) { return; }
 
-        const bpDir = path.join(WORKTREES_DIR, worktree, name);
+        const bpDir = worktree
+            ? path.join(WORKTREES_DIR, worktree, name)
+            : path.join(WORKSPACE_DIR, name);
         fs.mkdirSync(bpDir, { recursive: true });
 
         // Create process.toml
@@ -785,14 +801,15 @@ export class DashboardPanel {
             'utf-8',
         );
 
-        vscode.window.showInformationMessage(`Business process "${name}" created in worktree "${worktree}".`);
+        const location = worktree ? `worktree "${worktree}"` : 'master';
+        vscode.window.showInformationMessage(`Business process "${name}" created in ${location}.`);
         await this.loadBusinessProcesses();
     }
 
     private async createAutomation(worktree: string, bpPath: string): Promise<void> {
         // Pass relative path from workspace root so the templates gallery
-        // places the new automation in the correct worktree BP directory
-        const relPath = `worktrees/${worktree}/${bpPath}`;
+        // places the new automation in the correct BP directory
+        const relPath = worktree ? `worktrees/${worktree}/${bpPath}` : bpPath;
         const bpDir = path.join(WORKSPACE_DIR, relPath);
         if (!fs.existsSync(bpDir)) {
             vscode.window.showErrorMessage(`Business process directory not found: ${bpDir}`);
@@ -1048,8 +1065,9 @@ export class DashboardPanel {
             });
             tabBar.appendChild(addWtTab);
 
-            // Sync and Merge & Delete buttons (right-aligned)
-            if (structure.length > 0) {
+            // Sync and Merge & Delete buttons (right-aligned) — not applicable to master
+            var activeWs = structure[currentWsIdx];
+            if (structure.length > 0 && activeWs && !activeWs.isMaster) {
                 var spacer = document.createElement('div');
                 spacer.style.flex = '1';
                 tabBar.appendChild(spacer);
@@ -1080,7 +1098,8 @@ export class DashboardPanel {
 
         function getActiveWorktree() {
             var ws = structure[currentWsIdx];
-            return ws ? ws.name : '';
+            if (!ws || ws.isMaster) { return ''; }
+            return ws.name;
         }
 
         function renderSubtabs() {
@@ -1124,7 +1143,7 @@ export class DashboardPanel {
             content.innerHTML = '';
             setMode('navigate');
             if (!currentBpKey) {
-                content.innerHTML = '<div class="placeholder">Select a business process tab above.</div>';
+                content.innerHTML = '<div class="placeholder">Create or select worktree or a business process above.</div>';
                 return;
             }
             if (!bpData) {
@@ -1132,8 +1151,8 @@ export class DashboardPanel {
                 return;
             }
 
-            // Action cards (Coding Agent + Terminal) — only for worktrees
-            {
+            // Action cards (Coding Agent + Terminal) — only for worktrees, not master
+            if (bpData.worktree) {
                 var actionsSection = mkEl('div', 'section');
                 actionsSection.appendChild(mkEl('div', 'section-title', 'Actions'));
                 var actionsRow = mkEl('div', 'action-cards');
@@ -1167,6 +1186,11 @@ export class DashboardPanel {
             {
                 var autoSection = mkEl('div', 'section');
                 autoSection.appendChild(mkEl('div', 'section-title', 'Automations'));
+                if (!bpData.worktree) {
+                    var hint = mkEl('div', 'placeholder', 'Create a worktree (+ tab above) to start developing with live dev.');
+                    hint.style.cssText = 'text-align:left; padding:4px 0 12px; font-size:12px;';
+                    autoSection.appendChild(hint);
+                }
                 var autoCards = mkEl('div', 'auto-cards');
 
                 if (bpData.automations) {
@@ -1248,7 +1272,7 @@ export class DashboardPanel {
                 }
 
                 // "+ New Automation" card
-                if (bpData.worktree) {
+                {
                     var newAutoCard = mkEl('div', 'auto-card');
                     newAutoCard.style.cssText = 'border-style:dashed; text-align:center; display:flex; align-items:center; justify-content:center; min-height:80px;';
                     newAutoCard.innerHTML = '<div><div style="font-size:20px; margin-bottom:4px;">+</div><div class="auto-card-name">New Automation</div></div>';
@@ -1290,21 +1314,23 @@ export class DashboardPanel {
                 }
             }
 
-            // Requirements
-            var reqSection = mkEl('div', 'section');
-            reqSection.appendChild(mkEl('div', 'section-title', 'Requirements'));
-            if (bpData.requirements.length === 0) {
-                reqSection.appendChild(mkEl('div', 'placeholder', 'No requirements yet. Press N to add one.'));
-            } else {
-                var tree = buildTree(bpData.requirements);
-                var list = mkEl('div', '');
-                renderTree(tree, list);
-                reqSection.appendChild(list);
+            // Requirements — only for worktrees, not master
+            if (bpData.worktree) {
+                var reqSection = mkEl('div', 'section');
+                reqSection.appendChild(mkEl('div', 'section-title', 'Requirements'));
+                if (bpData.requirements.length === 0) {
+                    reqSection.appendChild(mkEl('div', 'placeholder', 'No requirements yet. Press N to add one.'));
+                } else {
+                    var tree = buildTree(bpData.requirements);
+                    var list = mkEl('div', '');
+                    renderTree(tree, list);
+                    reqSection.appendChild(list);
+                }
+                var addRoot = mkEl('button', 'add-root-btn', '+ Add Requirement');
+                addRoot.addEventListener('click', function() { showAddInput('', addRoot); });
+                reqSection.appendChild(addRoot);
+                content.appendChild(reqSection);
             }
-            var addRoot = mkEl('button', 'add-root-btn', '+ Add Requirement');
-            addRoot.addEventListener('click', function() { showAddInput('', addRoot); });
-            reqSection.appendChild(addRoot);
-            content.appendChild(reqSection);
 
 
             // Agent Sessions
