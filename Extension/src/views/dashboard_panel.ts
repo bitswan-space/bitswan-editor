@@ -7,8 +7,11 @@ import axios from 'axios';
 import { getUserEmail } from '../services/user_info';
 import { getDeployDetails } from '../deploy_details';
 import { startLiveDevServerCommand } from '../commands/deployments';
+import urlJoin from 'proper-url-join';
 import { AutomationItem } from './automations_view';
 import { AutomationSourceItem } from './unified_business_processes_view';
+import { sanitizeName } from '../utils/nameUtils';
+import { deleteAutomation as deleteAutomationApi } from '../lib';
 
 const REQUIREMENTS_FILENAME = 'testable-requirements.toml';
 const WORKSPACE_DIR = '/workspace/workspace';
@@ -22,13 +25,19 @@ interface Requirement {
     parent: string;
 }
 
+interface StageInfo {
+    stage: string;       // 'live-dev' | 'dev' | 'staging' | 'production'
+    state: string;       // 'running' | 'stopped' | 'not deployed' | ...
+    deploymentId: string;
+    url: string;
+    checksum: string;
+}
+
 interface AutomationInfo {
     name: string;
-    deploymentId: string;
-    state: string;
-    url: string;
     relativePath: string;
     icon: string;
+    stages: StageInfo[];
 }
 
 function inferAutomationIcon(autoDir: string): string {
@@ -207,45 +216,40 @@ export class DashboardPanel {
                 break;
             }
             case 'showLogs':
-                if (msg.deploymentId) {
-                    const automations = this.context.globalState.get<any[]>('automations', []);
-                    const auto = automations?.find(a =>
-                        (a.deployment_id || a.deploymentId) === msg.deploymentId
-                    );
-                    if (auto) {
-                        const item = new AutomationItem(
-                            auto.name || auto.deployment_id,
-                            auto.state,
-                            auto.status,
-                            auto.deployment_id || auto.deploymentId,
-                            auto.active,
-                            auto.automation_url || auto.automationUrl,
-                            auto.relative_path || auto.relativePath,
-                        );
-                        vscode.commands.executeCommand('bitswan.showAutomationLogs', item);
-                    }
-                }
-                break;
             case 'restartAutomation':
-                if (msg.deploymentId) {
-                    const automations2 = this.context.globalState.get<any[]>('automations', []);
-                    const auto2 = automations2?.find(a =>
-                        (a.deployment_id || a.deploymentId) === msg.deploymentId
-                    );
-                    if (auto2) {
-                        const item2 = new AutomationItem(
-                            auto2.name || auto2.deployment_id,
-                            auto2.state,
-                            auto2.status,
-                            auto2.deployment_id || auto2.deploymentId,
-                            auto2.active,
-                            auto2.automation_url || auto2.automationUrl,
-                            auto2.relative_path || auto2.relativePath,
-                        );
-                        vscode.commands.executeCommand('bitswan.restartAutomation', item2);
-                    }
-                }
+            case 'startAutomation':
+            case 'stopAutomation': {
+                if (!msg.deploymentId) { break; }
+                const item = this._findAutomationItem(msg.deploymentId);
+                if (!item) { break; }
+                const cmd = {
+                    showLogs: 'bitswan.showAutomationLogs',
+                    restartAutomation: 'bitswan.restartAutomation',
+                    startAutomation: 'bitswan.startAutomation',
+                    stopAutomation: 'bitswan.stopAutomation',
+                }[msg.type as 'showLogs' | 'restartAutomation' | 'startAutomation' | 'stopAutomation'];
+                vscode.commands.executeCommand(cmd, item);
                 break;
+            }
+            case 'removeAutomation':
+                await this.removeAutomation(msg.deploymentId);
+                break;
+            case 'promoteStage': {
+                if (!msg.fromStage || !msg.deploymentId || !msg.checksum || !msg.automationSourceName) { break; }
+                if (msg.fromStage !== 'dev' && msg.fromStage !== 'staging') { break; }
+                // Duck-typed StageItem: the promote command checks `stage in item && deploymentId in item`
+                // and the handler reads .stage, .deploymentId, .checksum, .automation (truthy), .automationSourceName.
+                const duckItem = {
+                    stage: msg.fromStage,
+                    deploymentId: msg.deploymentId,
+                    checksum: msg.checksum,
+                    automation: {},
+                    automationSourceName: msg.automationSourceName,
+                };
+                const target = msg.fromStage === 'dev' ? 'bitswan.promoteToStaging' : 'bitswan.promoteToProduction';
+                vscode.commands.executeCommand(target, duckItem);
+                break;
+            }
             case 'openCodingAgent':
                 await this.openCodingAgentTerminal(msg.worktree, msg.bpPath);
                 break;
@@ -435,44 +439,58 @@ export class DashboardPanel {
             bpPath = key.substring('workspace:'.length);
         }
 
-        // Automations — match by relative_path
+        // Automations — match by relative_path + stage
         const allAutomations = this.context.globalState.get<any[]>('automations', []);
         const automations: AutomationInfo[] = [];
+
+        // Worktree view shows only live-dev; master shows dev / staging / production.
+        const stageList = worktree ? ['live-dev'] : ['dev', 'staging', 'production'];
 
         // Find automation dirs under this BP
         const automationDirs = this._findAutomationDirsUnder(dirPath);
         for (const autoDir of automationDirs) {
             const autoName = path.basename(autoDir);
+            const sanitizedAutoName = sanitizeName(autoName);
             const relFromWorkspace = path.relative(WORKSPACE_DIR, autoDir);
-            // Find matching automation from global state
-            // Worktree mode: only live-dev deployments. Master: anything except live-dev (those belong to worktrees).
-            const match = allAutomations?.find(a => {
-                const aPath = a.relative_path || a.relativePath || '';
-                const pathMatch = aPath === relFromWorkspace || aPath.endsWith('/' + relFromWorkspace);
-                if (!pathMatch) { return false; }
-                const aStage = a.stage || '';
-                if (worktree) {
-                    return aStage === 'live-dev';
+
+            const stages: StageInfo[] = stageList.map(stage => {
+                const match = allAutomations?.find(a => {
+                    const relPath = a.relative_path || a.relativePath || '';
+                    const aStage = a.stage || '';
+                    const normalizedStage = aStage === '' ? 'production' : aStage;
+                    if (normalizedStage !== stage) { return false; }
+                    if (worktree) {
+                        // Worktree (live-dev): match by exact relative_path
+                        return relPath === relFromWorkspace;
+                    }
+                    // Master: match by automation_name, excluding worktree-scoped entries
+                    const aName = a.automation_name || a.automationName || '';
+                    return aName === sanitizedAutoName && !relPath.startsWith('worktrees/');
+                });
+                let state = 'not deployed';
+                if (match) {
+                    const dockerState = match.state || '';
+                    if (dockerState === 'running') { state = 'running'; }
+                    else if (dockerState === 'exited' || dockerState === 'dead') { state = 'stopped'; }
+                    else if (dockerState === 'restarting') { state = 'restarting'; }
+                    else if (dockerState === 'created' || dockerState === 'paused') { state = dockerState; }
+                    else if (dockerState) { state = dockerState; }
+                    else { state = 'starting'; }
                 }
-                return aStage !== 'live-dev';
+                return {
+                    stage,
+                    state,
+                    deploymentId: match ? (match.deployment_id || match.deploymentId || '') : '',
+                    url: match ? (match.automation_url || match.automationUrl || '') : '',
+                    checksum: match ? (match.version_hash || match.versionHash || match.checksum || '') : '',
+                };
             });
-            let state = 'not deployed';
-            if (match) {
-                const dockerState = match.state || '';
-                if (dockerState === 'running') { state = 'running'; }
-                else if (dockerState === 'exited' || dockerState === 'dead') { state = 'stopped'; }
-                else if (dockerState === 'restarting') { state = 'restarting'; }
-                else if (dockerState === 'created' || dockerState === 'paused') { state = dockerState; }
-                else if (dockerState) { state = dockerState; }
-                else { state = 'starting'; }
-            }
+
             automations.push({
                 name: autoName,
-                deploymentId: match ? (match.deployment_id || match.deploymentId || '') : '',
-                state,
-                url: match ? (match.automation_url || match.automationUrl || '') : '',
                 relativePath: relFromWorkspace,
                 icon: inferAutomationIcon(autoDir),
+                stages,
             });
         }
 
@@ -523,6 +541,21 @@ export class DashboardPanel {
         } catch { /* */ }
         sessions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         return sessions.slice(0, 20);
+    }
+
+    private _findAutomationItem(deploymentId: string): AutomationItem | null {
+        const all = this.context.globalState.get<any[]>('automations', []);
+        const a = all?.find(x => (x.deployment_id || x.deploymentId) === deploymentId);
+        if (!a) { return null; }
+        return new AutomationItem(
+            a.name || a.deployment_id,
+            a.state,
+            a.status,
+            a.deployment_id || a.deploymentId,
+            a.active,
+            a.automation_url || a.automationUrl,
+            a.relative_path || a.relativePath,
+        );
     }
 
     private _findAutomationDirsUnder(bpDir: string): string[] {
@@ -607,6 +640,11 @@ export class DashboardPanel {
 
     /** Called by SSE client when worktree sync status changes. */
     public onWorktreeChanged(): void {
+        this._reloadCurrentKey();
+    }
+
+    /** Called by SSE client when the automations list changes (deploy/promote/stop/remove/SSE sync). */
+    public onAutomationsChanged(): void {
         this._reloadCurrentKey();
     }
 
@@ -805,8 +843,29 @@ export class DashboardPanel {
         );
 
         const location = worktree ? `worktree "${worktree}"` : 'master';
+        await this._commitChanges(worktree, `Create business process "${name}"`);
         vscode.window.showInformationMessage(`Business process "${name}" created in ${location}.`);
         await this.loadBusinessProcesses();
+    }
+
+    /**
+     * Commit current changes in the master workspace or a worktree via the
+     * gitops API. Best-effort: failures are surfaced as warnings but don't
+     * block the calling create flow.
+     */
+    private async _commitChanges(worktree: string, message: string): Promise<void> {
+        try {
+            const details = await getDeployDetails(this.context);
+            if (!details) { return; }
+            await axios.post(
+                urlJoin(details.deployUrl, 'worktrees', 'commit').toString(),
+                { worktree: worktree || null, message },
+                { headers: { Authorization: `Bearer ${details.deploySecret}` } },
+            );
+        } catch (err: any) {
+            const detail = err?.response?.data?.detail || err?.message || String(err);
+            vscode.window.showWarningMessage(`Auto-commit failed: ${detail}`);
+        }
     }
 
     private async createAutomation(worktree: string, bpPath: string): Promise<void> {
@@ -823,7 +882,7 @@ export class DashboardPanel {
     }
 
     private async syncWorktree(worktree: string): Promise<void> {
-        const prompt = 'IMPORTANT: git is not installed. Use ONLY bitswan-coding-agent commands. Sync this worktree: 1) bitswan-coding-agent vcs commit -m pre-sync-commit 2) bitswan-coding-agent vcs sync. Tell me when done.';
+        const prompt = 'IMPORTANT: git is not installed. Use ONLY bitswan-coding-agent commands. Sync this worktree with main: 1) bitswan-coding-agent vcs commit -m pre-sync-commit 2) bitswan-coding-agent vcs sync 3) If conflicts, resolve and run bitswan-coding-agent vcs sync-continue. Tell me when sync is complete.';
         const autoCmd = [
             `cd /workspace/worktrees/${worktree}`,
             'mkdir -p ~/.claude',
@@ -849,6 +908,25 @@ export class DashboardPanel {
             `exec claude --dangerously-skip-permissions "${prompt}"`,
         ].join(' && ');
         await this.openSSHTerminal(`Merge: ${worktree}`, worktree, autoCmd);
+    }
+
+    private async removeAutomation(deploymentId: string): Promise<void> {
+        if (!deploymentId) { return; }
+        const confirm = await vscode.window.showWarningMessage(
+            `Remove automation "${deploymentId}"? This deletes the deployment.`,
+            { modal: true },
+            'Remove',
+        );
+        if (confirm !== 'Remove') { return; }
+        const details = await getDeployDetails(this.context);
+        if (!details) { return; }
+        try {
+            const url = urlJoin(details.deployUrl, 'automations', deploymentId).toString();
+            await deleteAutomationApi(url, details.deploySecret);
+            // SSE 'automations' event will push the updated list and trigger onAutomationsChanged().
+        } catch (err: any) {
+            vscode.window.showErrorMessage(`Failed to remove automation: ${err?.response?.data?.detail || err?.message || err}`);
+        }
     }
 
     private async deleteWorktree(worktree: string): Promise<void> {
@@ -881,11 +959,14 @@ export class DashboardPanel {
         .codicon-output::before { content: "\\eb9d"; }
         .codicon-debug-restart::before { content: "\\ead2"; }
         .codicon-debug-start::before { content: "\\ead3"; }
+        .codicon-debug-stop::before { content: "\\ead7"; }
         .codicon-link-external::before { content: "\\eb14"; }
         .codicon-folder-opened::before { content: "\\eaf7"; }
         .codicon-edit::before { content: "\\ea73"; }
         .codicon-cloud-upload::before { content: "\\eac3"; }
         .codicon-graph::before { content: "\\eb03"; }
+        .codicon-trash::before { content: "\\ea81"; }
+        .codicon-arrow-right::before { content: "\\ea9c"; }
         :root { color-scheme: light dark; font-family: var(--vscode-font-family, sans-serif);
             --status-pass: #3fb950; --status-fail: #f85149; --status-pending: #d29922; --status-retest: #a371f7; --status-proposed: #768390; --border: var(--vscode-editorWidget-border, rgba(128,128,128,0.3)); }
         * { box-sizing: border-box; }
@@ -893,7 +974,10 @@ export class DashboardPanel {
         .header { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--border); flex-shrink:0; }
         .header h2 { margin:0; font-size:16px; }
         .tab-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--vscode-descriptionForeground); padding:6px 8px 6px 0; white-space:nowrap; }
-        .tab-bar { display:flex; border-bottom:2px solid var(--border); flex-shrink:0; padding:0 8px; }
+        .tab-bar { display:flex; align-items:center; border-bottom:2px solid var(--border); flex-shrink:0; padding:0 8px; }
+        .sync-indicator { width:8px; height:8px; border-radius:50%; margin:0 6px 0 4px; flex-shrink:0; cursor:help; }
+        .sync-indicator.synced { background:var(--status-pass); }
+        .sync-indicator.unsynced { background:var(--status-proposed); }
         .tab { padding:8px 16px; cursor:pointer; font-size:12px; font-weight:500; border-bottom:2px solid transparent; margin-bottom:-2px; color:var(--vscode-descriptionForeground); }
         .tab:hover { color:var(--vscode-foreground); }
         .tab.active { color:var(--vscode-foreground); border-bottom-color:var(--vscode-focusBorder, #007acc); }
@@ -917,18 +1001,23 @@ export class DashboardPanel {
         .action-card .card-desc { font-size:11px; color:var(--vscode-descriptionForeground); margin-top:2px; }
 
         /* Automation cards */
-        .auto-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px; }
+        .auto-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); gap:12px; }
         .auto-card { display:flex; flex-direction:column; border:1px solid var(--border); border-radius:10px; transition: border-color 0.15s, box-shadow 0.15s; overflow:hidden; }
         .auto-card:hover { border-color:var(--vscode-focusBorder, #007acc); box-shadow:0 2px 8px rgba(0,0,0,0.1); }
-        .auto-card-top { padding:16px; position:relative; }
-        .auto-card-top.clickable { cursor:pointer; }
-        .auto-card-top.clickable:hover { background:var(--vscode-list-hoverBackground, rgba(128,128,128,0.08)); }
-        .auto-card-link-icon { position:absolute; top:12px; right:12px; font-size:12px; color:var(--vscode-descriptionForeground); }
-        .auto-card-icon { font-size:28px; margin-bottom:10px; text-align:center; }
-        .auto-card-name { font-weight:600; font-size:14px; margin-bottom:4px; }
-        .auto-card-state { display:inline-block; font-size:10px; padding:2px 8px; border-radius:10px; text-transform:uppercase; font-weight:600; letter-spacing:0.3px; margin-bottom:8px; }
-        .auto-card-state.running { background:var(--status-pass); color:#fff; }
-        .auto-card-state.exited, .auto-card-state.dead { background:var(--status-fail); color:#fff; }
+        .auto-card-header { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border); }
+        .auto-card-icon { font-size:22px; line-height:1; }
+        .auto-card-name { font-weight:600; font-size:14px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .stage-row { display:flex; flex-direction:column; border-top:1px solid var(--border); }
+        .stage-row:first-of-type { border-top:none; }
+        .stage-status { display:flex; align-items:center; gap:8px; padding:8px 16px; flex-wrap:wrap; }
+        .stage-name { font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; min-width:72px; color:var(--vscode-descriptionForeground); }
+        .stage-hint { padding:4px 16px 8px; font-size:11px; font-style:italic; color:var(--vscode-descriptionForeground); }
+        .auto-card-actions .btn:disabled { opacity:0.5; cursor:not-allowed; }
+        .auto-card-actions .btn:disabled:hover { background:transparent; opacity:0.5; }
+        .auto-card-state { display:inline-block; font-size:10px; padding:2px 8px; border-radius:10px; text-transform:uppercase; font-weight:600; letter-spacing:0.3px; }
+        .auto-card-state.running, .auto-card-state.starting, .auto-card-state.created { background:var(--status-pass); color:#fff; }
+        .auto-card-state.stopped, .auto-card-state.exited, .auto-card-state.dead { background:var(--status-fail); color:#fff; }
+        .auto-card-state.restarting, .auto-card-state.paused { background:var(--status-retest); color:#fff; }
         .auto-card-state.not-deployed { background:var(--status-proposed); color:#fff; }
         .auto-card-actions { display:flex; border-top:1px solid var(--border); }
         .auto-card-actions .btn { flex:1; border:none; border-radius:0; border-right:1px solid var(--border); padding:8px 4px; font-size:11px; text-align:center; background:transparent; color:var(--vscode-foreground); cursor:pointer; white-space:nowrap; }
@@ -1081,6 +1170,15 @@ export class DashboardPanel {
                 spacer.style.flex = '1';
                 tabBar.appendChild(spacer);
 
+                // Sync indicator (read-only): green dot when this worktree's
+                // commits are present in main AND the worktree is clean.
+                var syncIndicator = document.createElement('div');
+                syncIndicator.className = 'sync-indicator' + (isSynced ? ' synced' : ' unsynced');
+                syncIndicator.title = isSynced
+                    ? 'Changes from this worktree are applied in main.'
+                    : 'Changes from this worktree are NOT applied in main.';
+                tabBar.appendChild(syncIndicator);
+
                 var syncBtn = document.createElement('div');
                 syncBtn.className = 'tab';
                 syncBtn.textContent = '\u{2B07} Pull from main';
@@ -1094,11 +1192,9 @@ export class DashboardPanel {
 
                 var mergeBtn = document.createElement('div');
                 mergeBtn.className = 'tab';
-                mergeBtn.textContent = isSynced ? '\u{2705} Merged' : '\u{2B06} Merge into main';
-                mergeBtn.title = isSynced
-                    ? 'This worktree is already merged into main (nothing to do).'
-                    : 'Rebase this worktree onto main, then fast-forward main to include this worktree’s commits. Required before deploying.';
-                mergeBtn.style.cssText = 'font-size:11px; padding:6px 10px;' + (isSynced ? ' color:var(--status-pass);' : '');
+                mergeBtn.textContent = '\u{2B06} Merge into main';
+                mergeBtn.title = 'Rebase this worktree onto main, then fast-forward main to include this worktree’s commits. Required before deploying.';
+                mergeBtn.style.cssText = 'font-size:11px; padding:6px 10px;';
                 mergeBtn.addEventListener('click', function() {
                     var wt = getActiveWorktree();
                     if (wt) { vscodeApi.postMessage({ type: 'mergeWorktree', worktree: wt }); }
@@ -1209,85 +1305,150 @@ export class DashboardPanel {
                 var autoSection = mkEl('div', 'section');
                 autoSection.appendChild(mkEl('div', 'section-title', 'Automations'));
                 if (!bpData.worktree) {
-                    var hint = mkEl('div', 'placeholder', 'Create a worktree (+ tab above) to start developing with live dev.');
+                    var hint = mkEl('div', 'placeholder', 'Create a worktree (+ tab above) to start developing with live dev. Merge your worktree to main to deploy.');
                     hint.style.cssText = 'text-align:left; padding:4px 0 12px; font-size:12px;';
                     autoSection.appendChild(hint);
                 }
                 var autoCards = mkEl('div', 'auto-cards');
 
+                function mkActionBtn(icon, label, onClick) {
+                    var btn = mkEl('button', 'btn', '');
+                    btn.innerHTML = '<span class="codicon ' + icon + '"></span> ' + label;
+                    btn.addEventListener('click', onClick);
+                    return btn;
+                }
+
                 if (bpData.automations) {
                     bpData.automations.forEach(function(auto) {
                         var card = mkEl('div', 'auto-card');
 
-                        // Top section (clickable if URL exists)
-                        var top = mkEl('div', 'auto-card-top' + (auto.url ? ' clickable' : ''));
-                        if (auto.url) {
-                            top.addEventListener('click', function() {
-                                vscodeApi.postMessage({ type: 'openUrl', url: auto.url });
+                        // Header: icon + name (+ Promotion Manager on master)
+                        var header = mkEl('div', 'auto-card-header');
+                        header.appendChild(mkEl('span', 'auto-card-icon', auto.icon || '\\u{1F4E6}'));
+                        header.appendChild(mkEl('div', 'auto-card-name', auto.name));
+                        if (!bpData.worktree) {
+                            var pmBtn = mkEl('button', 'btn btn-sm', '');
+                            pmBtn.innerHTML = '<span class="codicon codicon-graph"></span> Promotion Manager';
+                            pmBtn.title = 'Open Promotion Manager';
+                            pmBtn.addEventListener('click', function() {
+                                vscodeApi.postMessage({ type: 'openPromotionManager', name: auto.name, relativePath: auto.relativePath });
                             });
-                            var linkIcon = mkEl('span', 'auto-card-link-icon');
-                            linkIcon.innerHTML = '<span class="codicon codicon-link-external"></span>';
-                            top.appendChild(linkIcon);
+                            header.appendChild(pmBtn);
                         }
-                        top.appendChild(mkEl('div', 'auto-card-icon', auto.icon || '\\u{1F4E6}'));
-                        top.appendChild(mkEl('div', 'auto-card-name', auto.name));
-                        var stateClass = (auto.state || 'not-deployed').replace(/\\s+/g, '-').toLowerCase();
-                        top.appendChild(mkEl('span', 'auto-card-state ' + stateClass, auto.state || 'not deployed'));
-                        card.appendChild(top);
+                        card.appendChild(header);
 
-                        // Action buttons at bottom
-                        var actions = mkEl('div', 'auto-card-actions');
-                        if (auto.deploymentId) {
-                            var logsBtn = mkEl('button', 'btn', '');
-                            logsBtn.innerHTML = '<span class="codicon codicon-output"></span> Logs';
-                            logsBtn.addEventListener('click', function() {
-                                vscodeApi.postMessage({ type: 'showLogs', deploymentId: auto.deploymentId });
-                            });
-                            actions.appendChild(logsBtn);
+                        // Per-stage rows
+                        (auto.stages || []).forEach(function(stage) {
+                            var row = mkEl('div', 'stage-row');
 
-                            var restartBtn = mkEl('button', 'btn', '');
-                            restartBtn.innerHTML = '<span class="codicon codicon-debug-restart"></span> Restart';
-                            restartBtn.addEventListener('click', function() {
-                                vscodeApi.postMessage({ type: 'restartAutomation', deploymentId: auto.deploymentId });
-                            });
-                            actions.appendChild(restartBtn);
-                        } else if (bpData.worktree) {
-                            var startBtn = mkEl('button', 'btn btn-primary', '');
-                            startBtn.innerHTML = '<span class="codicon codicon-debug-start"></span> Start Live Dev';
-                            startBtn.addEventListener('click', function() {
-                                vscodeApi.postMessage({ type: 'startLiveDev', relativePath: auto.relativePath, worktree: bpData.worktree, name: auto.name });
-                            });
-                            actions.appendChild(startBtn);
-                        }
+                            var status = mkEl('div', 'stage-status');
+                            status.appendChild(mkEl('span', 'stage-name', stage.stage));
+                            var stateClass = (stage.state || 'not-deployed').replace(/\\s+/g, '-').toLowerCase();
+                            status.appendChild(mkEl('span', 'auto-card-state ' + stateClass, stage.state || 'not deployed'));
 
-                        // Deploy to Dev button — only works when the worktree has been merged into main
-                        var deployBtn = mkEl('button', 'btn', '');
-                        if (bpData.worktree && !isSynced) {
-                            deployBtn.innerHTML = '<span class="codicon codicon-cloud-upload"></span> Deploy<br><small>merge first</small>';
-                            deployBtn.title = 'Worktree must be merged into main before deploying';
-                            deployBtn.style.opacity = '0.5';
-                            deployBtn.addEventListener('click', function() {
-                                vscodeApi.postMessage({ type: 'mergeWorktree', worktree: bpData.worktree });
-                            });
-                        } else {
-                            deployBtn.innerHTML = '<span class="codicon codicon-cloud-upload"></span> Deploy';
-                            deployBtn.title = 'Deploy to dev stage';
-                            deployBtn.addEventListener('click', function() {
-                                vscodeApi.postMessage({ type: 'deployToDev', name: auto.name, relativePath: auto.relativePath });
-                            });
-                        }
-                        actions.appendChild(deployBtn);
+                            var isRunning = ['running', 'restarting', 'starting', 'created', 'paused'].indexOf(stage.state) >= 0;
+                            var isStopped = ['stopped', 'exited', 'dead'].indexOf(stage.state) >= 0;
+                            var isDeployed = !!stage.deploymentId;
 
-                        // Promotion Manager button
-                        var promoteBtn = mkEl('button', 'btn', '');
-                        promoteBtn.innerHTML = '<span class="codicon codicon-graph"></span> Promote';
-                        promoteBtn.title = 'Open Promotion Manager';
-                        promoteBtn.addEventListener('click', function() {
-                            vscodeApi.postMessage({ type: 'openPromotionManager', name: auto.name, relativePath: auto.relativePath });
+                            // Open ↗ link — running + has url
+                            if (isRunning && stage.url) {
+                                (function(url) {
+                                    var openBtn = mkEl('button', 'btn btn-sm', '');
+                                    openBtn.innerHTML = '<span class="codicon codicon-link-external"></span> Open';
+                                    openBtn.title = url;
+                                    openBtn.addEventListener('click', function() {
+                                        vscodeApi.postMessage({ type: 'openUrl', url: url });
+                                    });
+                                    status.appendChild(openBtn);
+                                })(stage.url);
+                            }
+
+                            row.appendChild(status);
+
+                            // Promote-from-previous section — master only, on staging/production target rows,
+                            // and only when the target itself is NOT deployed.
+                            // Enabled iff previous stage is deployed; disabled with hint otherwise.
+                            if (!bpData.worktree && !isDeployed && (stage.stage === 'staging' || stage.stage === 'production')) {
+                                (function() {
+                                    var prevName = stage.stage === 'staging' ? 'dev' : 'staging';
+                                    var prevStage = (auto.stages || []).find(function(s) { return s.stage === prevName; });
+                                    var prevDeployed = !!(prevStage && prevStage.deploymentId);
+
+                                    var promoteActions = mkEl('div', 'auto-card-actions');
+                                    var promoteBtn = mkActionBtn('codicon-arrow-right', 'Promote from ' + prevName, function() {
+                                        vscodeApi.postMessage({
+                                            type: 'promoteStage',
+                                            fromStage: prevName,
+                                            deploymentId: prevStage.deploymentId,
+                                            checksum: prevStage.checksum,
+                                            automationSourceName: (bpData.bpPath ? bpData.bpPath + '/' : '') + auto.name,
+                                        });
+                                    });
+                                    if (prevDeployed) {
+                                        promoteBtn.title = 'Promote ' + prevName + ' to ' + stage.stage;
+                                    } else {
+                                        promoteBtn.disabled = true;
+                                        promoteBtn.title = 'Deploy ' + prevName + ' first';
+                                    }
+                                    promoteActions.appendChild(promoteBtn);
+                                    row.appendChild(promoteActions);
+                                    if (!prevDeployed) {
+                                        row.appendChild(mkEl('div', 'stage-hint', 'Deploy ' + prevName + ' first'));
+                                    }
+                                })();
+                            }
+
+                            // Action buttons
+                            var actions = mkEl('div', 'auto-card-actions');
+                            var depId = stage.deploymentId;
+                            if (isRunning) {
+                                actions.appendChild(mkActionBtn('codicon-output', 'Logs', function() {
+                                    vscodeApi.postMessage({ type: 'showLogs', deploymentId: depId });
+                                }));
+                                actions.appendChild(mkActionBtn('codicon-debug-restart', 'Restart', function() {
+                                    vscodeApi.postMessage({ type: 'restartAutomation', deploymentId: depId });
+                                }));
+                                actions.appendChild(mkActionBtn('codicon-debug-stop', 'Stop', function() {
+                                    vscodeApi.postMessage({ type: 'stopAutomation', deploymentId: depId });
+                                }));
+                                actions.appendChild(mkActionBtn('codicon-trash', 'Remove', function() {
+                                    vscodeApi.postMessage({ type: 'removeAutomation', deploymentId: depId });
+                                }));
+                            } else if (isStopped) {
+                                actions.appendChild(mkActionBtn('codicon-output', 'Logs', function() {
+                                    vscodeApi.postMessage({ type: 'showLogs', deploymentId: depId });
+                                }));
+                                actions.appendChild(mkActionBtn('codicon-debug-start', 'Start', function() {
+                                    vscodeApi.postMessage({ type: 'startAutomation', deploymentId: depId });
+                                }));
+                                actions.appendChild(mkActionBtn('codicon-trash', 'Remove', function() {
+                                    vscodeApi.postMessage({ type: 'removeAutomation', deploymentId: depId });
+                                }));
+                            } else {
+                                // Not deployed
+                                if (bpData.worktree && stage.stage === 'live-dev') {
+                                    (function() {
+                                        var btn = mkActionBtn('codicon-debug-start', 'Start Live Dev', function() {
+                                            vscodeApi.postMessage({ type: 'startLiveDev', relativePath: auto.relativePath, worktree: bpData.worktree, name: auto.name });
+                                        });
+                                        btn.className = 'btn btn-primary';
+                                        btn.style.borderRadius = '0';
+                                        actions.appendChild(btn);
+                                    })();
+                                } else if (!bpData.worktree && stage.stage === 'dev') {
+                                    actions.appendChild(mkActionBtn('codicon-cloud-upload', 'Deploy', function() {
+                                        vscodeApi.postMessage({ type: 'deployToDev', name: auto.name, relativePath: auto.relativePath });
+                                    }));
+                                }
+                                // staging/production not-deployed: handled above by the Promote-from section
+                            }
+
+                            if (actions.children.length > 0) {
+                                row.appendChild(actions);
+                            }
+
+                            card.appendChild(row);
                         });
-                        actions.appendChild(promoteBtn);
-
-                        card.appendChild(actions);
 
                         autoCards.appendChild(card);
                     });
