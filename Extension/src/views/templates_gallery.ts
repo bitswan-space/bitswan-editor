@@ -2,9 +2,12 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
+import axios from 'axios';
+import urlJoin from 'proper-url-join';
 import { randomUUID } from 'crypto';
 import * as toml from '@iarna/toml';
 import { sanitizeName } from '../utils/nameUtils';
+import { getDeployDetails } from '../deploy_details';
 
 type TemplateInfo = {
     id: string;
@@ -22,6 +25,32 @@ type TemplateGroupInfo = {
 };
 
 const TEMPLATES_ROOT = '/workspace/examples';
+
+function worktreeFromBpRel(bpRel: string): string {
+    // bpRel is `<bp>` (master) or `worktrees/<wt>/<bp>` (worktree).
+    if (!bpRel.startsWith('worktrees/')) { return ''; }
+    const parts = bpRel.split('/');
+    return parts[1] || '';
+}
+
+async function commitChanges(
+    context: vscode.ExtensionContext,
+    worktree: string,
+    message: string,
+): Promise<void> {
+    try {
+        const details = await getDeployDetails(context);
+        if (!details) { return; }
+        await axios.post(
+            urlJoin(details.deployUrl, 'worktrees', 'commit').toString(),
+            { worktree: worktree || null, message },
+            { headers: { Authorization: `Bearer ${details.deploySecret}` } },
+        );
+    } catch (err: any) {
+        const detail = err?.response?.data?.detail || err?.message || String(err);
+        vscode.window.showWarningMessage(`Auto-commit failed: ${detail}`);
+    }
+}
 const DOCKERHUB_TAGS_URL = 'https://hub.docker.com/v2/repositories/bitswan/pipeline-runtime-environment/tags/?page_size=10&ordering=last_updated';
 const BASE_IMAGE = 'bitswan/pipeline-runtime-environment';
 
@@ -436,6 +465,11 @@ export function openAutomationTemplates(context: vscode.ExtensionContext, busine
                 // Refresh sidebar
                 await vscode.commands.executeCommand('bitswan.refreshBusinessProcesses');
 
+                await commitChanges(
+                    context,
+                    worktreeFromBpRel(bpRel),
+                    `Add automations: ${targetDirs.map(t => t.name).join(', ')}`,
+                );
                 vscode.window.showInformationMessage(`Created ${targetDirs.length} automations: ${targetDirs.map(t => t.name).join(', ')}`);
                 panel.dispose();
             } catch (err) {
@@ -507,6 +541,12 @@ export function openAutomationTemplates(context: vscode.ExtensionContext, busine
 
             // Refresh sidebar
             await vscode.commands.executeCommand('bitswan.refreshBusinessProcesses');
+
+            await commitChanges(
+                context,
+                worktreeFromBpRel(bpRel),
+                `Add automation "${folderName}"`,
+            );
 
             // Open main.ipynb (or first .ipynb) in editor
             let notebookPath = path.join(targetDir, 'main.ipynb');

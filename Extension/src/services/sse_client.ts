@@ -137,6 +137,7 @@ export class GitOpsSSEClient {
     private flushRefresh() {
         if (this.pendingRefresh.has('automations')) {
             this.businessProcessesProvider.refreshAutomations();
+            DashboardPanel.currentPanel?.onAutomationsChanged();
         }
         if (this.pendingRefresh.has('images')) {
             this.imagesProvider.refresh();
