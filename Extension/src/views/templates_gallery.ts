@@ -27,7 +27,7 @@ type TemplateGroupInfo = {
 const TEMPLATES_ROOT = '/workspace/examples';
 
 function worktreeFromBpRel(bpRel: string): string {
-    // bpRel is `<bp>` (master) or `worktrees/<wt>/<bp>` (worktree).
+    // bpRel is `<bp>` (main) or `worktrees/<wt>/<bp>` (worktree).
     if (!bpRel.startsWith('worktrees/')) { return ''; }
     const parts = bpRel.split('/');
     return parts[1] || '';

@@ -370,9 +370,11 @@ export class DashboardPanel {
 
     private async loadBusinessProcesses(): Promise<void> {
         this.bpMap.clear();
-        const workspaces: { name: string; bps: { key: string; label: string }[]; isMaster?: boolean }[] = [];
+        const workspaces: { name: string; bps: { key: string; label: string }[]; isMain?: boolean }[] = [];
 
-        // Master (default branch) — BPs directly under WORKSPACE_DIR, skipping the worktrees folder
+        // Main (default branch) — BPs directly under WORKSPACE_DIR, skipping the worktrees folder.
+        // The label says 'main' regardless of whether the underlying git branch
+        // is named 'main' or 'master'; we don't read the branch name here.
         if (fs.existsSync(WORKSPACE_DIR)) {
             const bps = this._findBPsUnder(WORKSPACE_DIR, 4, ['worktrees']);
             const bpEntries: { key: string; label: string }[] = [];
@@ -382,7 +384,7 @@ export class DashboardPanel {
                 bpEntries.push({ key, label: rel });
                 this.bpMap.set(key, dirPath);
             }
-            workspaces.push({ name: 'master', bps: bpEntries, isMaster: true });
+            workspaces.push({ name: 'main', bps: bpEntries, isMain: true });
         }
 
         // Worktrees
@@ -443,7 +445,7 @@ export class DashboardPanel {
         const allAutomations = this.context.globalState.get<any[]>('automations', []);
         const automations: AutomationInfo[] = [];
 
-        // Worktree view shows only live-dev; master shows dev / staging / production.
+        // Worktree view shows only live-dev; main shows dev / staging / production.
         const stageList = worktree ? ['live-dev'] : ['dev', 'staging', 'production'];
 
         // Find automation dirs under this BP
@@ -463,7 +465,7 @@ export class DashboardPanel {
                         // Worktree (live-dev): match by exact relative_path
                         return relPath === relFromWorkspace;
                     }
-                    // Master: match by automation_name, excluding worktree-scoped entries
+                    // Main: match by automation_name, excluding worktree-scoped entries
                     const aName = a.automation_name || a.automationName || '';
                     return aName === sanitizedAutoName && !relPath.startsWith('worktrees/');
                 });
@@ -842,14 +844,14 @@ export class DashboardPanel {
             'utf-8',
         );
 
-        const location = worktree ? `worktree "${worktree}"` : 'master';
+        const location = worktree ? `worktree "${worktree}"` : 'main';
         await this._commitChanges(worktree, `Create business process "${name}"`);
         vscode.window.showInformationMessage(`Business process "${name}" created in ${location}.`);
         await this.loadBusinessProcesses();
     }
 
     /**
-     * Commit current changes in the master workspace or a worktree via the
+     * Commit current changes in the main workspace or a worktree via the
      * gitops API. Best-effort: failures are surfaced as warnings but don't
      * block the calling create flow.
      */
@@ -1163,9 +1165,9 @@ export class DashboardPanel {
             });
             tabBar.appendChild(addWtTab);
 
-            // Sync / Merge / Delete buttons (right-aligned) — not applicable to master
+            // Sync / Merge / Delete buttons (right-aligned) — not applicable to main
             var activeWs = structure[currentWsIdx];
-            if (structure.length > 0 && activeWs && !activeWs.isMaster) {
+            if (structure.length > 0 && activeWs && !activeWs.isMain) {
                 var spacer = document.createElement('div');
                 spacer.style.flex = '1';
                 tabBar.appendChild(spacer);
@@ -1216,7 +1218,7 @@ export class DashboardPanel {
 
         function getActiveWorktree() {
             var ws = structure[currentWsIdx];
-            if (!ws || ws.isMaster) { return ''; }
+            if (!ws || ws.isMain) { return ''; }
             return ws.name;
         }
 
@@ -1269,7 +1271,7 @@ export class DashboardPanel {
                 return;
             }
 
-            // Action cards (Coding Agent + Terminal) — only for worktrees, not master
+            // Action cards (Coding Agent + Terminal) — only for worktrees, not main
             if (bpData.worktree) {
                 var actionsSection = mkEl('div', 'section');
                 actionsSection.appendChild(mkEl('div', 'section-title', 'Actions'));
@@ -1322,7 +1324,7 @@ export class DashboardPanel {
                     bpData.automations.forEach(function(auto) {
                         var card = mkEl('div', 'auto-card');
 
-                        // Header: icon + name (+ Promotion Manager on master)
+                        // Header: icon + name (+ Promotion Manager on main)
                         var header = mkEl('div', 'auto-card-header');
                         header.appendChild(mkEl('span', 'auto-card-icon', auto.icon || '\\u{1F4E6}'));
                         header.appendChild(mkEl('div', 'auto-card-name', auto.name));
@@ -1365,7 +1367,7 @@ export class DashboardPanel {
 
                             row.appendChild(status);
 
-                            // Promote-from-previous section — master only, on staging/production target rows,
+                            // Promote-from-previous section — main only, on staging/production target rows,
                             // and only when the target itself is NOT deployed.
                             // Enabled iff previous stage is deployed; disabled with hint otherwise.
                             if (!bpData.worktree && !isDeployed && (stage.stage === 'staging' || stage.stage === 'production')) {
@@ -1497,7 +1499,7 @@ export class DashboardPanel {
                 }
             }
 
-            // Requirements — only for worktrees, not master
+            // Requirements — only for worktrees, not main
             if (bpData.worktree) {
                 var reqSection = mkEl('div', 'section');
                 reqSection.appendChild(mkEl('div', 'section-title', 'Requirements'));
