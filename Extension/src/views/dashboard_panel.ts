@@ -1239,16 +1239,19 @@ export class DashboardPanel {
                 });
                 subtabBar.appendChild(tab);
             });
-            // "+ New Business Process" subtab
-            var addBpTab = document.createElement('div');
-            addBpTab.className = 'subtab';
-            addBpTab.textContent = '+';
-            addBpTab.title = 'Create new business process';
-            addBpTab.style.cssText = 'font-weight:bold; font-size:14px; padding:4px 12px;';
-            addBpTab.addEventListener('click', function() {
-                vscodeApi.postMessage({ type: 'createBusinessProcess', worktree: getActiveWorktree() });
-            });
-            subtabBar.appendChild(addBpTab);
+            // "+ New Business Process" subtab — hidden on the main tab,
+            // which is read-only (development happens in worktrees).
+            if (!ws.isMain) {
+                var addBpTab = document.createElement('div');
+                addBpTab.className = 'subtab';
+                addBpTab.textContent = '+';
+                addBpTab.title = 'Create new business process';
+                addBpTab.style.cssText = 'font-weight:bold; font-size:14px; padding:4px 12px;';
+                addBpTab.addEventListener('click', function() {
+                    vscodeApi.postMessage({ type: 'createBusinessProcess', worktree: getActiveWorktree() });
+                });
+                subtabBar.appendChild(addBpTab);
+            }
 
             if (!currentBpKey && ws.bps.length > 0) {
                 currentBpKey = ws.bps[0].key;
@@ -1307,7 +1310,7 @@ export class DashboardPanel {
                 var autoSection = mkEl('div', 'section');
                 autoSection.appendChild(mkEl('div', 'section-title', 'Automations'));
                 if (!bpData.worktree) {
-                    var hint = mkEl('div', 'placeholder', 'Create a worktree (+ tab above) to start developing with live dev. Merge your worktree to main to deploy.');
+                    var hint = mkEl('div', 'placeholder', 'Create a worktree to start developing with live dev. Sync your worktree to deploy.');
                     hint.style.cssText = 'text-align:left; padding:4px 0 12px; font-size:12px;';
                     autoSection.appendChild(hint);
                 }
@@ -1456,8 +1459,9 @@ export class DashboardPanel {
                     });
                 }
 
-                // "+ New Automation" card
-                {
+                // "+ New Automation" card — hidden on the main tab, which is
+                // read-only (new automations are added inside a worktree).
+                if (bpData.worktree) {
                     var newAutoCard = mkEl('div', 'auto-card');
                     newAutoCard.style.cssText = 'border-style:dashed; text-align:center; display:flex; align-items:center; justify-content:center; min-height:80px;';
                     newAutoCard.innerHTML = '<div><div style="font-size:20px; margin-bottom:4px;">+</div><div class="auto-card-name">New Automation</div></div>';
