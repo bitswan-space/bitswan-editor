@@ -1261,7 +1261,7 @@ export class DashboardPanel {
             content.innerHTML = '';
             setMode('navigate');
             if (!currentBpKey) {
-                content.innerHTML = '<div class="placeholder">Create or select worktree or a business process above.</div>';
+                content.innerHTML = '<div class="placeholder">Create new worktree to start developing</div>';
                 return;
             }
             if (!bpData) {
