@@ -268,9 +268,6 @@ export class DashboardPanel {
             case 'syncWorktree':
                 await this.syncWorktree(msg.worktree);
                 break;
-            case 'mergeWorktree':
-                await this.mergeWorktree(msg.worktree);
-                break;
             case 'deleteWorktree':
                 await this.deleteWorktree(msg.worktree);
                 break;
@@ -884,6 +881,13 @@ export class DashboardPanel {
     }
 
     private async syncWorktree(worktree: string): Promise<void> {
+        const confirm = await vscode.window.showWarningMessage(
+            `Sync worktree "${worktree}" with main?`,
+            { modal: true },
+            'Sync',
+        );
+        if (confirm !== 'Sync') { return; }
+
         const prompt = 'IMPORTANT: git is not installed. Use ONLY bitswan-coding-agent commands. Sync this worktree with main: 1) bitswan-coding-agent vcs commit -m pre-sync-commit 2) bitswan-coding-agent vcs sync 3) If conflicts, resolve and run bitswan-coding-agent vcs sync-continue. Tell me when sync is complete.';
         const autoCmd = [
             `cd /workspace/worktrees/${worktree}`,
@@ -892,24 +896,6 @@ export class DashboardPanel {
             `exec claude --dangerously-skip-permissions "${prompt}"`,
         ].join(' && ');
         await this.openSSHTerminal(`Sync: ${worktree}`, worktree, autoCmd);
-    }
-
-    private async mergeWorktree(worktree: string): Promise<void> {
-        const confirm = await vscode.window.showWarningMessage(
-            `Merge worktree "${worktree}" into main?`,
-            { modal: true },
-            'Merge',
-        );
-        if (confirm !== 'Merge') { return; }
-
-        const prompt = 'IMPORTANT: git is not installed. Use ONLY bitswan-coding-agent commands. Merge this worktree into main: 1) bitswan-coding-agent vcs commit -m pre-merge-commit 2) bitswan-coding-agent vcs rebase-and-merge 3) If conflicts, resolve and run bitswan-coding-agent vcs rebase-continue. Tell me when merge is complete.';
-        const autoCmd = [
-            `cd /workspace/worktrees/${worktree}`,
-            'mkdir -p ~/.claude',
-            `echo '{"skipDangerousModePermissionPrompt":true}' > ~/.claude/settings.json`,
-            `exec claude --dangerously-skip-permissions "${prompt}"`,
-        ].join(' && ');
-        await this.openSSHTerminal(`Merge: ${worktree}`, worktree, autoCmd);
     }
 
     private async removeAutomation(deploymentId: string): Promise<void> {
@@ -977,9 +963,6 @@ export class DashboardPanel {
         .header h2 { margin:0; font-size:16px; }
         .tab-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--vscode-descriptionForeground); padding:6px 8px 6px 0; white-space:nowrap; }
         .tab-bar { display:flex; align-items:center; border-bottom:2px solid var(--border); flex-shrink:0; padding:0 8px; }
-        .sync-indicator { width:8px; height:8px; border-radius:50%; margin:0 6px 0 4px; flex-shrink:0; cursor:help; }
-        .sync-indicator.synced { background:var(--status-pass); }
-        .sync-indicator.unsynced { background:var(--status-proposed); }
         .tab { padding:8px 16px; cursor:pointer; font-size:12px; font-weight:500; border-bottom:2px solid transparent; margin-bottom:-2px; color:var(--vscode-descriptionForeground); }
         .tab:hover { color:var(--vscode-foreground); }
         .tab.active { color:var(--vscode-foreground); border-bottom-color:var(--vscode-focusBorder, #007acc); }
@@ -1174,34 +1157,21 @@ export class DashboardPanel {
 
                 // Sync indicator (read-only): green dot when this worktree's
                 // commits are present in main AND the worktree is clean.
-                var syncIndicator = document.createElement('div');
-                syncIndicator.className = 'sync-indicator' + (isSynced ? ' synced' : ' unsynced');
-                syncIndicator.title = isSynced
-                    ? 'Changes from this worktree are applied in main.'
-                    : 'Changes from this worktree are NOT applied in main.';
-                tabBar.appendChild(syncIndicator);
-
+                // Sync button: shows "Synced" with green tint when the worktree's
+                // commits are already in main and the tree is clean; otherwise
+                // "Sync" — clicking runs the rebase + fast-forward on main.
                 var syncBtn = document.createElement('div');
                 syncBtn.className = 'tab';
-                syncBtn.textContent = '\u{2B07} Pull from main';
-                syncBtn.title = 'Rebase this worktree onto main to pull in the latest changes from main. Main itself is not modified.';
-                syncBtn.style.cssText = 'font-size:11px; padding:6px 10px;';
+                syncBtn.textContent = isSynced ? '\u{2705} Synced' : '\u{1F501} Sync';
+                syncBtn.title = isSynced
+                    ? 'This worktree is already synced with main (nothing to do).'
+                    : 'Rebase this worktree onto main, then fast-forward main to include this worktree’s commits. Required before deploying.';
+                syncBtn.style.cssText = 'font-size:11px; padding:6px 10px;' + (isSynced ? ' color:var(--status-pass);' : '');
                 syncBtn.addEventListener('click', function() {
                     var wt = getActiveWorktree();
                     if (wt) { vscodeApi.postMessage({ type: 'syncWorktree', worktree: wt }); }
                 });
                 tabBar.appendChild(syncBtn);
-
-                var mergeBtn = document.createElement('div');
-                mergeBtn.className = 'tab';
-                mergeBtn.textContent = '\u{2B06} Merge into main';
-                mergeBtn.title = 'Rebase this worktree onto main, then fast-forward main to include this worktree’s commits. Required before deploying.';
-                mergeBtn.style.cssText = 'font-size:11px; padding:6px 10px;';
-                mergeBtn.addEventListener('click', function() {
-                    var wt = getActiveWorktree();
-                    if (wt) { vscodeApi.postMessage({ type: 'mergeWorktree', worktree: wt }); }
-                });
-                tabBar.appendChild(mergeBtn);
 
                 var deleteBtn = document.createElement('div');
                 deleteBtn.className = 'tab';
