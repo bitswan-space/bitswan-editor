@@ -377,6 +377,13 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
         }
         this.refreshTimer = setTimeout(() => {
             if (this._knownAutomationSources.length > 0) {
+                // Re-decorate the leaf rows in worktree mode (their state/icon/
+                // contextValue depend on globalState.automations and won't be
+                // re-rendered just by firing the change event on the leaf —
+                // getTreeItem returns the same instance).
+                for (const item of this._knownAutomationSources) {
+                    this._decorateWorktreeAutomation(item);
+                }
                 for (const item of this._knownAutomationSources) {
                     this._onDidChangeTreeData.fire(item);
                 }
@@ -385,6 +392,44 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                 this._onDidChangeTreeData.fire();
             }
         }, 500);
+    }
+
+    /**
+     * Apply the worktree-leaf decoration (contextValue / icon / description)
+     * derived from `globalState.automations`. Safe to call repeatedly.
+     */
+    private _decorateWorktreeAutomation(item: AutomationSourceItem): void {
+        const automations = this.context.globalState.get<any[]>('automations', []);
+        const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '/workspace/workspace';
+        const relPath = path.relative(workspacePath, item.resourceUri.fsPath);
+        const match = automations.find(a => {
+            const aPath = a.relative_path || a.relativePath || '';
+            return aPath === relPath || aPath.endsWith('/' + relPath);
+        });
+        if (match) {
+            const state = match.state || 'unknown';
+            const status = match.status || state;
+            const hasUrl = !!(match.automation_url || match.automationUrl);
+            item.contextValue = `worktreeAutomation,${state}${hasUrl ? ',url' : ''}`;
+            item.description = status;
+            switch (state) {
+                case 'running':
+                    item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.green'));
+                    break;
+                case 'paused': case 'restarting':
+                    item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.orange'));
+                    break;
+                case 'exited': case 'dead': case 'removing':
+                    item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.red'));
+                    break;
+                default:
+                    item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.gray'));
+            }
+        } else {
+            item.contextValue = 'worktreeAutomation,notDeployed';
+            item.description = 'not deployed';
+            item.iconPath = new vscode.ThemeIcon('circle-outline', new vscode.ThemeColor('bitswan.statusIcon.gray'));
+        }
     }
 
     getTreeItem(element: UnifiedTreeItem): vscode.TreeItem {
@@ -536,48 +581,13 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
      * so that refreshAutomations() can fire targeted change events.
      */
     private _prefixTreeItemIds(items: readonly vscode.TreeItem[], prefix: string): void {
-        const automations = this.context.globalState.get<any[]>('automations', []);
-        const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '/workspace/workspace';
-
         for (const item of items) {
             if (item.id) { item.id = prefix + item.id; }
             (item as any)._idPrefix = prefix;
             // Worktree automations are leaf nodes with state info
             if (item instanceof AutomationSourceItem) {
                 item.collapsibleState = vscode.TreeItemCollapsibleState.None;
-
-                // Match against running automations by relative_path
-                const relPath = path.relative(workspacePath, item.resourceUri.fsPath);
-                const match = automations.find(a => {
-                    const aPath = a.relative_path || a.relativePath || '';
-                    return aPath === relPath || aPath.endsWith('/' + relPath);
-                });
-
-                if (match) {
-                    const state = match.state || 'unknown';
-                    const status = match.status || state;
-                    const hasUrl = !!(match.automation_url || match.automationUrl);
-                    item.contextValue = `worktreeAutomation,${state}${hasUrl ? ',url' : ''}`;
-                    item.description = status;
-                    // Use the same color scheme as AutomationItem
-                    switch (state) {
-                        case 'running':
-                            item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.green'));
-                            break;
-                        case 'paused': case 'restarting':
-                            item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.orange'));
-                            break;
-                        case 'exited': case 'dead': case 'removing':
-                            item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.red'));
-                            break;
-                        default:
-                            item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.gray'));
-                    }
-                } else {
-                    item.contextValue = 'worktreeAutomation,notDeployed';
-                    item.description = 'not deployed';
-                    item.iconPath = new vscode.ThemeIcon('circle-outline', new vscode.ThemeColor('bitswan.statusIcon.gray'));
-                }
+                this._decorateWorktreeAutomation(item);
             }
             if (item instanceof SubfolderItem && item.children) {
                 this._prefixTreeItemIds(item.children, prefix);
@@ -829,8 +839,9 @@ export class UnifiedBusinessProcessesViewProvider implements vscode.TreeDataProv
                 stages.push(new StageItem('live-dev', sourceName, null, deploymentId, null, wtSourceUri, serviceNames, wtName));
             }
         } else {
-            // Main mode: 4 stages — live-dev, dev, staging, production
-            const stagesList: Array<'live-dev' | 'dev' | 'staging' | 'production'> = ['live-dev', 'dev', 'staging', 'production'];
+            // Main mode: dev / staging / production. Live-dev is worktree-only,
+            // so we don't render it on automations outside of a worktree.
+            const stagesList: Array<'dev' | 'staging' | 'production'> = ['dev', 'staging', 'production'];
 
             for (const stage of stagesList) {
                 // Match by structured fields: automation_name + stage

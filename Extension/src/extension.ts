@@ -261,6 +261,14 @@ export function activate(context: vscode.ExtensionContext) {
                 vscode.window.showErrorMessage('No automation selected. Please click the live dev button on a specific automation.');
                 return;
             }
+            // Extract `<wt>` from a path that contains `.../worktrees/<wt>/...`.
+            // More reliable than reading `selectedWorktree` (the BP-view tree
+            // can show worktree rows even when nothing is "selected").
+            const inferWorktreeFromPath = (p: string): string | undefined => {
+                const segs = p.split(path.sep);
+                const idx = segs.lastIndexOf('worktrees');
+                return idx >= 0 && idx + 1 < segs.length ? segs[idx + 1] : undefined;
+            };
             let folderPath: string;
             let worktreeName: string | undefined;
             if (item instanceof StageItem) {
@@ -270,13 +278,13 @@ export function activate(context: vscode.ExtensionContext) {
                     return;
                 }
                 folderPath = item.sourceUri.fsPath;
-                worktreeName = item.worktreeName;
+                worktreeName = item.worktreeName ?? inferWorktreeFromPath(folderPath);
             } else if (item instanceof AutomationSourceItem) {
                 folderPath = item.resourceUri.fsPath;
-                worktreeName = unifiedBusinessProcessesProvider.selectedWorktree;
+                worktreeName = inferWorktreeFromPath(folderPath) ?? unifiedBusinessProcessesProvider.selectedWorktree;
             } else {
                 folderPath = item.resourceUri.fsPath;
-                worktreeName = unifiedBusinessProcessesProvider.selectedWorktree;
+                worktreeName = inferWorktreeFromPath(folderPath) ?? unifiedBusinessProcessesProvider.selectedWorktree;
             }
             return deploymentCommands.startLiveDevServerCommand(context, folderPath, unifiedBusinessProcessesProvider, worktreeName);
         });
@@ -705,14 +713,65 @@ export function activate(context: vscode.ExtensionContext) {
         });
     
     let deleteAutomationCommand = vscode.commands.registerCommand('bitswan.deleteAutomation',
-        async (item: AutomationItem | StageItem) => {
+        async (item: AutomationItem | StageItem | AutomationSourceItem) => {
             if (!item) {
                 vscode.window.showErrorMessage('No automation selected. Please click the delete button on a specific automation.');
                 return;
             }
+
+            // BP-view worktree-automation rows pass an AutomationSourceItem,
+            // which doesn't implement urlSlug(). Look up the matching
+            // deployment in globalState and DELETE it directly.
+            if (item instanceof AutomationSourceItem) {
+                const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '/workspace/workspace';
+                const relPath = path.relative(workspaceRoot, item.resourceUri.fsPath);
+                const automations = context.globalState.get<any[]>('automations', []) || [];
+                const match = automations.find(a => {
+                    const aPath = a.relative_path || a.relativePath || '';
+                    return aPath === relPath || aPath.endsWith('/' + relPath);
+                });
+                if (!match) {
+                    vscode.window.showErrorMessage(`Automation "${item.name}" is not deployed; nothing to remove.`);
+                    return;
+                }
+                const choice = await vscode.window.showWarningMessage(
+                    `Remove automation "${item.name}"? This deletes the deployment.`,
+                    { modal: true },
+                    'Remove',
+                );
+                if (choice !== 'Remove') { return; }
+                const activeInstance = context.globalState.get<any>('activeGitOpsInstance');
+                if (!activeInstance?.url || !activeInstance?.secret) {
+                    vscode.window.showErrorMessage('No active GitOps instance.');
+                    return;
+                }
+                const deploymentId = match.deployment_id || match.deploymentId;
+                try {
+                    const url = urlJoin(activeInstance.url, 'automations', deploymentId).toString();
+                    await deleteAutomation(url, activeInstance.secret);
+                    // Don't wait for SSE — pull fresh state and re-decorate the
+                    // sidebar leaf rows + dashboard immediately.
+                    await automationCommands.refreshAutomationsCommand(context, unifiedBusinessProcessesProvider);
+                    DashboardPanel.currentPanel?.onAutomationsChanged();
+                } catch (err: any) {
+                    vscode.window.showErrorMessage(`Failed to remove automation: ${err?.response?.data?.detail || err?.message || err}`);
+                }
+                return;
+            }
+
             const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
-            // Only require confirmation prompt for production deployments
-            const requirePrompt = !(item instanceof StageItem) || item.stage === 'production';
+            // Type-the-name prompt only on production stages (genuine safety guard).
+            // Everything else gets a single-click yes/no modal, matching the
+            // dashboard panel's "Remove" UX.
+            const isProduction = item instanceof StageItem && item.stage === 'production';
+            if (!isProduction) {
+                const choice = await vscode.window.showWarningMessage(
+                    `Remove automation "${automationItem.name}"? This deletes the deployment.`,
+                    { modal: true },
+                    'Remove',
+                );
+                if (choice !== 'Remove') { return; }
+            }
             return itemCommands.makeItemCommand({
                 title: `Deleting Automation ${automationItem.name}`,
                 initialProgress: 'Sending request to GitOps...',
@@ -722,7 +781,7 @@ export function activate(context: vscode.ExtensionContext) {
                 successMessage: `Automation ${automationItem.name} deleted successfully`,
                 errorMessage: `Failed to delete automation ${automationItem.name}:`,
                 errorLogPrefix: 'Automation Delete Error:',
-                prompt: requirePrompt
+                prompt: isProduction,
             })(context, automationsProvider, automationItem);
         });
 
