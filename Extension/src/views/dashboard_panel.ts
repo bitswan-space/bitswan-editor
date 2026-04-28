@@ -322,6 +322,12 @@ export class DashboardPanel {
                 if (t) { t.show(true); }
                 break;
             }
+            case 'openDevelopmentGuide':
+                vscode.commands.executeCommand('bitswan.openDevelopmentGuide');
+                break;
+            case 'openBackups':
+                vscode.commands.executeCommand('bitswan.openBackups');
+                break;
             case 'toggleAnon': {
                 const current = this.context.globalState.get<boolean>('agentAnonMode', false);
                 await this.context.globalState.update('agentAnonMode', !current);
@@ -955,6 +961,8 @@ export class DashboardPanel {
         .codicon-graph::before { content: "\\eb03"; }
         .codicon-trash::before { content: "\\ea81"; }
         .codicon-arrow-right::before { content: "\\ea9c"; }
+        .codicon-book::before { content: "\\eaa4"; }
+        .codicon-cloud-download::before { content: "\\eac2"; }
         :root { color-scheme: light dark; font-family: var(--vscode-font-family, sans-serif);
             --status-pass: #3fb950; --status-fail: #f85149; --status-pending: #d29922; --status-retest: #a371f7; --status-proposed: #768390; --border: var(--vscode-editorWidget-border, rgba(128,128,128,0.3)); }
         * { box-sizing: border-box; }
@@ -1061,7 +1069,16 @@ export class DashboardPanel {
     <link rel="stylesheet" type="text/css" href="${this.playerCssUri}" />
 </head>
 <body>
-    <div class="header"><h2>Workspace</h2></div>
+    <div class="header">
+        <h2>Workspace</h2>
+        <div style="flex:1;"></div>
+        <button class="btn btn-sm" id="openDevelopmentGuideBtn" title="Open Development Guide">
+            <span class="codicon codicon-book"></span> Development Guide
+        </button>
+        <button class="btn btn-sm" id="openBackupsBtn" title="Backups">
+            <span class="codicon codicon-cloud-download"></span> Backups
+        </button>
+    </div>
     <div style="display:flex; align-items:center; padding:0 8px;">
         <span class="tab-label">Worktrees</span>
         <div class="tab-bar" id="tabBar" style="flex:1;"></div>
@@ -1080,6 +1097,12 @@ export class DashboardPanel {
         var subtabBar = document.getElementById('subtabBar');
         var content = document.getElementById('content');
         var keyhints = document.getElementById('keyhints');
+        document.getElementById('openDevelopmentGuideBtn').addEventListener('click', function() {
+            vscodeApi.postMessage({ type: 'openDevelopmentGuide' });
+        });
+        document.getElementById('openBackupsBtn').addEventListener('click', function() {
+            vscodeApi.postMessage({ type: 'openBackups' });
+        });
 
         var structure = [];
         var currentWsIdx = 0;
