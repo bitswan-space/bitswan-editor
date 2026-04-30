@@ -586,7 +586,13 @@ function copyDirectory(src: string, dest: string, includePredicate: (fullPath: s
         const srcPath = path.join(src, entry.name);
         const destPath = path.join(dest, entry.name);
         if (!includePredicate(srcPath)) continue;
-        if (entry.isDirectory()) {
+        if (entry.isSymbolicLink()) {
+            // Preserve the link target verbatim — some templates ship
+            // symlinks pointing at in-container paths (e.g. `node_modules`
+            // → `/deps/node_modules` for React frontends).
+            const target = fs.readlinkSync(srcPath);
+            fs.symlinkSync(target, destPath);
+        } else if (entry.isDirectory()) {
             copyDirectory(srcPath, destPath, includePredicate);
         } else if (entry.isFile()) {
             const data = fs.readFileSync(srcPath);
