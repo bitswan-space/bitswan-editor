@@ -28,7 +28,6 @@ export async function createAutomationFileCommand(_context: vscode.ExtensionCont
     try {
         await ensureParentDirectory(fileUri);
         await vscode.workspace.fs.writeFile(fileUri, textEncoder.encode(''));
-        await refreshBusinessProcessesTree();
         const document = await vscode.workspace.openTextDocument(fileUri);
         await vscode.window.showTextDocument(document);
     } catch (error: any) {
@@ -55,7 +54,6 @@ export async function createAutomationFolderCommand(_context: vscode.ExtensionCo
 
     try {
         await vscode.workspace.fs.createDirectory(folderUri);
-        await refreshBusinessProcessesTree();
     } catch (error: any) {
         vscode.window.showErrorMessage(`Failed to create folder: ${error?.message ?? error}`);
     }
@@ -82,7 +80,6 @@ export async function renameAutomationResourceCommand(_context: vscode.Extension
 
     try {
         await vscode.workspace.fs.rename(target, destination, { overwrite: false });
-        await refreshBusinessProcessesTree();
     } catch (error: any) {
         vscode.window.showErrorMessage(`Failed to rename resource: ${error?.message ?? error}`);
     }
@@ -108,7 +105,6 @@ export async function deleteAutomationResourceCommand(_context: vscode.Extension
 
     try {
         await vscode.workspace.fs.delete(target, { recursive: true, useTrash: true });
-        await refreshBusinessProcessesTree();
     } catch (error: any) {
         vscode.window.showErrorMessage(`Failed to delete resource: ${error?.message ?? error}`);
     }
@@ -177,9 +173,5 @@ function getResourceUri(item: FsNode): vscode.Uri | undefined {
 async function ensureParentDirectory(resource: vscode.Uri) {
     const parentDir = vscode.Uri.file(path.dirname(resource.fsPath));
     await vscode.workspace.fs.createDirectory(parentDir);
-}
-
-async function refreshBusinessProcessesTree() {
-    await vscode.commands.executeCommand('bitswan.refreshBusinessProcesses');
 }
 

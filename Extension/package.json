@@ -203,11 +203,6 @@
         "icon": "$(sync)"
       },
       {
-        "command": "bitswan.refreshBusinessProcesses",
-        "title": "Refresh Business Processes",
-        "icon": "$(sync)"
-      },
-      {
         "command": "bitswan.deleteImage",
         "title": "Remove Image",
         "icon": "$(terminal-kill)"
@@ -298,19 +293,9 @@
         "icon": "$(cloud-upload)"
       },
       {
-        "command": "bitswan.openProcessReadme",
-        "title": "Open README",
-        "icon": "$(book)"
-      },
-      {
         "command": "bitswan.openDevelopmentGuide",
         "title": "Open Development Guide",
         "icon": "$(book)"
-      },
-      {
-        "command": "bitswan.createBusinessProcess",
-        "title": "Create Business Process",
-        "icon": "$(new-folder)"
       },
       {
         "command": "bitswan.openAutomationTemplates",
@@ -408,32 +393,9 @@
         "icon": "$(key)"
       },
       {
-        "command": "bitswan.createWorktree",
-        "title": "Create Worktree",
-        "icon": "$(add)",
-        "category": "BitSwan"
-      },
-      {
         "command": "bitswan.deleteWorktree",
         "title": "Delete Worktree",
         "icon": "$(trash)",
-        "category": "BitSwan"
-      },
-      {
-        "command": "bitswan.openAgentTerminal",
-        "title": "Open Agent Terminal",
-        "icon": "$(terminal)",
-        "category": "BitSwan"
-      },
-      {
-        "command": "bitswan.viewWorktreeDiff",
-        "title": "View Worktree Diff",
-        "icon": "$(diff)",
-        "category": "BitSwan"
-      },
-      {
-        "command": "bitswan.openSessionBrowser",
-        "title": "Open Agent Session Browser",
         "category": "BitSwan"
       },
       {
@@ -446,91 +408,14 @@
         "title": "Backups",
         "icon": "$(cloud-download)",
         "category": "BitSwan"
-      },
-      {
-        "command": "bitswan.refreshWorktrees",
-        "title": "Refresh Worktrees",
-        "icon": "$(refresh)",
-        "category": "BitSwan"
-      },
-      {
-        "command": "bitswan.selectWorktree",
-        "title": "Select Worktree",
-        "icon": "$(git-branch)",
-        "category": "BitSwan"
       }
     ],
     "menus": {
       "view/item/context": [
         {
-          "command": "bitswan.deployAutomation",
-          "when": "view == bitswan-automation-sources && viewItem == folder",
-          "group": "inline"
-        },
-        {
           "command": "bitswan.startLiveDevServer",
           "when": "false",
           "group": "inline@1"
-        },
-        {
-          "command": "bitswan.editGitOps",
-          "when": "view == bitswan-workspaces && viewItem == gitops",
-          "group": "inline"
-        },
-        {
-          "command": "bitswan.deleteGitOps",
-          "when": "view == bitswan-workspaces && viewItem == gitops",
-          "group": "inline"
-        },
-        {
-          "command": "bitswan.activateGitOps",
-          "when": "view == bitswan-workspaces && viewItem == gitops",
-          "group": "inline"
-        },
-        {
-          "command": "bitswan.activateAutomation",
-          "when": "view == bitswan-automations && viewItem =~ /^automation,inactive,/",
-          "group": "inline@3"
-        },
-        {
-          "command": "bitswan.deactivateAutomation",
-          "when": "view == bitswan-automations && viewItem =~ /^automation,active,/",
-          "group": "inline@3"
-        },
-        {
-          "command": "bitswan.stopAutomation",
-          "when": "view == bitswan-automations && viewItem =~ /^automation,active,running( |$)/",
-          "group": "inline@1"
-        },
-        {
-          "command": "bitswan.openExternalUrl",
-          "when": "view == bitswan-automations && viewItem =~ /^automation,active,running( |$).*urlStatus:url/",
-          "group": "inline@1"
-        },
-        {
-          "command": "bitswan.startAutomation",
-          "when": "view == bitswan-automations && viewItem =~ /^automation,active,(paused|exited)( |$)/",
-          "group": "inline@1"
-        },
-        {
-          "command": "bitswan.deleteAutomation",
-          "when": "view == bitswan-automations && viewItem =~ /^automation,/",
-          "group": "inline@4"
-        },
-        {
-          "command": "bitswan.restartAutomation",
-          "when": "view == bitswan-automations && viewItem =~ /^automation,active/",
-          "group": "inline@2"
-        },
-        {
-          "command": "bitswan.showAutomationLogs",
-          "when": "view == bitswan-automations && viewItem =~ /^automation,active/",
-          "group": "inline@5"
-        },
-        {
-          "command": "bitswan.jumpToSource",
-          "when": "view == bitswan-automations && viewItem =~ /^automation,/",
-          "group": "inline@6"
         },
         {
           "command": "bitswan.showImageLogs",
@@ -581,29 +466,9 @@
           "command": "bitswan.openSecretGroup",
           "when": "view == bitswan-secrets-manager && viewItem == secretGroup",
           "group": "navigation@2"
-        },
-        {
-          "command": "bitswan.openAgentTerminal",
-          "when": "viewItem == worktreeItem",
-          "group": "1_terminal"
-        },
-        {
-          "command": "bitswan.viewWorktreeDiff",
-          "when": "viewItem == worktreeItem",
-          "group": "3_git"
-        },
-        {
-          "command": "bitswan.deleteWorktree",
-          "when": "viewItem == worktreeItem",
-          "group": "5_danger"
         }
       ],
       "view/title": [
-        {
-          "command": "bitswan.refreshAutomations",
-          "when": "view == bitswan-automations",
-          "group": "navigation@1"
-        },
         {
           "command": "bitswan.refreshImages",
           "when": "view == bitswan-unified-images",
