@@ -146,12 +146,10 @@ export function activate(context: vscode.ExtensionContext) {
     const unifiedBusinessProcessesProvider = new UnifiedBusinessProcessesViewProvider(context);
     const secretsTreeProvider = new SecretsTreeViewProvider(context);
 
-    // Register Business Processes views
-    const bpTreeView = vscode.window.createTreeView('bitswan-unified-business-processes', {
-        treeDataProvider: unifiedBusinessProcessesProvider,
-    });
-    unifiedBusinessProcessesProvider.setView(bpTreeView);
-
+    // The Business Processes tree view was retired in favor of the Dashboard
+    // panel; only the Workspaces view remains in the activity-bar container
+    // (now titled "Bitswan Workspace"). The provider stays alive so other
+    // commands that call `.refresh()` on it continue to no-op cleanly.
     vscode.window.createTreeView('bitswan-workspaces', {
         treeDataProvider: workspacesProvider,
     });

@@ -14,23 +14,12 @@ export class WorkspacesViewProvider implements vscode.TreeDataProvider<GitOpsIte
         return element;
     }
 
-    async getChildren(element?: GitOpsItem): Promise<GitOpsItem[]> {
-        if (element) {
-            return [];
-        }
-
-        const instances = this.context.globalState.get<any[]>('gitopsInstances', []);
-        const activeInstance = this.context.globalState.get<GitOpsItem>('activeGitOpsInstance');
-
-        return instances.map(instance => {
-            const isActive = activeInstance && activeInstance.url === instance.url;
-            return new GitOpsItem(
-                instance.name,
-                instance.url,
-                instance.secret,
-                isActive
-            );
-        });
+    async getChildren(_element?: GitOpsItem): Promise<GitOpsItem[]> {
+        // Tree intentionally empty — the activity-bar entry now exists only
+        // to host the "Open Dashboard" Welcome content (see viewsWelcome in
+        // package.json). All workspace/GitOps management lives in the
+        // Dashboard panel.
+        return [];
     }
 } 
 
