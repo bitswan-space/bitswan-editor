@@ -430,15 +430,18 @@ function calculateGitTreeHashRecursive(
         outputChannel.appendLine(`CHECKSUM DIR:  ${entryRelativePath}/ -> ${treeHash}`);
       }
     } else if (entry.isFile) {
-      // Always use 100644 mode - tar extraction doesn't preserve executable bits reliably
       const blobHash = calculateGitBlobHashSync(fullPath);
+      // Match git's executable detection: any of u/g/o +x flips the mode to
+      // 100755. This makes the deploy-cache checksum react to chmod +x/-x
+      // on files that round-trip through the tarball with their bits intact.
+      const mode = (fs.statSync(fullPath).mode & 0o111) !== 0 ? '100755' : '100644';
       entries.push({
-        mode: '100644',
+        mode,
         name: entry.name,
         hash: blobHash
       });
       if (outputChannel) {
-        outputChannel.appendLine(`CHECKSUM FILE: ${entryRelativePath} -> 100644 ${blobHash}`);
+        outputChannel.appendLine(`CHECKSUM FILE: ${entryRelativePath} -> ${mode} ${blobHash}`);
       }
     }
   }
@@ -645,11 +648,11 @@ function calculateMergedGitTreeHashRecursive(
         outputChannel.appendLine(`CHECKSUM DIR:  ${childRelativePath}/ -> ${treeHash}`);
       }
     } else {
-      // Always use 100644 mode - tar extraction doesn't preserve executable bits reliably
       const blobHash = calculateGitBlobHashSync(entry.sourcePath);
-      entries.push({ mode: '100644', name: entry.name, hash: blobHash });
+      const mode = (fs.statSync(entry.sourcePath).mode & 0o111) !== 0 ? '100755' : '100644';
+      entries.push({ mode, name: entry.name, hash: blobHash });
       if (outputChannel) {
-        outputChannel.appendLine(`CHECKSUM FILE: ${childRelativePath} -> 100644 ${blobHash}`);
+        outputChannel.appendLine(`CHECKSUM FILE: ${childRelativePath} -> ${mode} ${blobHash}`);
       }
     }
   }
