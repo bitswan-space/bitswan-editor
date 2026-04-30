@@ -77,8 +77,8 @@
       "activitybar": [
         {
           "id": "bitswan-business-processes",
-          "title": "Business Processes",
-          "icon": "media/business-processes.svg"
+          "title": "Bitswan Workspace",
+          "icon": "resources/bitswan-logo.svg"
         },
         {
           "id": "bitswan-images",
@@ -92,15 +92,17 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "bitswan-workspaces",
+        "contents": "[Open Bitswan Workspace panel](command:bitswan.openRequirementsEditor)"
+      }
+    ],
     "views": {
       "bitswan-business-processes": [
         {
-          "id": "bitswan-unified-business-processes",
-          "name": "Business Processes"
-        },
-        {
           "id": "bitswan-workspaces",
-          "name": "Workspaces"
+          "name": "Bitswan Workspace"
         }
       ],
       "bitswan-images": [
@@ -466,224 +468,9 @@
           "group": "inline"
         },
         {
-          "command": "bitswan.deployAutomation",
-          "when": "view == bitswan-unified-business-processes && viewItem == automationSource",
-          "group": "inline"
-        },
-        {
-          "command": "bitswan.startLiveDevServer",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^worktreeAutomation,notDeployed/",
-          "group": "inline@1"
-        },
-        {
-          "command": "bitswan.showAutomationLogs",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^worktreeAutomation,(running|exited|dead)/",
-          "group": "inline@2"
-        },
-        {
-          "command": "bitswan.restartAutomation",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^worktreeAutomation,(running|exited|dead)/",
-          "group": "inline@3"
-        },
-        {
-          "command": "bitswan.openExternalUrl",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^worktreeAutomation,.*,url/",
-          "group": "inline@4"
-        },
-        {
-          "command": "bitswan.deleteAutomation",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^worktreeAutomation,(running|exited|dead)/",
-          "group": "inline@5"
-        },
-        {
-          "command": "bitswan.jumpToSource",
-          "when": "view == bitswan-unified-business-processes && viewItem == automationSource",
-          "group": "inline@6"
-        },
-        {
-          "command": "bitswan.openPromotionManager",
-          "when": "view == bitswan-unified-business-processes && viewItem == automationSource",
-          "group": "inline@7"
-        },
-        {
-          "command": "bitswan.openProcessReadme",
-          "when": "view == bitswan-unified-business-processes && viewItem == businessProcess",
-          "group": "inline"
-        },
-        {
-          "command": "bitswan.activateAutomation",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automation,inactive,/",
-          "group": "inline@3"
-        },
-        {
-          "command": "bitswan.deactivateAutomation",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automation,active,/",
-          "group": "inline@3"
-        },
-        {
-          "command": "bitswan.stopAutomation",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automation,active,running( |$)/",
-          "group": "inline@1"
-        },
-        {
-          "command": "bitswan.openExternalUrl",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automation,active,running( |$).*urlStatus:url/",
-          "group": "inline@1"
-        },
-        {
-          "command": "bitswan.startAutomation",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automation,active,(paused|exited)( |$)/",
-          "group": "inline@1"
-        },
-        {
-          "command": "bitswan.deleteAutomation",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automation,/",
-          "group": "inline@4"
-        },
-        {
-          "command": "bitswan.removeAllOrphaned",
-          "when": "view == bitswan-unified-business-processes && viewItem == otherAutomations",
-          "group": "7_modification"
-        },
-        {
-          "command": "bitswan.restartAutomation",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automation,active/",
-          "group": "inline@2"
-        },
-        {
-          "command": "bitswan.showAutomationLogs",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automation,active/",
-          "group": "inline@5"
-        },
-        {
-          "command": "bitswan.stopAutomation",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,active,running( |$)/",
-          "group": "inline@1"
-        },
-        {
-          "command": "bitswan.startAutomation",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,active,(paused|exited)( |$)/",
-          "group": "inline@1"
-        },
-        {
-          "command": "bitswan.restartAutomation",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,active/",
-          "group": "inline@2"
-        },
-        {
-          "command": "bitswan.showAutomationLogs",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,active/",
-          "group": "inline@5"
-        },
-        {
-          "command": "bitswan.openExternalUrl",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,(live-dev|dev|staging|production),deployed,active,.*,urlStatus:url/",
-          "group": "inline@1"
-        },
-        {
           "command": "bitswan.startLiveDevServer",
           "when": "false",
           "group": "inline@1"
-        },
-        {
-          "command": "bitswan.deleteAutomation",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed/",
-          "group": "inline@4"
-        },
-        {
-          "command": "bitswan.promoteToDev",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,live-dev,deployed(?!.*worktreeLiveDev)/",
-          "group": "inline@8"
-        },
-        {
-          "command": "bitswan.promoteToStaging",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,dev,deployed(?!.*worktreeLiveDev)/",
-          "group": "inline@8"
-        },
-        {
-          "command": "bitswan.promoteToProduction",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,staging,deployed(?!.*worktreeLiveDev)/",
-          "group": "inline@8"
-        },
-        {
-          "command": "bitswan.activateAutomation",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,inactive,/",
-          "group": "inline@3"
-        },
-        {
-          "command": "bitswan.deactivateAutomation",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed,active,/",
-          "group": "inline@3"
-        },
-        {
-          "command": "bitswan.openCouchDBAdmin",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:couchdb/",
-          "group": "services@1"
-        },
-        {
-          "command": "bitswan.openKafkaUI",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:kafka/",
-          "group": "services@2"
-        },
-        {
-          "command": "bitswan.copyCouchDBPassword",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:couchdb/",
-          "group": "services@3"
-        },
-        {
-          "command": "bitswan.copyKafkaPassword",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:kafka/",
-          "group": "services@4"
-        },
-        {
-          "command": "bitswan.openPostgresAdmin",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:postgres/",
-          "group": "services@5"
-        },
-        {
-          "command": "bitswan.copyPostgresPassword",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:postgres/",
-          "group": "services@6"
-        },
-        {
-          "command": "bitswan.openMinioConsole",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:minio/",
-          "group": "services@7"
-        },
-        {
-          "command": "bitswan.copyMinioPassword",
-          "when": "view == bitswan-unified-business-processes && viewItem =~ /^automationStage,.*,deployed.*svc:minio/",
-          "group": "services@8"
-        },
-        {
-          "command": "bitswan.createAutomationFile",
-          "when": "view == bitswan-unified-business-processes && (viewItem == automationSource || viewItem == automationSourceDirectory || viewItem =~ /^automationStage,.*fsRoot$/)",
-          "group": "navigation@10"
-        },
-        {
-          "command": "bitswan.createAutomationFolder",
-          "when": "view == bitswan-unified-business-processes && (viewItem == automationSource || viewItem == automationSourceDirectory || viewItem =~ /^automationStage,.*fsRoot$/)",
-          "group": "navigation@11"
-        },
-        {
-          "command": "bitswan.renameAutomationResource",
-          "when": "view == bitswan-unified-business-processes && (viewItem == automationSource || viewItem == automationSourceDirectory || viewItem == automationSourceFile || viewItem =~ /^automationStage,.*fsRoot$/)",
-          "group": "navigation@12"
-        },
-        {
-          "command": "bitswan.deleteAutomationResource",
-          "when": "view == bitswan-unified-business-processes && (viewItem == automationSource || viewItem == automationSourceDirectory || viewItem == automationSourceFile || viewItem =~ /^automationStage,.*fsRoot$/)",
-          "group": "navigation@13"
-        },
-        {
-          "command": "bitswan.revealAutomationResource",
-          "when": "view == bitswan-unified-business-processes && (viewItem == automationSource || viewItem == automationSourceDirectory || viewItem == automationSourceFile || viewItem =~ /^automationStage,.*fsRoot$/)",
-          "group": "navigation@14"
-        },
-        {
-          "command": "bitswan.openAutomationTerminal",
-          "when": "view == bitswan-unified-business-processes && (viewItem == automationSource || viewItem == automationSourceDirectory || viewItem == automationSourceFile || viewItem =~ /^automationStage,.*fsRoot$/)",
-          "group": "navigation@15"
         },
         {
           "command": "bitswan.editGitOps",
@@ -751,11 +538,6 @@
           "group": "inline@5"
         },
         {
-          "command": "bitswan.showImageLogs",
-          "when": "view == bitswan-unified-business-processes && viewItem == automationSourceImage",
-          "group": "inline@5"
-        },
-        {
           "command": "bitswan.showOrphanedImageLogs",
           "when": "view == bitswan-orphaned-images && viewItem == image",
           "group": "inline@5"
@@ -771,11 +553,6 @@
           "group": "inline@4"
         },
         {
-          "command": "bitswan.deleteImage",
-          "when": "view == bitswan-unified-business-processes && viewItem == automationSourceImage",
-          "group": "inline@4"
-        },
-        {
           "command": "bitswan.deleteOrphanedImage",
           "when": "view == bitswan-orphaned-images && viewItem == image",
           "group": "inline@4"
@@ -788,11 +565,6 @@
         {
           "command": "bitswan.copyImageTag",
           "when": "view == bitswan-orphaned-images && viewItem == image",
-          "group": "inline@3"
-        },
-        {
-          "command": "bitswan.copyImageTag",
-          "when": "view == bitswan-unified-business-processes && viewItem == automationSourceImage",
           "group": "inline@3"
         },
         {
@@ -843,21 +615,6 @@
           "group": "navigation@1"
         },
         {
-          "command": "bitswan.refreshBusinessProcesses",
-          "when": "view == bitswan-unified-business-processes",
-          "group": "navigation@1"
-        },
-        {
-          "command": "bitswan.openDevelopmentGuide",
-          "when": "view == bitswan-unified-business-processes",
-          "group": "navigation@2"
-        },
-        {
-          "command": "bitswan.createBusinessProcess",
-          "when": "view == bitswan-unified-business-processes",
-          "group": "navigation@3"
-        },
-        {
           "command": "bitswan.createSecretGroup",
           "when": "view == bitswan-secrets-manager",
           "group": "navigation@1"
@@ -865,11 +622,6 @@
         {
           "command": "bitswan.refreshSecrets",
           "when": "view == bitswan-secrets-manager",
-          "group": "navigation@1"
-        },
-        {
-          "command": "bitswan.addGitOps",
-          "when": "view == bitswan-workspaces",
           "group": "navigation@1"
         }
       ],
