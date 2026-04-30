@@ -36,8 +36,7 @@ import { startBitswanKernel, stopBitswanKernel, checkAndUpdateKernelStatus, upda
 import * as filesystemCommands from './commands/filesystem';
 import { initUserInfo, getUserEmail } from './services/user_info';
 import { WorktreesViewProvider } from './views/worktrees_view';
-import { createWorktreeCommand as createWorktreeCmd, deleteWorktreeCommand as deleteWorktreeCmd, openAgentTerminalCommand as openAgentTerminalCmd, viewWorktreeDiffCommand as viewWorktreeDiffCmd } from './commands/worktrees';
-import { AgentSessionPanel, startAgentSession } from './commands/agent_sessions';
+import { deleteWorktreeCommand as deleteWorktreeCmd } from './commands/worktrees';
 import { DashboardPanel } from './views/dashboard_panel';
 import { BackupsPanel } from './views/backups_view';
 
@@ -173,23 +172,12 @@ export function activate(context: vscode.ExtensionContext) {
     const worktreesProvider = new WorktreesViewProvider(context);
     unifiedBusinessProcessesProvider.setWorktreesProvider(worktreesProvider);
 
-    // Register worktree and agent commands
+    // Dashboard / panel commands. The dashboard handles worktree creation
+    // inline; only deletion still goes through a registered command.
     context.subscriptions.push(
-        vscode.commands.registerCommand('bitswan.createWorktree', () => createWorktreeCmd(context, worktreesProvider)),
         vscode.commands.registerCommand('bitswan.deleteWorktree', (item) => deleteWorktreeCmd(context, item, worktreesProvider)),
-        vscode.commands.registerCommand('bitswan.openAgentTerminal', (item) => {
-            if (item?.name) {
-                return startAgentSession(context, item.name);
-            }
-        }),
-        vscode.commands.registerCommand('bitswan.viewWorktreeDiff', (item) => viewWorktreeDiffCmd(context, item)),
-        vscode.commands.registerCommand('bitswan.openSessionBrowser', () => AgentSessionPanel.createOrShow(context)),
         vscode.commands.registerCommand('bitswan.openRequirementsEditor', () => DashboardPanel.createOrShow(context)),
         vscode.commands.registerCommand('bitswan.openBackups', () => BackupsPanel.createOrShow(context)),
-        vscode.commands.registerCommand('bitswan.refreshWorktrees', () => worktreesProvider.refresh()),
-        vscode.commands.registerCommand('bitswan.selectWorktree', (name?: string) => {
-            unifiedBusinessProcessesProvider.selectWorktree(name);
-        }),
     );
 
     let deployFromToolbarCommand = vscode.commands.registerCommand('bitswan.deployAutomationFromToolbar', 
@@ -322,12 +310,6 @@ export function activate(context: vscode.ExtensionContext) {
         async () => {
             await imageCommands.refreshImagesCommand(context, unifiedImagesProvider);
             await imageCommands.refreshImagesCommand(context, orphanedImagesProvider);
-        });
-
-    let refreshBusinessProcessesCommand = vscode.commands.registerCommand('bitswan.refreshBusinessProcesses', 
-        async () => {
-            console.log('[DEBUG] refreshBusinessProcessesCommand called');
-            await businessProcessCommands.refreshBusinessProcessesCommand(context, unifiedBusinessProcessesProvider);
         });
 
     let refreshSecretsCommand = vscode.commands.registerCommand('bitswan.refreshSecrets',
@@ -584,26 +566,11 @@ export function activate(context: vscode.ExtensionContext) {
     let jumpToSourceCommand = vscode.commands.registerCommand('bitswan.jumpToSource',
         async (item: AutomationItem) => { if (!item) { return; } return automationCommands.jumpToSourceCommand(context, item); });
 
-    let openProcessReadmeCommand = vscode.commands.registerCommand('bitswan.openProcessReadme',
-        async (item: BusinessProcessItem) => {
-            if (!item) { return; }
-            const readmePath = path.join(item.resourceUri.fsPath, 'README.md');
-            try {
-                const uri = vscode.Uri.file(readmePath);
-                await vscode.window.showTextDocument(uri);
-            } catch (error) {
-                vscode.window.showErrorMessage(`Could not open README.md: ${error}`);
-            }
-        });
-
     let openAutomationTemplatesCommand = vscode.commands.registerCommand('bitswan.openAutomationTemplates',
         async (businessProcessName?: string) => openAutomationTemplates(context, businessProcessName));
 
     let openDevelopmentGuideCommand = vscode.commands.registerCommand('bitswan.openDevelopmentGuide',
         async () => businessProcessCommands.openDevelopmentGuideCommand(context));
-
-    let createBusinessProcessCommand = vscode.commands.registerCommand('bitswan.createBusinessProcess',
-        async () => businessProcessCommands.createBusinessProcessCommand(context, unifiedBusinessProcessesProvider));
 
     let promoteToDevCommand = vscode.commands.registerCommand('bitswan.promoteToDev',
         async (item: StageItem | any) => {
@@ -1106,7 +1073,6 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(activateGitOpsCommand);
     context.subscriptions.push(refreshAutomationsCommand);
     context.subscriptions.push(refreshImagesCommand);
-    context.subscriptions.push(refreshBusinessProcessesCommand);
     context.subscriptions.push(refreshSecretsCommand);
     context.subscriptions.push(createSecretGroupCommand);
     context.subscriptions.push(openSecretGroupCommand);
@@ -1134,10 +1100,8 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(deleteOrphanedImageCommand);
     context.subscriptions.push(copyImageTagCommand);
     context.subscriptions.push(jumpToSourceCommand);
-    context.subscriptions.push(openProcessReadmeCommand);
     context.subscriptions.push(openAutomationTemplatesCommand);
     context.subscriptions.push(openDevelopmentGuideCommand);
-    context.subscriptions.push(createBusinessProcessCommand);
     context.subscriptions.push(promoteToDevCommand);
     context.subscriptions.push(promoteToStagingCommand);
     context.subscriptions.push(promoteToProductionCommand);

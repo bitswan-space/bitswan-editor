@@ -462,9 +462,6 @@ export function openAutomationTemplates(context: vscode.ExtensionContext, busine
                     ensureAutomationId(dest);
                 }
 
-                // Refresh sidebar
-                await vscode.commands.executeCommand('bitswan.refreshBusinessProcesses');
-
                 await commitChanges(
                     context,
                     worktreeFromBpRel(bpRel),
@@ -538,9 +535,6 @@ export function openAutomationTemplates(context: vscode.ExtensionContext, busine
 
             // Ensure automation.toml has an id field
             ensureAutomationId(targetDir);
-
-            // Refresh sidebar
-            await vscode.commands.executeCommand('bitswan.refreshBusinessProcesses');
 
             await commitChanges(
                 context,
