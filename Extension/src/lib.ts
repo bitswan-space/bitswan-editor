@@ -1,7 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 
 import FormData from 'form-data';
-import JSZip from 'jszip';
 import archiver from 'archiver';
 import { minimatch } from 'minimatch';
 import { JupyterServerRequestResponse } from "./types";
@@ -353,27 +352,22 @@ function calculateGitTreeHashRecursive(
   // Use synchronous fs.readdirSync instead of vscode.workspace.fs which can hang
   const dirEntries = fs.readdirSync(dirPath, { withFileTypes: true });
 
-  // Convert to format compatible with sorting, filter .git, symlinks, unreadable, and ignored patterns
+  // Convert to format compatible with sorting, filter .git, unreadable, and ignored patterns.
+  // Symlinks are kept (hashed git-style with mode 120000) so the deploy archive's content
+  // is faithfully reflected in the checksum.
   const sortedEntries = dirEntries
     .filter(entry => {
       if (entry.name === '.git') {
         return false;
       }
-      // Skip symlinks - they should not be included in deployments
-      if (entry.isSymbolicLink()) {
-        const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
-        if (outputChannel) {
-          outputChannel.appendLine(`Skipping symlink: ${entryRelativePath}`);
-        }
+      // Only include regular files, directories, and symlinks
+      if (!entry.isFile() && !entry.isDirectory() && !entry.isSymbolicLink()) {
         return false;
       }
-      // Only include regular files and directories
-      if (!entry.isFile() && !entry.isDirectory()) {
-        return false;
-      }
-      // Skip unreadable files/directories (e.g. root-owned __pycache__ from containers)
+      // Skip unreadable files/directories (e.g. root-owned __pycache__ from containers).
+      // Symlinks are checked via lstat-style isSymbolicLink so we don't follow them here.
       const fullPath = path.join(dirPath, entry.name);
-      if (!isReadable(fullPath)) {
+      if (!entry.isSymbolicLink() && !isReadable(fullPath)) {
         const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
         if (outputChannel) {
           outputChannel.appendLine(`Skipping unreadable: ${entryRelativePath}`);
@@ -392,7 +386,8 @@ function calculateGitTreeHashRecursive(
     .map(entry => ({
       name: entry.name,
       isDirectory: entry.isDirectory(),
-      isFile: entry.isFile()
+      isFile: entry.isFile(),
+      isSymlink: entry.isSymbolicLink()
     }))
     .sort((a, b) => {
       // Git sorts directories with trailing slash, using byte order (not locale)
@@ -408,7 +403,16 @@ function calculateGitTreeHashRecursive(
     const fullPath = path.join(dirPath, entry.name);
     const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
 
-    if (entry.isDirectory) {
+    if (entry.isSymlink) {
+      // Git symlinks: mode 120000, blob content = the link target string.
+      // We don't follow the symlink (the target may not exist on host).
+      const target = fs.readlinkSync(fullPath);
+      const blobHash = calculateGitBlobHashFromContent(Buffer.from(target, 'utf8'));
+      entries.push({ mode: '120000', name: entry.name, hash: blobHash });
+      if (outputChannel) {
+        outputChannel.appendLine(`CHECKSUM LINK: ${entryRelativePath} -> 120000 ${blobHash} (target: ${target})`);
+      }
+    } else if (entry.isDirectory) {
       const treeHash = calculateGitTreeHashRecursive(fullPath, outputChannel, entryRelativePath, ignorePatterns);
       // Skip empty directories — git does not track them
       if (treeHash === null) {
@@ -426,7 +430,7 @@ function calculateGitTreeHashRecursive(
         outputChannel.appendLine(`CHECKSUM DIR:  ${entryRelativePath}/ -> ${treeHash}`);
       }
     } else if (entry.isFile) {
-      // Always use 100644 mode - zip extraction doesn't preserve executable bits reliably
+      // Always use 100644 mode - tar extraction doesn't preserve executable bits reliably
       const blobHash = calculateGitBlobHashSync(fullPath);
       entries.push({
         mode: '100644',
@@ -465,13 +469,20 @@ function calculateGitTreeHashRecursive(
 }
 
 /**
- * Synchronous version of blob hash calculation
+ * Hash an in-memory buffer as a git blob. Used for symlink entries (their
+ * "blob content" is the target string).
  */
-function calculateGitBlobHashSync(filePath: string): string {
-  const content = fs.readFileSync(filePath);
+function calculateGitBlobHashFromContent(content: Buffer): string {
   const header = Buffer.from(`blob ${content.length}\0`);
   const blob = Buffer.concat([header, content]);
   return crypto.createHash('sha1').update(blob).digest('hex');
+}
+
+/**
+ * Synchronous version of blob hash calculation
+ */
+function calculateGitBlobHashSync(filePath: string): string {
+  return calculateGitBlobHashFromContent(fs.readFileSync(filePath));
 }
 
 /**
@@ -546,8 +557,8 @@ function calculateMergedGitTreeHashRecursive(
   outputChannel?: vscode.OutputChannel,
   ignorePatterns?: string[]
 ): string | null {
-  // Build a map of name -> {sourcePath, isDirectory}, with later directories overwriting earlier ones
-  const entryMap = new Map<string, { sourcePath: string; isDirectory: boolean }>();
+  // Build a map of name -> {sourcePath, isDirectory, isSymlink}, with later directories overwriting earlier ones
+  const entryMap = new Map<string, { sourcePath: string; isDirectory: boolean; isSymlink: boolean }>();
 
   for (const dirPath of dirPaths) {
     const fullDirPath = relativePath ? path.join(dirPath, relativePath) : dirPath;
@@ -567,21 +578,14 @@ function calculateMergedGitTreeHashRecursive(
       if (entry.name === '.git') {
         continue;
       }
-      // Skip symlinks - they should not be included in deployments
-      if (entry.isSymbolicLink()) {
-        const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
-        if (outputChannel) {
-          outputChannel.appendLine(`Skipping symlink: ${entryRelativePath}`);
-        }
+      // Only include regular files, directories, and symlinks
+      if (!entry.isFile() && !entry.isDirectory() && !entry.isSymbolicLink()) {
         continue;
       }
-      // Only include regular files and directories
-      if (!entry.isFile() && !entry.isDirectory()) {
-        continue;
-      }
-      // Skip unreadable files/directories (e.g. root-owned __pycache__ from containers)
+      // Skip unreadable files/directories (e.g. root-owned __pycache__ from containers).
+      // Symlinks are not followed here.
       const entryFullPath = path.join(fullDirPath, entry.name);
-      if (!isReadable(entryFullPath)) {
+      if (!entry.isSymbolicLink() && !isReadable(entryFullPath)) {
         const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
         if (outputChannel) {
           outputChannel.appendLine(`Skipping unreadable: ${entryRelativePath}`);
@@ -597,7 +601,8 @@ function calculateMergedGitTreeHashRecursive(
       }
       entryMap.set(entry.name, {
         sourcePath: entryFullPath,
-        isDirectory: entry.isDirectory()
+        isDirectory: entry.isDirectory(),
+        isSymlink: entry.isSymbolicLink()
       });
     }
   }
@@ -619,7 +624,14 @@ function calculateMergedGitTreeHashRecursive(
   for (const entry of sortedEntries) {
     const childRelativePath = relativePath ? path.join(relativePath, entry.name) : entry.name;
 
-    if (entry.isDirectory) {
+    if (entry.isSymlink) {
+      const target = fs.readlinkSync(entry.sourcePath);
+      const blobHash = calculateGitBlobHashFromContent(Buffer.from(target, 'utf8'));
+      entries.push({ mode: '120000', name: entry.name, hash: blobHash });
+      if (outputChannel) {
+        outputChannel.appendLine(`CHECKSUM LINK: ${childRelativePath} -> 120000 ${blobHash} (target: ${target})`);
+      }
+    } else if (entry.isDirectory) {
       const treeHash = calculateMergedGitTreeHashRecursive(dirPaths, childRelativePath, outputChannel, ignorePatterns);
       // Skip empty directories — git does not track them
       if (treeHash === null) {
@@ -633,7 +645,7 @@ function calculateMergedGitTreeHashRecursive(
         outputChannel.appendLine(`CHECKSUM DIR:  ${childRelativePath}/ -> ${treeHash}`);
       }
     } else {
-      // Always use 100644 mode - zip extraction doesn't preserve executable bits reliably
+      // Always use 100644 mode - tar extraction doesn't preserve executable bits reliably
       const blobHash = calculateGitBlobHashSync(entry.sourcePath);
       entries.push({ mode: '100644', name: entry.name, hash: blobHash });
       if (outputChannel) {
@@ -667,132 +679,27 @@ function calculateMergedGitTreeHashRecursive(
   return finalHash;
 }
 
-export const zipDirectory = async (dirPath: string, relativePath: string = '', zipFile: JSZip = new JSZip(), outputChannel: vscode.OutputChannel, ignorePatterns?: string[]) => {
-
-  const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dirPath));
-  for (const [name, type] of entries) {
-    const fullPath = path.join(dirPath, name);
-    const zipPath = path.join(relativePath, name);
-
-    if (shouldIgnore(zipPath, ignorePatterns)) {
-      outputChannel.appendLine(`Ignoring: ${zipPath}`);
-      continue;
-    }
-
-    // Skip unreadable files/directories (e.g. root-owned __pycache__ from containers)
-    if (!isReadable(fullPath)) {
-      outputChannel.appendLine(`Skipping unreadable: ${zipPath}`);
-      continue;
-    }
-
-    if (type === vscode.FileType.Directory) {
-      await zipDirectory(fullPath, zipPath, zipFile, outputChannel, ignorePatterns);
-    } else {
-      const content = await vscode.workspace.fs.readFile(vscode.Uri.file(fullPath));
-      outputChannel.appendLine(`Adding file ${fullPath}`);
-      zipFile.file(zipPath, content);
-    }
-  }
-
-  return zipFile;
-};
-
 /**
- * Create a zip from multiple directories without copying files.
- * Later directories in the array override files from earlier directories.
- * This streams files directly from source, avoiding temp directory creation.
- * Uses synchronous fs operations to avoid VS Code API hangs.
- */
-export const zipMergedDirectories = (
-  dirPaths: string[],
-  outputChannel: vscode.OutputChannel
-): JSZip => {
-  const zipFile = new JSZip();
-  zipMergedDirectoriesRecursive(dirPaths, '', zipFile, outputChannel);
-  return zipFile;
-};
-
-function zipMergedDirectoriesRecursive(
-  dirPaths: string[],
-  relativePath: string,
-  zipFile: JSZip,
-  outputChannel: vscode.OutputChannel
-): void {
-  // Build a map of name -> sourcePath, with later directories overwriting earlier ones
-  const fileMap = new Map<string, { sourcePath: string; isDirectory: boolean }>();
-
-  for (const dirPath of dirPaths) {
-    const fullDirPath = relativePath ? path.join(dirPath, relativePath) : dirPath;
-
-    // Use synchronous fs to avoid VS Code API hangs
-    if (!fs.existsSync(fullDirPath)) {
-      continue;
-    }
-    const stat = fs.statSync(fullDirPath);
-    if (!stat.isDirectory()) {
-      continue;
-    }
-
-    const entries = fs.readdirSync(fullDirPath, { withFileTypes: true });
-
-    for (const entry of entries) {
-      if (entry.name === '.git') {
-        continue;
-      }
-      // Skip symlinks - they should not be included in deployments
-      if (entry.isSymbolicLink()) {
-        outputChannel.appendLine(`Skipping symlink: ${relativePath ? `${relativePath}/${entry.name}` : entry.name}`);
-        continue;
-      }
-      // Only include regular files and directories
-      if (!entry.isFile() && !entry.isDirectory()) {
-        continue;
-      }
-      fileMap.set(entry.name, {
-        sourcePath: path.join(fullDirPath, entry.name),
-        isDirectory: entry.isDirectory()
-      });
-    }
-  }
-
-  // Process all entries
-  for (const [name, entry] of fileMap) {
-    const zipPath = relativePath ? path.join(relativePath, name) : name;
-
-    if (entry.isDirectory) {
-      // Recursively process subdirectory from all source paths
-      zipMergedDirectoriesRecursive(dirPaths, zipPath, zipFile, outputChannel);
-    } else {
-      // Use a stream for lazy file reading - files are only read when zip is generated
-      outputChannel.appendLine(`Zipping: ${zipPath}`);
-      zipFile.file(zipPath, fs.createReadStream(entry.sourcePath));
-    }
-  }
-}
-
-
-export const zip2stream = (zipFile: JSZip): NodeJS.ReadableStream => {
-  // Use generateNodeStream for true streaming - generates zip on-the-fly
-  // instead of buffering the entire zip in memory
-  return zipFile.generateNodeStream({ type: 'nodebuffer', streamFiles: true });
-}
-
-/**
- * Create a true streaming zip from multiple directories using archiver.
+ * Create a streaming tar+gzip archive from one or more source directories.
  * Files are discovered and compressed as the stream is consumed, not beforehand.
  * Later directories in the array override files from earlier directories.
  * Returns a readable stream that can be piped directly to upload.
+ *
+ * Symlinks are preserved as link entries (not followed). This matters for
+ * templates that ship absolute-target symlinks like
+ * `package.json → /deps/package.json`. The receiving end (gitops) validates
+ * symlink targets via an allowlist filter (see `bitswan_extract_filter`).
  */
-export const createStreamingZip = (
+export const createStreamingTar = (
   dirPaths: string[],
   outputChannel: vscode.OutputChannel,
   ignorePatterns?: string[]
 ): NodeJS.ReadableStream => {
-  const archive = archiver('zip', {
-    zlib: { level: 6 } // Compression level
+  const archive = archiver('tar', {
+    gzip: true,
+    gzipOptions: { level: 6 },
   });
 
-  // Handle archive errors
   archive.on('error', (err) => {
     outputChannel.appendLine(`Archive error: ${err.message}`);
     throw err;
@@ -806,7 +713,6 @@ export const createStreamingZip = (
     }
   });
 
-  // Log when entries are added (this happens as stream is consumed)
   archive.on('entry', (entry) => {
     outputChannel.appendLine(`Streaming: ${entry.name}`);
   });
@@ -815,9 +721,12 @@ export const createStreamingZip = (
     outputChannel.appendLine(`Ignoring patterns: ${ignorePatterns.join(', ')}`);
   }
 
-  // Build file map with later directories overriding earlier ones
+  // Walk the merged dir set and queue entries on the archive.
   const addFilesFromMergedDirs = (relativePath: string = '') => {
-    const fileMap = new Map<string, { sourcePath: string; isDirectory: boolean }>();
+    const fileMap = new Map<
+      string,
+      { sourcePath: string; isDirectory: boolean; isSymlink: boolean }
+    >();
 
     for (const dirPath of dirPaths) {
       const fullDirPath = relativePath ? path.join(dirPath, relativePath) : dirPath;
@@ -836,20 +745,17 @@ export const createStreamingZip = (
         if (entry.name === '.git') {
           continue;
         }
-        // Skip symlinks - they should not be included in deployments
-        // (checksum calculation also skips them since isFile() returns false for symlinks)
-        if (entry.isSymbolicLink()) {
-          outputChannel.appendLine(`Skipping symlink: ${relativePath ? `${relativePath}/${entry.name}` : entry.name}`);
+        // Only include regular files, directories, and symlinks
+        if (!entry.isFile() && !entry.isDirectory() && !entry.isSymbolicLink()) {
           continue;
         }
-        // Only include regular files and directories
-        if (!entry.isFile() && !entry.isDirectory()) {
-          continue;
-        }
-        // Skip unreadable files/directories (e.g. root-owned __pycache__ from containers)
         const entryFullPath = path.join(fullDirPath, entry.name);
-        if (!isReadable(entryFullPath)) {
-          outputChannel.appendLine(`Skipping unreadable: ${relativePath ? `${relativePath}/${entry.name}` : entry.name}`);
+        // Skip unreadable files/directories (e.g. root-owned __pycache__ from containers).
+        // Symlinks are not followed so they're always "readable" at link level.
+        if (!entry.isSymbolicLink() && !isReadable(entryFullPath)) {
+          outputChannel.appendLine(
+            `Skipping unreadable: ${relativePath ? `${relativePath}/${entry.name}` : entry.name}`
+          );
           continue;
         }
         const entryRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
@@ -859,45 +765,90 @@ export const createStreamingZip = (
         }
         fileMap.set(entry.name, {
           sourcePath: entryFullPath,
-          isDirectory: entry.isDirectory()
+          isDirectory: entry.isDirectory(),
+          isSymlink: entry.isSymbolicLink(),
         });
       }
     }
 
-    // Process all entries
     for (const [name, entry] of fileMap) {
-      const zipPath = relativePath ? path.join(relativePath, name) : name;
+      const archivePath = relativePath ? path.join(relativePath, name) : name;
 
-      if (entry.isDirectory) {
-        // Recursively process subdirectory
-        addFilesFromMergedDirs(zipPath);
+      if (entry.isSymlink) {
+        // Emit a tar link entry. archiver.symlink() takes the link path and
+        // its target verbatim — absolute targets like `/deps/...` are passed
+        // through and the gitops-side filter validates them on extract.
+        const target = fs.readlinkSync(entry.sourcePath);
+        archive.symlink(archivePath, target);
+      } else if (entry.isDirectory) {
+        addFilesFromMergedDirs(archivePath);
       } else {
-        // Add file to archive - archiver streams file content when needed
-        archive.file(entry.sourcePath, { name: zipPath });
+        archive.file(entry.sourcePath, { name: archivePath });
       }
     }
   };
 
-  // Start adding files (this queues them for streaming)
   addFilesFromMergedDirs();
 
-  // Finalize the archive - stream will complete when all files are processed
+  // Finalize the archive — stream will complete when all entries are processed
   archive.finalize();
 
   return archive;
 };
 
+/**
+ * Single-directory variant of `createStreamingTar`. Convenience wrapper for
+ * call sites that previously built an in-memory JSZip via `zipDirectory` +
+ * `zip2stream`; behaves the same way for the streaming-upload pipeline.
+ */
+export const createStreamingTarFromDir = (
+  dirPath: string,
+  outputChannel: vscode.OutputChannel,
+  ignorePatterns?: string[]
+): NodeJS.ReadableStream => {
+  return createStreamingTar([dirPath], outputChannel, ignorePatterns);
+};
+
+/**
+ * Drain a readable stream into a Buffer.
+ *
+ * archiver returns a Transform stream with no `knownLength`, so when it's
+ * passed straight to `form-data.append`, form-data can't compute a
+ * Content-Length and the resulting multipart body is unparseable on the
+ * server (every form field shows up "missing"). Buffering before append
+ * sidesteps that — fine for image archives which are small (Dockerfile +
+ * entrypoint + a handful of config files).
+ */
+export const bufferStreamToBuffer = (
+  stream: NodeJS.ReadableStream
+): Promise<Buffer> => {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    stream.on('data', (chunk: Buffer | string) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
+  });
+};
+
 
 export const deploy = async (
-  deployUrl: string, 
-  form: FormData, 
+  deployUrl: string,
+  form: FormData,
   secret: string,
   outputChannel?: vscode.OutputChannel
 ) => {
   try {
+    // form.getHeaders() returns `Content-Type: multipart/form-data; boundary=...`
+    // — the boundary parameter is required for the server to split the parts.
+    // Spreading it here avoids the previous bug where a hardcoded
+    // `Content-Type: multipart/form-data` (no boundary) made FastAPI's body
+    // parser silently treat the body as un-parseable and report every form
+    // field as missing.
     const response = await axios.post(deployUrl, form, {
       headers: {
-        'Content-Type': 'multipart/form-data',
+        ...form.getHeaders(),
         'Authorization': `Bearer ${secret}`
       },
     });
@@ -1214,8 +1165,10 @@ export const uploadAsset = async (assetsUploadUrl: string, form: FormData, secre
 
 /**
  * Upload asset using streaming endpoint.
- * Sends raw zip data with checksum in X-Checksum header.
+ * Sends raw tar+gzip data with checksum in X-Checksum header.
  * This endpoint supports chunked transfer encoding for true streaming.
+ * (gitops sniffs the format via `tarfile.is_tarfile`/`zipfile.ZipFile` so
+ * the Content-Type is informational, but we keep it accurate.)
  */
 export const uploadAssetStream = async (
   uploadUrl: string,
@@ -1225,7 +1178,7 @@ export const uploadAssetStream = async (
 ) => {
   const response = await axios.post(uploadUrl, stream, {
     headers: {
-      'Content-Type': 'application/zip',
+      'Content-Type': 'application/gzip',
       'X-Checksum': checksum,
       'Authorization': `Bearer ${secret}`,
       'Transfer-Encoding': 'chunked',

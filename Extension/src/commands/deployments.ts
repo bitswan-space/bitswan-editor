@@ -3,12 +3,11 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import FormData from 'form-data';
-import JSZip from 'jszip';
 import urlJoin from 'proper-url-join';
 import axios from 'axios';
 
 import { FolderItem } from '../views/sources_view';
-import { activateDeployment, deploy, zip2stream, zipDirectory, createStreamingZip, uploadAsset, uploadAssetStream, promoteAutomation, startLiveDev, calculateGitTreeHash, calculateMergedGitTreeHash, getImages, getAutomations, getDeployStatus, DeployResponse } from '../lib';
+import { activateDeployment, bufferStreamToBuffer, deploy, createStreamingTar, createStreamingTarFromDir, uploadAsset, uploadAssetStream, promoteAutomation, startLiveDev, calculateGitTreeHash, calculateMergedGitTreeHash, getImages, getAutomations, getDeployStatus, DeployResponse } from '../lib';
 import { getDeployDetails } from '../deploy_details';
 import { getUserEmail } from '../services/user_info';
 import { outputChannel } from '../extension';
@@ -196,11 +195,12 @@ export async function deployCommandAbstract(
                 // Only create zip if we actually need to upload - stream directly from source, no copying
                 if (!assetExists) {
                     progress.report({ increment: 10, message: "Packing..." });
-                    outputChannel.appendLine(`Creating streaming zip from ${dirsToMerge.length} directories...`);
+                    outputChannel.appendLine(`Creating streaming tar from ${dirsToMerge.length} directories...`);
 
-                    // Create true streaming zip - files are compressed as the stream is consumed
-                    const stream = createStreamingZip(dirsToMerge, outputChannel, ignorePatterns);
-                    outputChannel.appendLine(`Streaming zip created, starting upload...`);
+                    // Create true streaming tar — files are compressed as the stream is consumed.
+                    // Symlinks are preserved as link entries; gitops validates targets on extract.
+                    const stream = createStreamingTar(dirsToMerge, outputChannel, ignorePatterns);
+                    outputChannel.appendLine(`Streaming tar created, starting upload...`);
 
                     progress.report({ increment: 40, message: "Uploading asset..." });
                     // Use the streaming upload endpoint that handles chunked transfer encoding
@@ -311,12 +311,15 @@ export async function deployCommandAbstract(
                 // Image doesn't exist, proceed with upload
                 progress.report({ increment: 20, message: "Packing..." });
 
-                // Zip the pipeline config folder and add it to the form
-                let zip = await zipDirectory(folderPath, '', JSZip(), outputChannel);
-                const stream = zip2stream(zip);
-                form.append('file', stream, {
-                    filename: 'deployment.zip',
-                    contentType: 'application/zip',
+                // Tar the pipeline config folder and buffer it before posting.
+                // archiver's Transform stream has no knownLength, so handing it
+                // to form-data directly produces an unparseable multipart body
+                // (server reports body.file missing).
+                const stream = createStreamingTarFromDir(folderPath, outputChannel);
+                const buffer = await bufferStreamToBuffer(stream);
+                form.append('file', buffer, {
+                    filename: 'deployment.tar.gz',
+                    contentType: 'application/gzip',
                 });
                 // Add checksum to form
                 form.append('checksum', checksum);

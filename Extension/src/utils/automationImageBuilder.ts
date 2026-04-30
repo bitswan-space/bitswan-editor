@@ -1,7 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
 import FormData from "form-data";
-import JSZip from "jszip";
 import axios from "axios";
 import urlJoin from "proper-url-join";
 import * as vscode from "vscode";
@@ -9,12 +8,12 @@ import * as toml from "@iarna/toml";
 
 import { sanitizeName } from "./nameUtils";
 import {
+  bufferStreamToBuffer,
   calculateGitTreeHash,
+  createStreamingTarFromDir,
   deploy,
   getImages,
   shouldIgnore,
-  zip2stream,
-  zipDirectory,
 } from "../lib";
 import { DeployDetails } from "../deploy_details";
 
@@ -531,13 +530,17 @@ async function startImageBuild(
   ignorePatterns?: string[]
 ): Promise<void> {
   const imageDir = path.join(automationFolderPath, IMAGE_FOLDER_NAME);
-  let zip = await zipDirectory(imageDir, "", new JSZip(), outputChannel, ignorePatterns);
-  const stream = zip2stream(zip);
+  const stream = createStreamingTarFromDir(imageDir, outputChannel, ignorePatterns);
+  // Buffer the archive so form-data can compute Content-Length. archiver's
+  // Transform stream has no knownLength, which makes the multipart body
+  // unparseable on the server (FastAPI reports body.file/body.checksum
+  // missing). See bufferStreamToBuffer for context.
+  const buffer = await bufferStreamToBuffer(stream);
 
   const form = new FormData();
-  form.append("file", stream, {
-    filename: `${normalizedName}-image.zip`,
-    contentType: "application/zip",
+  form.append("file", buffer, {
+    filename: `${normalizedName}-image.tar.gz`,
+    contentType: "application/gzip",
   });
   form.append("checksum", checksum);
 
