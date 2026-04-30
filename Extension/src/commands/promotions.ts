@@ -4,9 +4,10 @@ import { StageItem } from '../views/unified_business_processes_view';
 import { getDeployDetails } from '../deploy_details';
 import { promoteAutomation, getAutomationHistory, scaleAutomation, getDeployStatus, getAssetDiff, downloadAsset } from '../lib';
 import { getUserEmail } from '../services/user_info';
-import * as JSZip from 'jszip';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import * as tar from 'tar';
 import { openDiffViewerPanel } from './diff_viewer';
 import { outputChannel } from '../extension';
 import { refreshAutomationsCommand, showAutomationLogsCommand } from './automations';
@@ -552,24 +553,20 @@ async function handleCheckoutAsset(
 
             progress.report({ increment: 30, message: 'Downloading asset...' });
 
-            // Download asset zip
-            const zipBuffer = await downloadAsset(details.deployUrl, details.deploySecret, checksum);
+            // gitops streams asset bytes back as a gzipped tar (see
+            // automation_service.download_asset). Symlinks land on disk as
+            // symlinks (potentially dangling if their target is /deps/...,
+            // which is fine for read-only inspection).
+            const tarBuffer = await downloadAsset(details.deployUrl, details.deploySecret, checksum);
 
             progress.report({ increment: 30, message: 'Extracting files...' });
 
-            // Extract using JSZip
-            const zip = await JSZip.loadAsync(zipBuffer);
-            const entries = Object.entries(zip.files);
-
-            for (const [relativePath, zipEntry] of entries) {
-                const outputPath = path.join(checkoutDir, relativePath);
-                if (zipEntry.dir) {
-                    fs.mkdirSync(outputPath, { recursive: true });
-                } else {
-                    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-                    const content = await zipEntry.async('nodebuffer');
-                    fs.writeFileSync(outputPath, content);
-                }
+            const tmpTarPath = path.join(os.tmpdir(), `bitswan-checkout-${checksum}.tar.gz`);
+            fs.writeFileSync(tmpTarPath, tarBuffer);
+            try {
+                await tar.x({ file: tmpTarPath, cwd: checkoutDir });
+            } finally {
+                try { fs.unlinkSync(tmpTarPath); } catch { /* best effort */ }
             }
 
             progress.report({ increment: 30, message: 'Revealing in explorer...' });

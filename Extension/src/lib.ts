@@ -797,9 +797,7 @@ export const createStreamingTar = (
 };
 
 /**
- * Single-directory variant of `createStreamingTar`. Convenience wrapper for
- * call sites that previously built an in-memory JSZip via `zipDirectory` +
- * `zip2stream`; behaves the same way for the streaming-upload pipeline.
+ * Single-directory variant of `createStreamingTar`.
  */
 export const createStreamingTarFromDir = (
   dirPath: string,
