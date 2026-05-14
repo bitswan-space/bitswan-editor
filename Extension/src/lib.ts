@@ -815,7 +815,7 @@ export const createStreamingTarFromDir = (
  *
  * archiver returns a Transform stream with no `knownLength`, so when it's
  * passed straight to `form-data.append`, form-data can't compute a
- * Content-Length and the resulting multipart body is unparseable on the
+ * Content-Length and the resulting multipart body is unparsable on the
  * server (every form field shows up "missing"). Buffering before append
  * sidesteps that — fine for image archives which are small (Dockerfile +
  * entrypoint + a handful of config files).

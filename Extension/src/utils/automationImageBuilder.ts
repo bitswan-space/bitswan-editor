@@ -533,7 +533,7 @@ async function startImageBuild(
   const stream = createStreamingTarFromDir(imageDir, outputChannel, ignorePatterns);
   // Buffer the archive so form-data can compute Content-Length. archiver's
   // Transform stream has no knownLength, which makes the multipart body
-  // unparseable on the server (FastAPI reports body.file/body.checksum
+  // unparsable on the server (FastAPI reports body.file/body.checksum
   // missing). See bufferStreamToBuffer for context.
   const buffer = await bufferStreamToBuffer(stream);
 

@@ -313,7 +313,7 @@ export async function deployCommandAbstract(
 
                 // Tar the pipeline config folder and buffer it before posting.
                 // archiver's Transform stream has no knownLength, so handing it
-                // to form-data directly produces an unparseable multipart body
+                // to form-data directly produces an unparsable multipart body
                 // (server reports body.file missing).
                 const stream = createStreamingTarFromDir(folderPath, outputChannel);
                 const buffer = await bufferStreamToBuffer(stream);
@@ -329,8 +329,8 @@ export async function deployCommandAbstract(
                 const success = await deploy(deployUrl, form, details.deploySecret, outputChannel);
 
                 if (success) {
-                    progress.report({ increment: 100, message: "Succesfully uploaded "+messages[itemSet]["item"]+" to GitOps" });
-                    vscode.window.showInformationMessage("Succesfully uploaded "+messages[itemSet]["item"]+" to GitOps");
+                    progress.report({ increment: 100, message: "Successfully uploaded "+messages[itemSet]["item"]+" to GitOps" });
+                    vscode.window.showInformationMessage("Successfully uploaded "+messages[itemSet]["item"]+" to GitOps");
                     
                     // Refresh image views if this was an image build
                     if (itemSet === "images" && unifiedImagesProvider && orphanedImagesProvider) {
