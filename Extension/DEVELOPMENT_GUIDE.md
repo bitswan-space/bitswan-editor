@@ -300,6 +300,38 @@ The BitSwan Coding Agent provides an AI-assisted development environment inside 
 - Has SSH access to the workspace repository
 - Can deploy, restart, and inspect automations via the agent API
 
+## Snapshots
+
+Snapshots capture the full data state of a stage (Postgres, CouchDB, MinIO) into tarballs stored on the gitops host. They let you clone a known-good state from one stage into another — for example, copying production data down to staging for debugging.
+
+### Creating a snapshot
+
+Right-click any stage in the Snapshots panel and choose **Create Snapshot**, or use the panel toolbar. Optionally give it a name; the snapshot ID is always auto-generated. For the `production` stage you will first see a size estimate and a confirmation modal.
+
+Snapshot creation runs in the background. A progress notification tracks each step (Postgres backup → CouchDB backup → MinIO backup → writing manifest). You can keep working while it runs.
+
+### Cloning a snapshot into a stage
+
+Right-click a snapshot and choose **Clone**. You'll be asked which stage to clone into. The target stage's automations are briefly stopped while data is restored, then restarted. You will always see a confirmation prompt; cloning into `production` requires a second explicit acknowledgement.
+
+**Source consistency:** the snapshot captures each service separately and is not a single atomic transaction. If automations were writing data during the snapshot, you may see minor inconsistencies across services.
+
+### Production as a destination
+
+Cloning into `production` is intentionally guarded by a double-confirmation modal. There is no automatic rollback — take a snapshot of production first if you want a recovery point.
+
+### Partial failures
+
+If a clone fails mid-way (e.g. Postgres succeeded but CouchDB failed), the target stage is left stopped. An inline **Resume target** button appears in the error notification; clicking it restarts the target automations so the service becomes available again even though the restore was incomplete. You can then fix the underlying problem and re-clone.
+
+### Retention
+
+The gitops server keeps the last **5** snapshots per source stage by default (configurable via `SNAPSHOT_RETENTION_PER_STAGE`). Older snapshots are pruned automatically after each create and nightly at 03:00.
+
+### Deleting snapshots
+
+Right-click a snapshot and choose **Delete**. Deletion is immediate and cannot be undone.
+
 ## Debugging and Testing
 
 - **Notebooks**: run cells interactively in Jupyter for step-by-step debugging
