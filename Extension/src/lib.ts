@@ -1442,6 +1442,88 @@ export const listAssets = async (assetsUrl: string, secret: string) => {
   } else {
     throw new Error(`Failed to list assets: ${response.status}`);
   }
-}
+};
+
+// ---------------------------------------------------------------------------
+// Snapshot API helpers
+// ---------------------------------------------------------------------------
+
+export const createSnapshot = async (
+  baseUrl: string,
+  secret: string,
+  sourceStage: string,
+  name?: string,
+): Promise<{ task_id: string }> => {
+  const response = await axios.post(
+    `${baseUrl}/snapshots`,
+    { source_stage: sourceStage, name: name ?? null },
+    { headers: { Authorization: `Bearer ${secret}` } },
+  );
+  return response.data;
+};
+
+export const listSnapshots = async (
+  baseUrl: string,
+  secret: string,
+): Promise<{ snapshots: import('./types').Snapshot[]; retention_per_stage: number }> => {
+  const response = await axios.get(`${baseUrl}/snapshots`, {
+    headers: { Authorization: `Bearer ${secret}` },
+  });
+  return response.data;
+};
+
+export const deleteSnapshot = async (
+  baseUrl: string,
+  secret: string,
+  snapshotId: string,
+): Promise<{ task_id: string }> => {
+  const response = await axios.delete(`${baseUrl}/snapshots/${snapshotId}`, {
+    headers: { Authorization: `Bearer ${secret}` },
+  });
+  return response.data;
+};
+
+export const cloneSnapshot = async (
+  baseUrl: string,
+  secret: string,
+  snapshotId: string,
+  targetStage: string,
+  confirmProduction: boolean,
+): Promise<{ task_id: string }> => {
+  const response = await axios.post(
+    `${baseUrl}/snapshots/${snapshotId}/clone`,
+    {
+      target_stage: targetStage,
+      confirm_destination_is_production: confirmProduction,
+    },
+    { headers: { Authorization: `Bearer ${secret}` } },
+  );
+  return response.data;
+};
+
+export const estimateSnapshotSize = async (
+  baseUrl: string,
+  secret: string,
+  stage: string,
+): Promise<{ postgres: number; couchdb: number; minio: number; total: number }> => {
+  const response = await axios.get(`${baseUrl}/snapshots/estimate`, {
+    params: { stage },
+    headers: { Authorization: `Bearer ${secret}` },
+  });
+  return response.data;
+};
+
+export const resumeSnapshotTarget = async (
+  baseUrl: string,
+  secret: string,
+  taskId: string,
+): Promise<{ task_id: string }> => {
+  const response = await axios.post(
+    `${baseUrl}/snapshots/tasks/${taskId}/resume-target`,
+    {},
+    { headers: { Authorization: `Bearer ${secret}` } },
+  );
+  return response.data;
+};
 
 
