@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import axios from 'axios';
 import { deployState } from './deploy_state';
+import { snapshotState } from './snapshot_state';
 import { DashboardPanel } from '../views/dashboard_panel';
 
 /**
@@ -44,7 +45,7 @@ export class GitOpsSSEClient {
      * flush them once after a short settling window, so an initial state dump
      * from the server produces at most one refresh per provider.
      */
-    private pendingRefresh = new Set<'automations' | 'images'>();
+    private pendingRefresh = new Set<'automations' | 'images' | 'snapshots'>();
     private settleTimer: ReturnType<typeof setTimeout> | undefined;
     private static readonly SETTLE_MS = 600; // slightly longer than the tree-view debounce (500ms)
 
@@ -53,6 +54,7 @@ export class GitOpsSSEClient {
         private businessProcessesProvider: { refresh(): void; refreshAutomations(): void },
         private imagesProvider: { refresh(): void },
         private orphanedImagesProvider: { refresh(): void },
+        private snapshotsProvider?: { setSnapshots(list: any[]): void; refresh(): void },
     ) {}
 
     async connect(url: string, secret: string) {
@@ -119,6 +121,18 @@ export class GitOpsSSEClient {
             deployState.handleDeployProgress(data);
         } else if (event === 'worktrees') {
             DashboardPanel.currentPanel?.onWorktreeChanged();
+        } else if (event === 'snapshots') {
+            const snapshots = data?.snapshots ?? [];
+            const current = this.context.globalState.get('snapshots', []);
+            if (stableStringify(current) !== stableStringify(snapshots)) {
+                await this.context.globalState.update('snapshots', snapshots);
+                if (this.snapshotsProvider) {
+                    this.snapshotsProvider.setSnapshots(snapshots);
+                }
+                this.scheduleRefresh('snapshots');
+            }
+        } else if (event === 'snapshot_progress') {
+            snapshotState.applyProgress(data);
         }
     }
 
@@ -126,7 +140,7 @@ export class GitOpsSSEClient {
      * Batch refresh calls so that a burst of events (e.g. right after
      * reconnection) results in a single UI refresh per provider.
      */
-    private scheduleRefresh(kind: 'automations' | 'images') {
+    private scheduleRefresh(kind: 'automations' | 'images' | 'snapshots') {
         this.pendingRefresh.add(kind);
         if (this.settleTimer) {
             clearTimeout(this.settleTimer);
@@ -142,6 +156,9 @@ export class GitOpsSSEClient {
         if (this.pendingRefresh.has('images')) {
             this.imagesProvider.refresh();
             this.orphanedImagesProvider.refresh();
+        }
+        if (this.pendingRefresh.has('snapshots')) {
+            this.snapshotsProvider?.refresh();
         }
         this.pendingRefresh.clear();
     }

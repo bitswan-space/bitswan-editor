@@ -37,6 +37,8 @@ import * as filesystemCommands from './commands/filesystem';
 import { initUserInfo, getUserEmail } from './services/user_info';
 import { WorktreesViewProvider } from './views/worktrees_view';
 import { deleteWorktreeCommand as deleteWorktreeCmd } from './commands/worktrees';
+import { SnapshotsViewProvider } from './views/snapshots_view';
+import * as snapshotCommands from './commands/snapshots';
 import { DashboardPanel } from './views/dashboard_panel';
 import { BackupsPanel } from './views/backups_view';
 
@@ -172,6 +174,21 @@ export function activate(context: vscode.ExtensionContext) {
     const worktreesProvider = new WorktreesViewProvider(context);
     unifiedBusinessProcessesProvider.setWorktreesProvider(worktreesProvider);
 
+    // Snapshots view provider
+    const snapshotsProvider = new SnapshotsViewProvider();
+    vscode.window.registerTreeDataProvider('bitswan-snapshots', snapshotsProvider);
+
+    // Snapshot commands (full implementations in commands/snapshots.ts)
+    context.subscriptions.push(
+        vscode.commands.registerCommand('bitswan.snapshots.refresh', () => snapshotsProvider.refresh()),
+        vscode.commands.registerCommand('bitswan.snapshots.create', (item?: any) =>
+            snapshotCommands.createSnapshotCommand(context, snapshotsProvider, item)),
+        vscode.commands.registerCommand('bitswan.snapshots.clone', (item?: any) =>
+            snapshotCommands.cloneSnapshotCommand(context, snapshotsProvider, item)),
+        vscode.commands.registerCommand('bitswan.snapshots.delete', (item?: any) =>
+            snapshotCommands.deleteSnapshotCommand(context, snapshotsProvider, item)),
+    );
+
     // Dashboard / panel commands. The dashboard handles worktree creation
     // inline; only deletion still goes through a registered command.
     context.subscriptions.push(
@@ -290,7 +307,7 @@ export function activate(context: vscode.ExtensionContext) {
     let deleteGitOpsCommand = vscode.commands.registerCommand('bitswan.deleteGitOps', 
         async (item: GitOpsItem) => workspaceCommands.deleteGitOpsCommand(context, workspacesProvider, item));
     
-    let activateGitOpsCommand = vscode.commands.registerCommand('bitswan.activateGitOps', 
+    let activateGitOpsCommand = vscode.commands.registerCommand('bitswan.activateGitOps',
         async (item: GitOpsItem) => {
             await workspaceCommands.activateGitOpsCommand(
                 context,
@@ -299,7 +316,8 @@ export function activate(context: vscode.ExtensionContext) {
                 automationsProvider,
                 unifiedBusinessProcessesProvider,
                 unifiedImagesProvider,
-                orphanedImagesProvider
+                orphanedImagesProvider,
+                snapshotsProvider,
             );
         });
     
@@ -1144,7 +1162,8 @@ export function activate(context: vscode.ExtensionContext) {
             automationsProvider,
             unifiedBusinessProcessesProvider,
             unifiedImagesProvider,
-            orphanedImagesProvider
+            orphanedImagesProvider,
+            snapshotsProvider,
         );
         automationsProvider.refresh();
     } else if (activeGitOpsInstance) {
@@ -1155,7 +1174,8 @@ export function activate(context: vscode.ExtensionContext) {
             automationsProvider,
             unifiedBusinessProcessesProvider,
             unifiedImagesProvider,
-            orphanedImagesProvider
+            orphanedImagesProvider,
+            snapshotsProvider,
         );
         automationsProvider.refresh();
     }

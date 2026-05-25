@@ -7,6 +7,7 @@ import { WorkspacesViewProvider } from '../views/workspaces_view';
 import { AutomationsViewProvider } from '../views/automations_view';
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
 import { UnifiedBusinessProcessesViewProvider } from '../views/unified_business_processes_view';
+import { SnapshotsViewProvider } from '../views/snapshots_view';
 import { outputChannel, setAutomationRefreshInterval, setImageRefreshInterval, refreshPaused, setSseClient } from '../extension';
 import { refreshAutomationsCommand } from './automations';
 import { refreshImagesCommand } from './images';
@@ -83,13 +84,14 @@ export async function deleteGitOpsCommand(context: vscode.ExtensionContext, tree
 }
 
 export async function activateGitOpsCommand(
-    context: vscode.ExtensionContext, 
-    treeDataProvider: WorkspacesViewProvider, 
+    context: vscode.ExtensionContext,
+    treeDataProvider: WorkspacesViewProvider,
     item: GitOpsItem,
     automationsProvider?: { refresh(): void },
     businessProcessesProvider?: UnifiedBusinessProcessesViewProvider,
     unifiedImagesProvider?: UnifiedImagesViewProvider,
-    orphanedImagesProvider?: OrphanedImagesViewProvider
+    orphanedImagesProvider?: OrphanedImagesViewProvider,
+    snapshotsProvider?: SnapshotsViewProvider,
 ) {
     // Clear any existing refresh intervals and SSE client
     setAutomationRefreshInterval(undefined);
@@ -108,6 +110,7 @@ export async function activateGitOpsCommand(
                 businessProcessesProvider,
                 unifiedImagesProvider,
                 orphanedImagesProvider,
+                snapshotsProvider,
             );
             setSseClient(client);
             client.connect(item.url, item.secret);

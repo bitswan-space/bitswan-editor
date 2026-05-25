@@ -103,6 +103,11 @@
         {
           "id": "bitswan-workspaces",
           "name": "Bitswan Workspace"
+        },
+        {
+          "id": "bitswan-snapshots",
+          "name": "Snapshots",
+          "when": "bitswan.gitopsConnected"
         }
       ],
       "bitswan-images": [
@@ -408,10 +413,56 @@
         "title": "Backups",
         "icon": "$(cloud-download)",
         "category": "BitSwan"
+      },
+      {
+        "command": "bitswan.snapshots.create",
+        "title": "Snapshot this stage",
+        "icon": "$(add)",
+        "category": "BitSwan"
+      },
+      {
+        "command": "bitswan.snapshots.clone",
+        "title": "Clone into…",
+        "icon": "$(copy)",
+        "category": "BitSwan"
+      },
+      {
+        "command": "bitswan.snapshots.delete",
+        "title": "Delete snapshot",
+        "icon": "$(trash)",
+        "category": "BitSwan"
+      },
+      {
+        "command": "bitswan.snapshots.refresh",
+        "title": "Refresh Snapshots",
+        "icon": "$(sync)",
+        "category": "BitSwan"
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "bitswan.snapshots.refresh",
+          "when": "view == bitswan-snapshots",
+          "group": "navigation"
+        },
+        {
+          "command": "bitswan.snapshots.create",
+          "when": "view == bitswan-snapshots",
+          "group": "navigation"
+        }
+      ],
       "view/item/context": [
+        {
+          "command": "bitswan.snapshots.clone",
+          "when": "view == bitswan-snapshots && viewItem == snapshot",
+          "group": "inline@1"
+        },
+        {
+          "command": "bitswan.snapshots.delete",
+          "when": "view == bitswan-snapshots && viewItem == snapshot",
+          "group": "inline@2"
+        },
         {
           "command": "bitswan.startLiveDevServer",
           "when": "false",
