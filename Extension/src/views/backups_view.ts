@@ -110,6 +110,63 @@ export class BackupsPanel {
                     this.postMessage({ type: 'restoreResult', data: resp.data });
                     break;
                 }
+
+                // ── Stage Snapshots ──────────────────────────────────────────
+                case 'loadStageSnapshots': {
+                    const resp = await axios.get(urlJoin(baseUrl, 'snapshots'), { headers });
+                    this.postMessage({ type: 'stageSnapshots', data: resp.data });
+                    break;
+                }
+                case 'createStageSnapshot': {
+                    const body: any = { source_stage: msg.source_stage };
+                    if (msg.name) { body.name = msg.name; }
+                    if (msg.worktree) { body.worktree = msg.worktree; }
+                    const resp = await axios.post(urlJoin(baseUrl, 'snapshots'), body, { headers });
+                    this.postMessage({ type: 'stageSnapshotTaskStarted', data: resp.data });
+                    break;
+                }
+                case 'deleteStageSnapshot': {
+                    const resp = await axios.delete(urlJoin(baseUrl, 'snapshots', msg.snapshot_id), { headers });
+                    this.postMessage({ type: 'stageSnapshotTaskStarted', data: resp.data });
+                    break;
+                }
+                case 'cloneStageSnapshot': {
+                    const cloneBody: any = {
+                        confirm_destination_is_production: msg.confirm_production ?? false,
+                    };
+                    if (msg.target_worktree) {
+                        cloneBody.target_worktree = msg.target_worktree;
+                    } else {
+                        cloneBody.target_stage = msg.target_stage;
+                    }
+                    const resp = await axios.post(
+                        urlJoin(baseUrl, 'snapshots', msg.snapshot_id, 'clone'),
+                        cloneBody,
+                        { headers },
+                    );
+                    this.postMessage({ type: 'stageSnapshotTaskStarted', data: resp.data });
+                    break;
+                }
+                case 'loadWorktrees': {
+                    const resp = await axios.get(urlJoin(baseUrl, 'worktrees'), { headers });
+                    // /worktrees returns a list of dicts with `name`. Pass through.
+                    this.postMessage({ type: 'worktrees', data: resp.data });
+                    break;
+                }
+                case 'pollStageSnapshotTasks': {
+                    const resp = await axios.get(urlJoin(baseUrl, 'snapshots', 'tasks'), { headers });
+                    this.postMessage({ type: 'stageSnapshotTasks', data: resp.data });
+                    break;
+                }
+                case 'resumeStageSnapshotTarget': {
+                    await axios.post(
+                        urlJoin(baseUrl, 'snapshots', 'tasks', msg.task_id, 'resume-target'),
+                        {},
+                        { headers },
+                    );
+                    this.postMessage({ type: 'stageSnapshotResumed' });
+                    break;
+                }
             }
         } catch (err: any) {
             const detail = err?.response?.data?.detail || err?.message || String(err);
@@ -162,6 +219,7 @@ export class BackupsPanel {
     <div class="header"><h2>Backups</h2></div>
     <div class="tab-bar">
         <div class="tab active" data-tab="snapshots">Snapshots</div>
+        <div class="tab" data-tab="stage-snapshots">Stage Snapshots</div>
         <div class="tab" data-tab="config">Configuration</div>
         <div class="tab" data-tab="key">Encryption Key</div>
     </div>
@@ -175,6 +233,15 @@ export class BackupsPanel {
         let snapshotsData = [];
         let statusMsg = '';
 
+        let stageSnapshotsData = [];
+        let stageSnapshotTasks = [];
+        let stageSnapshotPollTimer = null;
+        let stageSnapshotStatusMsg = '';
+        let worktreesList = [];
+        let selectedCreateStage = 'dev';
+        let selectedCreateWorktree = '';
+        const STAGES = ['dev', 'staging', 'production'];
+
         tabBar.addEventListener('click', function(e) {
             var tab = e.target.closest('.tab');
             if (!tab) return;
@@ -182,10 +249,62 @@ export class BackupsPanel {
             tabBar.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
             statusMsg = '';
+            stageSnapshotStatusMsg = '';
             render();
             if (currentTab === 'snapshots') vscodeApi.postMessage({ type: 'loadSnapshots' });
             if (currentTab === 'config') vscodeApi.postMessage({ type: 'loadConfig' });
+            if (currentTab === 'stage-snapshots') {
+                vscodeApi.postMessage({ type: 'loadStageSnapshots' });
+                vscodeApi.postMessage({ type: 'loadWorktrees' });
+                startStageSnapshotPolling();
+            } else {
+                stopStageSnapshotPolling();
+            }
         });
+
+        function startStageSnapshotPolling() {
+            stopStageSnapshotPolling();
+            stageSnapshotPollTimer = setInterval(function() {
+                vscodeApi.postMessage({ type: 'pollStageSnapshotTasks' });
+            }, 2000);
+        }
+
+        function stopStageSnapshotPolling() {
+            if (stageSnapshotPollTimer !== null) {
+                clearInterval(stageSnapshotPollTimer);
+                stageSnapshotPollTimer = null;
+            }
+        }
+
+        function humanSize(bytes) {
+            if (!bytes || bytes === 0) return '0 B';
+            var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            var i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[Math.min(i, units.length - 1)];
+        }
+
+        function relTime(iso) {
+            var diffMs = Date.now() - new Date(iso).getTime();
+            var diffMin = Math.round(diffMs / 60000);
+            if (diffMin < 1) return 'just now';
+            if (diffMin < 60) return diffMin + 'm ago';
+            var diffH = Math.round(diffMin / 60);
+            if (diffH < 24) return diffH + 'h ago';
+            return Math.round(diffH / 24) + 'd ago';
+        }
+
+        function stepLabel(step) {
+            var labels = {
+                queued: 'Queued', estimating_size: 'Estimating size', disk_check: 'Checking disk',
+                preparing_dir: 'Preparing', backup_postgres: 'Backing up Postgres',
+                backup_couchdb: 'Backing up CouchDB', backup_minio: 'Backing up MinIO',
+                writing_manifest: 'Writing manifest', stopping_target_automations: 'Stopping automations',
+                restore_postgres: 'Restoring Postgres', restore_couchdb: 'Restoring CouchDB',
+                restore_minio: 'Restoring MinIO', starting_target_automations: 'Starting automations',
+                cleanup_old: 'Cleanup', done: 'Done', failed: 'Failed',
+            };
+            return labels[step] || step || '';
+        }
 
         function formatBackupResult(data) {
             var services = ['workspace', 'postgres', 'couchdb', 'minio'];
@@ -216,7 +335,280 @@ export class BackupsPanel {
         function render() {
             if (currentTab === 'config') renderConfig();
             else if (currentTab === 'snapshots') renderSnapshots();
+            else if (currentTab === 'stage-snapshots') renderStageSnapshots();
             else if (currentTab === 'key') renderKey();
+        }
+
+        function renderStageSnapshots() {
+            var activeTasks = stageSnapshotTasks.filter(function(t) {
+                return t.status === 'pending' || t.status === 'running';
+            });
+
+            var html = '';
+
+            // Active tasks banner
+            if (activeTasks.length > 0) {
+                html += '<div style="margin-bottom:12px;">';
+                activeTasks.forEach(function(t) {
+                    var kindLabel = { create: 'Creating', clone: 'Cloning', delete: 'Deleting' }[t.kind] || t.kind;
+                    var step = stepLabel(t.step);
+                    var msg = t.message ? ' — ' + t.message : '';
+                    html += '<div class="info" style="margin-bottom:6px;">' +
+                        '<strong>' + kindLabel + '</strong> <code>' + t.snapshot_id + '</code>' +
+                        '<span style="float:right;font-size:11px;color:var(--vscode-descriptionForeground)">' + step + '</span>' +
+                        (msg ? '<div style="margin-top:4px;font-size:11px">' + msg + '</div>' : '') +
+                    '</div>';
+                });
+                html += '</div>';
+            }
+
+            // Failed tasks with errors
+            var failedTasks = stageSnapshotTasks.filter(function(t) { return t.status === 'error'; });
+            failedTasks.forEach(function(t) {
+                var errText = t.error || 'Unknown error';
+                var resumeBtn = (t.kind === 'clone' && t.target_stage)
+                    ? ' <button class="btn btn-secondary" style="margin-left:8px;font-size:11px;padding:2px 8px" data-resume-task="' + t.task_id + '">Resume automations</button>'
+                    : '';
+                html += '<div class="warning" style="margin-bottom:8px;">' +
+                    '<strong>' + (t.kind || '') + ' failed</strong>: ' + errText + resumeBtn +
+                    '</div>';
+            });
+
+            // Toolbar
+            html += '<div class="btn-row" style="margin-bottom:16px;align-items:center;">';
+            html += '<button class="btn" id="ssRefreshBtn">Refresh</button>';
+            html += '<select id="ssCreateStage">' +
+                STAGES.map(function(s) {
+                    var sel = s === selectedCreateStage ? ' selected' : '';
+                    return '<option value="' + s + '"' + sel + '>' + s + '</option>';
+                }).join('') +
+                '</select>';
+            // When dev is selected, show a worktree picker. First option is the
+            // whole-dev sentinel; selecting any worktree flips the button label.
+            if (selectedCreateStage === 'dev' && worktreesList.length > 0) {
+                html += '<select id="ssCreateWorktree">' +
+                    '<option value="">— Whole dev stage —</option>' +
+                    worktreesList.map(function(w) {
+                        var sel = w === selectedCreateWorktree ? ' selected' : '';
+                        return '<option value="' + escHtml(w) + '"' + sel + '>⎇ ' + escHtml(w) + '</option>';
+                    }).join('') +
+                    '</select>';
+            }
+            var createLabel = (selectedCreateStage === 'dev' && selectedCreateWorktree)
+                ? 'Snapshot worktree'
+                : 'Snapshot stage';
+            html += '<button class="btn" id="ssCreateBtn">' + createLabel + '</button>';
+            html += '</div>';
+
+            if (stageSnapshotStatusMsg) {
+                html += stageSnapshotStatusMsg;
+            }
+
+            if (stageSnapshotsData.length === 0 && activeTasks.length === 0) {
+                html += '<div class="placeholder">No stage snapshots yet. Select a stage above and click "Snapshot stage".</div>';
+            } else {
+                // Group by stage; worktree snapshots get their own per-worktree
+                // bucket key like "wt:<name>" so they sort apart from raw dev.
+                var groups = {};
+                stageSnapshotsData.forEach(function(s) {
+                    var key;
+                    if (s.source_kind === 'worktree') {
+                        key = 'wt:' + (s.worktree || 'unknown');
+                    } else {
+                        key = 'stage:' + (s.source_stage || 'unknown');
+                    }
+                    if (!groups[key]) { groups[key] = []; }
+                    groups[key].push(s);
+                });
+
+                // Render stage groups first, then worktree groups
+                var stageKeys = Object.keys(groups).filter(function(k) { return k.indexOf('stage:') === 0; }).sort();
+                var worktreeKeys = Object.keys(groups).filter(function(k) { return k.indexOf('wt:') === 0; }).sort();
+
+                stageKeys.concat(worktreeKeys).forEach(function(key) {
+                    var isWorktree = key.indexOf('wt:') === 0;
+                    var displayName = key.split(':')[1];
+                    var headerIcon = isWorktree ? '⎇' : '⬡';
+                    var headerLabel = isWorktree ? ('worktree ' + displayName) : displayName;
+
+                    html += '<div style="margin-bottom:20px;">';
+                    html += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--vscode-descriptionForeground);margin-bottom:6px;display:flex;align-items:center;gap:6px;">' +
+                        headerIcon + ' ' + escHtml(headerLabel) + '</div>';
+                    html += '<table><thead><tr>' +
+                        '<th>Name / ID</th><th>Created</th><th>Size</th><th>Actions</th>' +
+                        '</tr></thead><tbody>';
+
+                    groups[key].forEach(function(s) {
+                        var label = s.name || s.snapshot_id;
+                        var shortId = s.snapshot_id;
+                        var size = humanSize(s.sizes_bytes && s.sizes_bytes.total ? s.sizes_bytes.total : 0);
+                        var time = relTime(s.created_at);
+                        var tooltipParts = [
+                            'ID: ' + s.snapshot_id,
+                            'Postgres: ' + humanSize(s.sizes_bytes && s.sizes_bytes.postgres ? s.sizes_bytes.postgres : 0),
+                        ];
+                        if (!isWorktree) {
+                            tooltipParts.push('CouchDB:  ' + humanSize(s.sizes_bytes && s.sizes_bytes.couchdb ? s.sizes_bytes.couchdb : 0));
+                            tooltipParts.push('MinIO:    ' + humanSize(s.sizes_bytes && s.sizes_bytes.minio ? s.sizes_bytes.minio : 0));
+                        }
+                        var tooltip = tooltipParts.join('&#10;');
+
+                        // Clone target dropdown: worktree-kind → worktree list,
+                        // stage-kind → stage list.
+                        var dropdownOptions;
+                        if (isWorktree) {
+                            dropdownOptions = worktreesList.map(function(w) {
+                                return '<option value="' + escHtml(w) + '">⎇ ' + escHtml(w) + '</option>';
+                            }).join('');
+                            if (!dropdownOptions) {
+                                dropdownOptions = '<option value="" disabled>no worktrees</option>';
+                            }
+                        } else {
+                            dropdownOptions = STAGES.map(function(st) {
+                                return '<option value="' + st + '">' + st + '</option>';
+                            }).join('');
+                        }
+
+                        html += '<tr>' +
+                            '<td title="' + tooltip + '"><strong>' + escHtml(label) + '</strong>' +
+                                (s.name ? '<br><span style="font-size:10px;color:var(--vscode-descriptionForeground)">' + escHtml(shortId) + '</span>' : '') +
+                            '</td>' +
+                            '<td>' + time + '</td>' +
+                            '<td>' + size + '</td>' +
+                            '<td style="white-space:nowrap;">' +
+                                '<select data-clone-target="' + escHtml(s.snapshot_id) + '" data-clone-kind="' + (isWorktree ? 'worktree' : 'stage') + '" style="font-size:11px;padding:2px 4px;margin-right:4px;">' +
+                                    dropdownOptions +
+                                '</select>' +
+                                '<button class="btn btn-secondary" data-clone="' + escHtml(s.snapshot_id) + '" style="font-size:11px;padding:3px 8px;margin-right:4px;">Clone into</button>' +
+                                '<button class="btn btn-danger" data-delete="' + escHtml(s.snapshot_id) + '" style="font-size:11px;padding:3px 8px;">Delete</button>' +
+                            '</td>' +
+                        '</tr>';
+                    });
+                    html += '</tbody></table></div>';
+                });
+            }
+
+            content.innerHTML = html;
+
+            // Wire up toolbar
+            var refreshBtn = document.getElementById('ssRefreshBtn');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', function() {
+                    vscodeApi.postMessage({ type: 'loadStageSnapshots' });
+                    vscodeApi.postMessage({ type: 'loadWorktrees' });
+                });
+            }
+
+            var stageSelect = document.getElementById('ssCreateStage');
+            if (stageSelect) {
+                stageSelect.addEventListener('change', function() {
+                    selectedCreateStage = stageSelect.value;
+                    // Reset worktree selection when leaving dev
+                    if (selectedCreateStage !== 'dev') { selectedCreateWorktree = ''; }
+                    render();
+                });
+            }
+            var worktreeSelect = document.getElementById('ssCreateWorktree');
+            if (worktreeSelect) {
+                worktreeSelect.addEventListener('change', function() {
+                    selectedCreateWorktree = worktreeSelect.value;
+                    render();
+                });
+            }
+
+            var createBtn = document.getElementById('ssCreateBtn');
+            if (createBtn) {
+                createBtn.addEventListener('click', function() {
+                    var stage = selectedCreateStage;
+                    var wt = (stage === 'dev') ? selectedCreateWorktree : '';
+                    var promptLabel = wt
+                        ? 'Worktree snapshot name (optional, press Enter to skip):'
+                        : 'Snapshot name (optional, press Enter to skip):';
+                    var name = prompt(promptLabel);
+                    if (name === null) { return; } // cancelled
+                    var payload = {
+                        type: 'createStageSnapshot',
+                        source_stage: stage,
+                        name: name.trim() || undefined,
+                    };
+                    if (wt) { payload.worktree = wt; }
+                    vscodeApi.postMessage(payload);
+                    stageSnapshotStatusMsg = wt
+                        ? '<div class="info">Creating snapshot of worktree <strong>' + escHtml(wt) + '</strong>…</div>'
+                        : '<div class="info">Creating snapshot of <strong>' + escHtml(stage) + '</strong>…</div>';
+                    render();
+                    startStageSnapshotPolling();
+                });
+            }
+
+            // Wire up clone buttons
+            content.querySelectorAll('button[data-clone]').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    var snapId = btn.getAttribute('data-clone');
+                    var select = content.querySelector('select[data-clone-target="' + snapId + '"]');
+                    var kind = select ? select.getAttribute('data-clone-kind') : 'stage';
+                    var target = select ? select.value : '';
+                    if (!target) {
+                        alert('Pick a target first.');
+                        return;
+                    }
+                    var confirmProd = false;
+                    if (kind === 'worktree') {
+                        if (!confirm('Clone snapshot into worktree "' + target + '"?\\n\\nLive-dev automations attached to this worktree will be stopped and the worktree database will be overwritten.')) {
+                            return;
+                        }
+                    } else if (target === 'production') {
+                        if (!confirm('⚠️ You are about to clone into PRODUCTION.\\n\\nThis will stop all production automations, overwrite their data, then restart them.\\n\\nContinue?')) {
+                            return;
+                        }
+                        confirmProd = true;
+                    } else {
+                        if (!confirm('Clone snapshot into "' + target + '"?\\n\\nAutomations on that stage will be stopped temporarily.')) {
+                            return;
+                        }
+                    }
+                    var msg = {
+                        type: 'cloneStageSnapshot',
+                        snapshot_id: snapId,
+                        confirm_production: confirmProd,
+                    };
+                    if (kind === 'worktree') {
+                        msg.target_worktree = target;
+                    } else {
+                        msg.target_stage = target;
+                    }
+                    vscodeApi.postMessage(msg);
+                    var targetLabel = kind === 'worktree' ? ('worktree ' + target) : target;
+                    stageSnapshotStatusMsg = '<div class="info">Cloning into <strong>' + escHtml(targetLabel) + '</strong>…</div>';
+                    render();
+                    startStageSnapshotPolling();
+                });
+            });
+
+            // Wire up delete buttons
+            content.querySelectorAll('button[data-delete]').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    var snapId = btn.getAttribute('data-delete');
+                    if (!confirm('Delete snapshot "' + snapId + '"?\\n\\nThis cannot be undone.')) { return; }
+                    vscodeApi.postMessage({ type: 'deleteStageSnapshot', snapshot_id: snapId });
+                    stageSnapshotStatusMsg = '<div class="info">Deleting snapshot…</div>';
+                    render();
+                });
+            });
+
+            // Wire up resume buttons
+            content.querySelectorAll('button[data-resume-task]').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    var taskId = btn.getAttribute('data-resume-task');
+                    vscodeApi.postMessage({ type: 'resumeStageSnapshotTarget', task_id: taskId });
+                    stageSnapshotStatusMsg = '<div class="info">Resuming target automations…</div>';
+                    render();
+                });
+            });
+        }
+
+        function escHtml(str) {
+            return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         }
 
         function renderConfig() {
@@ -256,7 +648,7 @@ export class BackupsPanel {
                 '<select id="tagFilter"><option value="">All</option><option value="workspace">Workspace</option><option value="postgres">Postgres</option><option value="couchdb">CouchDB</option><option value="minio">MinIO</option></select>' +
                 '</div><div id="statusMsg">' + statusMsg + '</div>';
             if (snapshotsData.length === 0) {
-                html += '<div class="placeholder">No snapshots found.</div>';
+                html += '<div class="placeholder">No snapshots found.HELLNO</div>';
             } else {
                 html += '<table><thead><tr><th>ID</th><th>Time</th><th>Tags</th><th>Action</th></tr></thead><tbody>';
                 snapshotsData.forEach(function(s) {
@@ -377,7 +769,43 @@ export class BackupsPanel {
                     break;
                 case 'error':
                     statusMsg = '<div class="warning">' + msg.message + '</div>';
+                    stageSnapshotStatusMsg = '<div class="warning">' + msg.message + '</div>';
                     render();
+                    break;
+
+                // ── Stage Snapshots ───────────────────────────────────────────
+                case 'stageSnapshots':
+                    stageSnapshotsData = msg.data.snapshots || [];
+                    stageSnapshotTasks = msg.data.tasks || [];
+                    if (currentTab === 'stage-snapshots') { render(); }
+                    break;
+                case 'stageSnapshotTaskStarted':
+                    // Kick off a refresh so the new task appears immediately
+                    vscodeApi.postMessage({ type: 'loadStageSnapshots' });
+                    break;
+                case 'stageSnapshotTasks':
+                    stageSnapshotTasks = Array.isArray(msg.data) ? msg.data : [];
+                    // When all tasks finish, reload the snapshot list and clear status
+                    var anyActive = stageSnapshotTasks.some(function(t) {
+                        return t.status === 'pending' || t.status === 'running';
+                    });
+                    if (!anyActive) {
+                        stopStageSnapshotPolling();
+                        stageSnapshotStatusMsg = '';
+                        vscodeApi.postMessage({ type: 'loadStageSnapshots' });
+                    } else if (currentTab === 'stage-snapshots') {
+                        render();
+                    }
+                    break;
+                case 'stageSnapshotResumed':
+                    stageSnapshotStatusMsg = '<div class="success">Automations restarted.</div>';
+                    vscodeApi.postMessage({ type: 'loadStageSnapshots' });
+                    break;
+                case 'worktrees':
+                    worktreesList = (Array.isArray(msg.data) ? msg.data : [])
+                        .map(function(w) { return (w && w.name) ? w.name : ''; })
+                        .filter(function(n) { return !!n; });
+                    if (currentTab === 'stage-snapshots') { render(); }
                     break;
             }
         });
