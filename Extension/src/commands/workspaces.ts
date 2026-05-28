@@ -1,15 +1,7 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
-import urlJoin from 'proper-url-join';
-import { GitOpsItem } from '../views/workspaces_view';
-import { getAutomations } from '../lib';
-import { WorkspacesViewProvider } from '../views/workspaces_view';
-import { AutomationsViewProvider } from '../views/automations_view';
+import { GitOpsItem, WorkspacesViewProvider } from '../views/workspaces_view';
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
-import { UnifiedBusinessProcessesViewProvider } from '../views/unified_business_processes_view';
-import { outputChannel, setAutomationRefreshInterval, setImageRefreshInterval, refreshPaused, setSseClient } from '../extension';
-import { refreshAutomationsCommand } from './automations';
-import { refreshImagesCommand } from './images';
+import { setSseClient } from '../extension';
 import { GitOpsSSEClient } from '../services/sse_client';
 
 export async function addGitOpsCommand(context: vscode.ExtensionContext, treeDataProvider: WorkspacesViewProvider) {
@@ -83,57 +75,22 @@ export async function deleteGitOpsCommand(context: vscode.ExtensionContext, tree
 }
 
 export async function activateGitOpsCommand(
-    context: vscode.ExtensionContext, 
-    treeDataProvider: WorkspacesViewProvider, 
+    context: vscode.ExtensionContext,
+    treeDataProvider: WorkspacesViewProvider,
     item: GitOpsItem,
-    automationsProvider?: { refresh(): void },
-    businessProcessesProvider?: UnifiedBusinessProcessesViewProvider,
     unifiedImagesProvider?: UnifiedImagesViewProvider,
-    orphanedImagesProvider?: OrphanedImagesViewProvider
+    orphanedImagesProvider?: OrphanedImagesViewProvider,
 ) {
-    // Clear any existing refresh intervals and SSE client
-    setAutomationRefreshInterval(undefined);
-    setImageRefreshInterval(undefined);
     setSseClient(undefined);
-
     await context.globalState.update('activeGitOpsInstance', item);
-    try {
-        const automations = await getAutomations(urlJoin(item.url, 'automations', { trailingSlash: true }).toString(), item.secret);
-        await context.globalState.update('automations', automations);
 
-        // Start SSE client for real-time push updates
-        if (businessProcessesProvider && unifiedImagesProvider && orphanedImagesProvider) {
-            const client = new GitOpsSSEClient(
-                context,
-                businessProcessesProvider,
-                unifiedImagesProvider,
-                orphanedImagesProvider,
-            );
-            setSseClient(client);
-            client.connect(item.url, item.secret);
-        }
-
-        // Keep polling as fallback with increased intervals (SSE handles real-time updates)
-        if (businessProcessesProvider) {
-            setAutomationRefreshInterval(setInterval(async () => {
-                if (refreshPaused) { return; }
-                await refreshAutomationsCommand(context, businessProcessesProvider, { silent: true });
-            }, 30000));
-        }
-
-        if (unifiedImagesProvider && orphanedImagesProvider) {
-            setImageRefreshInterval(setInterval(async () => {
-                if (refreshPaused) { return; }
-                await refreshImagesCommand(context, unifiedImagesProvider, { silent: true });
-                await refreshImagesCommand(context, orphanedImagesProvider, { silent: true });
-            }, 30000));
-        }
-    } catch (error: any) {
-        vscode.window.showErrorMessage(`Failed to get automations from GitOps: ${error.message}`);
+    // SSE is the sole source of automations/images/processes/worktrees state.
+    // Gitops sends the initial snapshot on connect.
+    if (unifiedImagesProvider && orphanedImagesProvider) {
+        const client = new GitOpsSSEClient(context, unifiedImagesProvider, orphanedImagesProvider);
+        setSseClient(client);
+        client.connect(item.url, item.secret);
     }
 
     treeDataProvider.refresh();
-    if (businessProcessesProvider) {
-        businessProcessesProvider.refresh();
-    }
-} 
+}

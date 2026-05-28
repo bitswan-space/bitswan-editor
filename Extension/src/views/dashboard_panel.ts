@@ -9,9 +9,8 @@ import { getDeployDetails } from '../deploy_details';
 import { startLiveDevServerCommand } from '../commands/deployments';
 import urlJoin from 'proper-url-join';
 import { AutomationItem } from './automations_view';
-import { AutomationSourceItem } from './unified_business_processes_view';
-import { sanitizeName } from '../utils/nameUtils';
 import { deleteAutomation as deleteAutomationApi } from '../lib';
+import { GitopsClient } from '../services/gitops_client';
 
 const REQUIREMENTS_FILENAME = 'testable-requirements.toml';
 const WORKSPACE_DIR = '/workspace/workspace';
@@ -153,16 +152,14 @@ export class DashboardPanel {
             context.subscriptions,
         );
 
+        // testable-requirements.toml + README.md are files the dashboard reads
+        // directly (gitops doesn't broadcast their contents), so keep watchers
+        // for them. Process/automation discovery is SSE-driven and doesn't
+        // need a filesystem watcher.
         this.fileWatcher = vscode.workspace.createFileSystemWatcher('**/testable-requirements.toml');
         this.fileWatcher.onDidChange(() => this._reloadCurrentKey());
         this.fileWatcher.onDidCreate(() => this._reloadCurrentKey());
 
-        // Watch for new automations (automation.toml creation)
-        const autoWatcher = vscode.workspace.createFileSystemWatcher('**/automation.toml');
-        autoWatcher.onDidCreate(() => this._reloadCurrentKey());
-        context.subscriptions.push(autoWatcher);
-
-        // Watch for README changes
         const readmeWatcher = vscode.workspace.createFileSystemWatcher('**/README.md');
         readmeWatcher.onDidChange(() => this._reloadCurrentKey());
         context.subscriptions.push(readmeWatcher);
@@ -210,7 +207,7 @@ export class DashboardPanel {
             case 'startLiveDev': {
                 if (msg.relativePath && msg.worktree) {
                     const folderPath = path.join(WORKSPACE_DIR, msg.relativePath);
-                    await startLiveDevServerCommand(this.context, folderPath, undefined, msg.worktree);
+                    await startLiveDevServerCommand(this.context, folderPath, msg.worktree);
                     this._reloadCurrentKey();
                 }
                 break;
@@ -237,9 +234,9 @@ export class DashboardPanel {
             case 'promoteStage': {
                 if (!msg.fromStage || !msg.deploymentId || !msg.checksum || !msg.automationSourceName) { break; }
                 if (msg.fromStage !== 'dev' && msg.fromStage !== 'staging') { break; }
-                // Duck-typed StageItem: the promote command checks `stage in item && deploymentId in item`
-                // and the handler reads .stage, .deploymentId, .checksum, .automation (truthy), .automationSourceName.
-                const duckItem = {
+                // `PromoteStageItem` (in commands/promotions.ts) defines the
+                // shape the promote command expects.
+                const promoteItem = {
                     stage: msg.fromStage,
                     deploymentId: msg.deploymentId,
                     checksum: msg.checksum,
@@ -247,7 +244,7 @@ export class DashboardPanel {
                     automationSourceName: msg.automationSourceName,
                 };
                 const target = msg.fromStage === 'dev' ? 'bitswan.promoteToStaging' : 'bitswan.promoteToProduction';
-                vscode.commands.executeCommand(target, duckItem);
+                vscode.commands.executeCommand(target, promoteItem);
                 break;
             }
             case 'openCodingAgent':
@@ -274,15 +271,12 @@ export class DashboardPanel {
             case 'deployToDev': {
                 if (msg.name) {
                     // Always deploy from the main workspace path (not worktree)
-                    // so the deployment ID matches the standard format
+                    // so the deployment ID matches the standard format.
                     const bpDir = this.bpMap.get(this.currentKey);
                     if (bpDir) {
                         const bpName = path.basename(bpDir);
-                        const sourceName = `${bpName}/${msg.name}`;
-                        // Use main workspace path regardless of whether we're in a worktree
                         const mainAutoDir = path.join(WORKSPACE_DIR, bpName, msg.name);
-                        const item = new AutomationSourceItem(sourceName, vscode.Uri.file(mainAutoDir), bpName);
-                        vscode.commands.executeCommand('bitswan.deployAutomation', item);
+                        vscode.commands.executeCommand('bitswan.deployAutomation', { resourceUri: vscode.Uri.file(mainAutoDir) });
                     }
                 }
                 break;
@@ -351,63 +345,41 @@ export class DashboardPanel {
 
     // ---- Discovery ----
 
-    private _findBPsUnder(root: string, maxDepth: number, skipDirs: string[] = []): string[] {
-        const results: string[] = [];
-        const walk = (dir: string, depth: number) => {
-            if (depth > maxDepth) { return; }
-            let entries: fs.Dirent[];
-            try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-            for (const entry of entries) {
-                if (!entry.isDirectory() || entry.name.startsWith('.')) { continue; }
-                if (skipDirs.includes(entry.name)) { continue; }
-                const fullPath = path.join(dir, entry.name);
-                if (fs.existsSync(path.join(fullPath, 'process.toml'))) {
-                    results.push(fullPath);
-                }
-                walk(fullPath, depth + 1);
-            }
-        };
-        walk(root, 0);
-        return results;
-    }
-
+    /**
+     * Build the workspace structure (main + each worktree, each with its BPs)
+     * from the SSE-cached `processes` and `worktrees` snapshots — gitops is the
+     * sole source of truth, so we never walk the filesystem here.
+     */
     private async loadBusinessProcesses(): Promise<void> {
         this.bpMap.clear();
         const workspaces: { name: string; bps: { key: string; label: string }[]; isMain?: boolean }[] = [];
 
-        // Main (default branch) — BPs directly under WORKSPACE_DIR, skipping the worktrees folder.
-        // The label says 'main' regardless of whether the underlying git branch
-        // is named 'main' or 'master'; we don't read the branch name here.
-        if (fs.existsSync(WORKSPACE_DIR)) {
-            const bps = this._findBPsUnder(WORKSPACE_DIR, 4, ['worktrees']);
-            const bpEntries: { key: string; label: string }[] = [];
-            for (const dirPath of bps) {
-                const rel = path.relative(WORKSPACE_DIR, dirPath);
-                const key = `workspace:${rel}`;
-                bpEntries.push({ key, label: rel });
-                this.bpMap.set(key, dirPath);
-            }
-            workspaces.push({ name: 'main', bps: bpEntries, isMain: true });
-        }
+        const processes = this.context.globalState.get<any[]>('processes', []);
+        const worktrees = this.context.globalState.get<any[]>('worktrees', []);
 
-        // Worktrees
-        if (fs.existsSync(WORKTREES_DIR)) {
-            let wtEntries: fs.Dirent[];
-            try { wtEntries = fs.readdirSync(WORKTREES_DIR, { withFileTypes: true }); } catch { wtEntries = []; }
-            for (const wtEntry of wtEntries) {
-                if (!wtEntry.isDirectory() || wtEntry.name.startsWith('.') || wtEntry.name === 'worktrees') { continue; }
-                const wtPath = path.join(WORKTREES_DIR, wtEntry.name);
-                const bps = this._findBPsUnder(wtPath, 4);
-                const bpEntries: { key: string; label: string }[] = [];
-                for (const dirPath of bps) {
-                    const rel = path.relative(wtPath, dirPath);
-                    const key = `worktree:${wtEntry.name}:${rel}`;
-                    bpEntries.push({ key, label: rel });
-                    this.bpMap.set(key, dirPath);
-                }
-                // Always include the worktree even if it has no BPs yet
-                workspaces.push({ name: wtEntry.name, bps: bpEntries });
+        // Main workspace: BPs with in_main=true.
+        const mainBps: { key: string; label: string }[] = [];
+        for (const p of processes) {
+            if (!p.in_main) { continue; }
+            const name = String(p.name);
+            const key = `workspace:${name}`;
+            mainBps.push({ key, label: name });
+            this.bpMap.set(key, path.join(WORKSPACE_DIR, name));
+        }
+        workspaces.push({ name: 'main', bps: mainBps, isMain: true });
+
+        // One entry per worktree (even if it has no BPs yet).
+        for (const wt of worktrees) {
+            const wtName = String(wt.name);
+            const bps: { key: string; label: string }[] = [];
+            for (const p of processes) {
+                if (!(p.worktrees || []).includes(wtName)) { continue; }
+                const name = String(p.name);
+                const key = `worktree:${wtName}:${name}`;
+                bps.push({ key, label: name });
+                this.bpMap.set(key, path.join(WORKTREES_DIR, wtName, name));
             }
+            workspaces.push({ name: wtName, bps });
         }
 
         this.postMessage({ type: 'structure', workspaces });
@@ -444,33 +416,45 @@ export class DashboardPanel {
             bpPath = key.substring('workspace:'.length);
         }
 
-        // Automations — match by relative_path + stage
+        // Automation sources for this BP come from the SSE `automations` event,
+        // which includes both deployed entries and "discoverable" entries
+        // (deployment_id=null) for source dirs found on disk by gitops.
         const allAutomations = this.context.globalState.get<any[]>('automations', []);
         const automations: AutomationInfo[] = [];
 
-        // Worktree view shows only live-dev; main shows dev / staging / production.
         const stageList = worktree ? ['live-dev'] : ['dev', 'staging', 'production'];
 
-        // Find automation dirs under this BP
-        const automationDirs = this._findAutomationDirsUnder(dirPath);
-        for (const autoDir of automationDirs) {
-            const autoName = path.basename(autoDir);
-            const sanitizedAutoName = sanitizeName(autoName);
-            const relFromWorkspace = path.relative(WORKSPACE_DIR, autoDir);
+        // Unique source relative_paths under this BP.
+        const sourceRels = new Set<string>();
+        const wtPrefix = worktree ? `worktrees/${worktree}/` : '';
+        const bpInScope = bpPath; // path of the BP relative to the worktree (or main) root
+        for (const a of allAutomations) {
+            const rp: string = a.relative_path || a.relativePath || '';
+            if (!rp) { continue; }
+            let scopeRel: string;
+            if (worktree) {
+                if (!rp.startsWith(wtPrefix)) { continue; }
+                scopeRel = rp.slice(wtPrefix.length);
+            } else {
+                if (rp.startsWith('worktrees/')) { continue; }
+                scopeRel = rp;
+            }
+            if (!scopeRel.startsWith(bpInScope + '/')) { continue; }
+            sourceRels.add(rp);
+        }
+
+        for (const sourceRel of Array.from(sourceRels).sort()) {
+            const autoDir = path.join(WORKSPACE_DIR, sourceRel);
+            const autoName = path.basename(sourceRel);
 
             const stages: StageInfo[] = stageList.map(stage => {
-                const match = allAutomations?.find(a => {
+                const match = allAutomations.find(a => {
                     const relPath = a.relative_path || a.relativePath || '';
-                    const aStage = a.stage || '';
-                    const normalizedStage = aStage === '' ? 'production' : aStage;
-                    if (normalizedStage !== stage) { return false; }
-                    if (worktree) {
-                        // Worktree (live-dev): match by exact relative_path
-                        return relPath === relFromWorkspace;
-                    }
-                    // Main: match by automation_name, excluding worktree-scoped entries
-                    const aName = a.automation_name || a.automationName || '';
-                    return aName === sanitizedAutoName && !relPath.startsWith('worktrees/');
+                    if (relPath !== sourceRel) { return false; }
+                    const aDeploymentId = a.deployment_id || a.deploymentId;
+                    const aStage = a.stage;
+                    if (!aDeploymentId || !aStage) { return false; }
+                    return aStage === stage;
                 });
                 let state = 'not deployed';
                 if (match) {
@@ -493,7 +477,7 @@ export class DashboardPanel {
 
             automations.push({
                 name: autoName,
-                relativePath: relFromWorkspace,
+                relativePath: sourceRel,
                 icon: inferAutomationIcon(autoDir),
                 stages,
             });
@@ -502,19 +486,12 @@ export class DashboardPanel {
         // Agent sessions for this worktree
         const sessions = worktree ? this._scanSessions(worktree) : [];
 
-        // Sync status
+        // Sync status — read from the SSE worktrees snapshot.
         let synced = false;
         if (worktree) {
-            try {
-                const details = await getDeployDetails(this.context);
-                if (details) {
-                    const resp = await axios.get(`${details.deployUrl}/worktrees/`, {
-                        headers: { Authorization: `Bearer ${details.deploySecret}` },
-                    });
-                    const wt = (resp.data || []).find((w: any) => w.name === worktree);
-                    synced = wt?.synced === true;
-                }
-            } catch { /* */ }
+            const worktreesState = this.context.globalState.get<any[]>('worktrees', []);
+            const wt = worktreesState.find(w => w.name === worktree);
+            synced = wt?.synced === true;
         }
 
         this.postMessage({ type: 'bpContent', key, requirements, automations, readme, worktree, bpPath, sessions, synced });
@@ -561,25 +538,6 @@ export class DashboardPanel {
             a.automation_url || a.automationUrl,
             a.relative_path || a.relativePath,
         );
-    }
-
-    private _findAutomationDirsUnder(bpDir: string): string[] {
-        const results: string[] = [];
-        const walk = (dir: string, depth: number) => {
-            if (depth > 3) { return; }
-            let entries: fs.Dirent[];
-            try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-            for (const entry of entries) {
-                if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'image') { continue; }
-                const fullPath = path.join(dir, entry.name);
-                if (fs.existsSync(path.join(fullPath, 'automation.toml'))) {
-                    results.push(fullPath);
-                }
-                walk(fullPath, depth + 1);
-            }
-        };
-        walk(bpDir, 0);
-        return results;
     }
 
     // ---- File I/O ----
@@ -643,13 +601,24 @@ export class DashboardPanel {
         }
     }
 
-    /** Called by SSE client when worktree sync status changes. */
+    /** Called by SSE client when the worktrees list changes (create/delete/sync). */
     public onWorktreeChanged(): void {
+        // Worktrees are top-level entries in the structure, so rebuild it
+        // (and refresh the current BP's sync status).
+        if (this.disposed) { return; }
+        this.loadBusinessProcesses();
         this._reloadCurrentKey();
     }
 
     /** Called by SSE client when the automations list changes (deploy/promote/stop/remove/SSE sync). */
     public onAutomationsChanged(): void {
+        this._reloadCurrentKey();
+    }
+
+    /** Called by SSE client when the business-process list changes (BP created/removed). */
+    public onProcessesChanged(): void {
+        if (this.disposed) { return; }
+        this.loadBusinessProcesses();
         this._reloadCurrentKey();
     }
 
@@ -827,28 +796,21 @@ export class DashboardPanel {
         });
         if (!name) { return; }
 
-        const bpDir = worktree
-            ? path.join(WORKTREES_DIR, worktree, name)
-            : path.join(WORKSPACE_DIR, name);
-        fs.mkdirSync(bpDir, { recursive: true });
+        const details = await getDeployDetails(this.context);
+        if (!details) {
+            vscode.window.showErrorMessage('No GitOps instance configured.');
+            return;
+        }
 
-        // Create process.toml
-        const processId = require('crypto').randomUUID();
-        fs.writeFileSync(
-            path.join(bpDir, 'process.toml'),
-            `process-id = "${processId}"\n`,
-            'utf-8',
-        );
-
-        // Create README.md
-        fs.writeFileSync(
-            path.join(bpDir, 'README.md'),
-            `# ${name}\n\nDescribe this business process here.\n`,
-            'utf-8',
-        );
+        const client = new GitopsClient(details.deployUrl, details.deploySecret);
+        const result = await client.createProcess({ name, ...(worktree ? { worktree } : {}) });
+        if (!result.ok) {
+            const detail = (result.body as any)?.detail || `HTTP ${result.status}`;
+            vscode.window.showErrorMessage(`Failed to create business process: ${detail}`);
+            return;
+        }
 
         const location = worktree ? `worktree "${worktree}"` : 'main';
-        await this._commitChanges(worktree, `Create business process "${name}"`);
         vscode.window.showInformationMessage(`Business process "${name}" created in ${location}.`);
         await this.loadBusinessProcesses();
     }

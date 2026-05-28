@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { AutomationItem } from '../views/automations_view';
 import { getAutomations } from '../lib';
-import { AutomationsViewProvider } from '../views/automations_view';
 import { refreshItemsCommand, RefreshOptions } from './items';
 import { GitOpsItem } from '../views/workspaces_view';
 import { LogViewerPanel, StageInfo } from './log_viewer';
@@ -13,7 +12,6 @@ export interface StageContext {
 
 export async function showAutomationLogsCommand(
     context: vscode.ExtensionContext,
-    _treeDataProvider: AutomationsViewProvider,
     item: AutomationItem,
     stageContext?: StageContext
 ) {

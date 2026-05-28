@@ -44,13 +44,12 @@ export class GitOpsSSEClient {
      * flush them once after a short settling window, so an initial state dump
      * from the server produces at most one refresh per provider.
      */
-    private pendingRefresh = new Set<'automations' | 'images'>();
+    private pendingRefresh = new Set<'automations' | 'images' | 'processes' | 'worktrees'>();
     private settleTimer: ReturnType<typeof setTimeout> | undefined;
     private static readonly SETTLE_MS = 600; // slightly longer than the tree-view debounce (500ms)
 
     constructor(
         private context: vscode.ExtensionContext,
-        private businessProcessesProvider: { refresh(): void; refreshAutomations(): void },
         private imagesProvider: { refresh(): void },
         private orphanedImagesProvider: { refresh(): void },
     ) {}
@@ -115,10 +114,20 @@ export class GitOpsSSEClient {
                 await this.context.globalState.update('images', data);
                 this.scheduleRefresh('images');
             }
+        } else if (event === 'processes') {
+            const current = this.context.globalState.get('processes', []);
+            if (stableStringify(current) !== stableStringify(data)) {
+                await this.context.globalState.update('processes', data);
+                this.scheduleRefresh('processes');
+            }
+        } else if (event === 'worktrees') {
+            const current = this.context.globalState.get('worktrees', []);
+            if (stableStringify(current) !== stableStringify(data)) {
+                await this.context.globalState.update('worktrees', data);
+                this.scheduleRefresh('worktrees');
+            }
         } else if (event === 'deploy_progress') {
             deployState.handleDeployProgress(data);
-        } else if (event === 'worktrees') {
-            DashboardPanel.currentPanel?.onWorktreeChanged();
         }
     }
 
@@ -126,7 +135,7 @@ export class GitOpsSSEClient {
      * Batch refresh calls so that a burst of events (e.g. right after
      * reconnection) results in a single UI refresh per provider.
      */
-    private scheduleRefresh(kind: 'automations' | 'images') {
+    private scheduleRefresh(kind: 'automations' | 'images' | 'processes' | 'worktrees') {
         this.pendingRefresh.add(kind);
         if (this.settleTimer) {
             clearTimeout(this.settleTimer);
@@ -135,13 +144,19 @@ export class GitOpsSSEClient {
     }
 
     private flushRefresh() {
-        if (this.pendingRefresh.has('automations')) {
-            this.businessProcessesProvider.refreshAutomations();
-            DashboardPanel.currentPanel?.onAutomationsChanged();
-        }
         if (this.pendingRefresh.has('images')) {
             this.imagesProvider.refresh();
             this.orphanedImagesProvider.refresh();
+        }
+        if (this.pendingRefresh.has('automations')) {
+            DashboardPanel.currentPanel?.onAutomationsChanged();
+        }
+        // 'processes' changes the BP list, so rebuild the whole structure.
+        if (this.pendingRefresh.has('processes')) {
+            DashboardPanel.currentPanel?.onProcessesChanged();
+        }
+        if (this.pendingRefresh.has('worktrees')) {
+            DashboardPanel.currentPanel?.onWorktreeChanged();
         }
         this.pendingRefresh.clear();
     }
