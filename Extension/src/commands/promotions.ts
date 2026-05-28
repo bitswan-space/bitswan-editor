@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import urlJoin from 'proper-url-join';
-import { StageItem } from '../views/unified_business_processes_view';
 import { getDeployDetails } from '../deploy_details';
 import { promoteAutomation, getAutomationHistory, scaleAutomation, getDeployStatus, getAssetDiff, downloadAsset } from '../lib';
 import { getUserEmail } from '../services/user_info';
@@ -10,24 +9,34 @@ import * as path from 'path';
 import * as tar from 'tar';
 import { openDiffViewerPanel } from './diff_viewer';
 import { outputChannel } from '../extension';
-import { refreshAutomationsCommand, showAutomationLogsCommand } from './automations';
-import { UnifiedBusinessProcessesViewProvider } from '../views/unified_business_processes_view';
+import { showAutomationLogsCommand } from './automations';
 import { AutomationItem } from '../views/automations_view';
-import { AutomationsViewProvider } from '../views/automations_view';
 import { deployState, DeployProgressEvent } from '../services/deploy_state';
 import { waitForDeployCompletion } from './deployments';
 
+/**
+ * Promote a deployed stage (dev → staging, staging → production). Caller passes
+ * a plain shape; the dashboard panel constructs it from SSE state.
+ */
+export interface PromoteStageItem {
+    stage: 'live-dev' | 'dev' | 'staging' | 'production';
+    deploymentId: string;
+    checksum: string | null;
+    automationSourceName: string;
+    /** Truthy when the source stage is actually deployed. */
+    automation: unknown;
+}
+
 export async function promoteStageCommand(
     context: vscode.ExtensionContext,
-    item: StageItem,
+    item: PromoteStageItem,
     targetStage: 'dev' | 'staging' | 'production',
-    provider: UnifiedBusinessProcessesViewProvider
 ) {
     if (!item) {
         vscode.window.showErrorMessage('No item selected for promotion');
         return;
     }
-    
+
     if (!item.automation) {
         vscode.window.showErrorMessage(`Cannot promote: ${item.stage} stage is not deployed`);
         return;
@@ -72,7 +81,10 @@ export async function promoteStageCommand(
 
             const deployUrl = urlJoin(details.deployUrl, "automations", targetDeploymentId, "deploy").toString();
             const deployedBy = await getUserEmail(context);
-            const deployResult = await promoteAutomation(deployUrl, details.deploySecret, checksum, targetStage, undefined, undefined, undefined, deployedBy, sanitizedSourceName, sanitizedBpName);
+            // Pass relative_path so gitops records it in bitswan.yaml; without it
+            // the promoted stage has no path and won't match the per-BP filter
+            // (which groups deployments by exact relative_path).
+            const deployResult = await promoteAutomation(deployUrl, details.deploySecret, checksum, targetStage, item.automationSourceName, undefined, undefined, deployedBy, sanitizedSourceName, sanitizedBpName);
 
             if (deployResult.alreadyDeploying) {
                 vscode.window.showWarningMessage(`Deployment ${targetDeploymentId} is already in progress`);
@@ -87,16 +99,14 @@ export async function promoteStageCommand(
                 if (result.outcome === 'completed') {
                     progress.report({ increment: 100, message: `Successfully promoted to ${targetStage}` });
                     vscode.window.showInformationMessage(`Successfully promoted ${item.stage} to ${targetStage}`);
-                    await refreshAutomationsCommand(context, provider);
-                    provider.refresh();
+                    // SSE pushes the fresh automations snapshot.
                 } else {
                     throw new Error(result.error || `Promotion ${result.outcome}`);
                 }
             } else if (deployResult.success) {
                 progress.report({ increment: 100, message: `Successfully promoted to ${targetStage}` });
                 vscode.window.showInformationMessage(`Successfully promoted ${item.stage} to ${targetStage}`);
-                await refreshAutomationsCommand(context, provider);
-                provider.refresh();
+                // SSE pushes the fresh automations snapshot.
             } else {
                 throw new Error(`Failed to promote to ${targetStage}`);
             }
@@ -205,7 +215,7 @@ export async function openPromotionManagerCommand(
 
     // Set up auto-refresh when automations change (same interval as sidebar)
     const refreshInterval = setInterval(async () => {
-        await refreshAutomationsCommand(context, { refresh: () => {} } as any);
+        // SSE keeps globalState.automations fresh — no REST refresh needed.
         await updateWebview();
     }, 10000);
 
@@ -225,14 +235,14 @@ export async function openPromotionManagerCommand(
         async (message) => {
             switch (message.command) {
                 case 'promote':
-                    await handlePromote(message.fromStage, message.toStage, message.checksum, details, deploymentIds, sanitizedSourceName, pmSanitizedBp, context);
+                    await handlePromote(message.fromStage, message.toStage, message.checksum, details, deploymentIds, sanitizedSourceName, pmSanitizedBp, automationSourceName, context);
                     await updateWebview();
                     break;
                 case 'showLogs':
                     await handleShowLogs(message.deploymentId, details, context);
                     break;
                 case 'rollback':
-                    await handleRollback(message.checksum, message.stage, message.replicas, details, deploymentIds, sanitizedSourceName, pmSanitizedBp, context);
+                    await handleRollback(message.checksum, message.stage, message.replicas, details, deploymentIds, sanitizedSourceName, pmSanitizedBp, automationSourceName, context);
                     await updateWebview();
                     break;
                 case 'scale':
@@ -275,6 +285,7 @@ async function handlePromote(
     deploymentIds: { dev: string; staging: string; production: string },
     sanitizedSourceName: string,
     sanitizedBpName: string,
+    relativePath: string,
     context: vscode.ExtensionContext
 ) {
     const fromDeploymentId = deploymentIds[fromStage as keyof typeof deploymentIds];
@@ -310,7 +321,7 @@ async function handlePromote(
             try {
                 progress.report({ increment: 50, message: `Promoting to ${toStage}...` });
                 const deployedBy = await getUserEmail(context);
-                const deployResult = await promoteAutomation(deployUrl, details.deploySecret, checksum!, toStage, undefined, undefined, undefined, deployedBy, sanitizedSourceName, sanitizedBpName);
+                const deployResult = await promoteAutomation(deployUrl, details.deploySecret, checksum!, toStage, relativePath, undefined, undefined, deployedBy, sanitizedSourceName, sanitizedBpName);
 
                 if (deployResult.alreadyDeploying) {
                     vscode.window.showWarningMessage(`Deployment ${toDeploymentId} is already in progress`);
@@ -325,14 +336,14 @@ async function handlePromote(
                     if (result.outcome === 'completed') {
                         progress.report({ increment: 100, message: `Successfully promoted to ${toStage}` });
                         vscode.window.showInformationMessage(`Successfully promoted ${fromStage} to ${toStage}`);
-                        await refreshAutomationsCommand(context, { refresh: () => {} } as any);
+                        // SSE keeps globalState.automations fresh — no REST refresh needed.
                     } else {
                         throw new Error(result.error || `Promotion ${result.outcome}`);
                     }
                 } else if (deployResult.success) {
                     progress.report({ increment: 100, message: `Successfully promoted to ${toStage}` });
                     vscode.window.showInformationMessage(`Successfully promoted ${fromStage} to ${toStage}`);
-                    await refreshAutomationsCommand(context, { refresh: () => {} } as any);
+                    // SSE keeps globalState.automations fresh — no REST refresh needed.
                 } else {
                     throw new Error(`Failed to promote to ${toStage}`);
                 }
@@ -369,8 +380,7 @@ async function handleShowLogs(
             automation.relative_path || automation.relativePath
         );
         
-        const provider = new AutomationsViewProvider(context);
-        await showAutomationLogsCommand(context, provider, automationItem);
+        await showAutomationLogsCommand(context, automationItem);
     } else {
         vscode.window.showWarningMessage(`Automation not found for deployment ${deploymentId}`);
     }
@@ -384,6 +394,7 @@ async function handleRollback(
     deploymentIds: { dev: string; staging: string; production: string },
     sanitizedSourceName: string,
     sanitizedBpName: string,
+    relativePath: string,
     context: vscode.ExtensionContext
 ) {
     const deploymentId = stage === 'production' || !stage ? sanitizedSourceName : deploymentIds[stage as keyof typeof deploymentIds];
@@ -408,7 +419,7 @@ async function handleRollback(
                 const deployedBy = await getUserEmail(context);
                 const deployResult = await promoteAutomation(
                     deployUrl, details.deploySecret, checksum, normalizedStage,
-                    undefined, undefined, replicas, deployedBy, sanitizedSourceName, sanitizedBpName
+                    relativePath, undefined, replicas, deployedBy, sanitizedSourceName, sanitizedBpName
                 );
 
                 if (deployResult.alreadyDeploying) {
@@ -424,14 +435,14 @@ async function handleRollback(
                     if (result.outcome === 'completed') {
                         progress.report({ increment: 100, message: `Successfully rolled back` });
                         vscode.window.showInformationMessage(`Successfully rolled back to checksum ${checksum.substring(0, 8)}`);
-                        await refreshAutomationsCommand(context, { refresh: () => {} } as any);
+                        // SSE keeps globalState.automations fresh — no REST refresh needed.
                     } else {
                         throw new Error(result.error || `Rollback ${result.outcome}`);
                     }
                 } else if (deployResult.success) {
                     progress.report({ increment: 100, message: `Successfully rolled back` });
                     vscode.window.showInformationMessage(`Successfully rolled back to checksum ${checksum.substring(0, 8)}`);
-                    await refreshAutomationsCommand(context, { refresh: () => {} } as any);
+                    // SSE keeps globalState.automations fresh — no REST refresh needed.
                 } else {
                     throw new Error(`Failed to rollback`);
                 }
@@ -500,7 +511,7 @@ async function handleScale(
                 if (success) {
                     progress.report({ increment: 100, message: `Successfully scaled` });
                     vscode.window.showInformationMessage(`Successfully scaled ${deploymentId} to ${replicas} replicas`);
-                    await refreshAutomationsCommand(context, { refresh: () => {} } as any);
+                    // SSE keeps globalState.automations fresh — no REST refresh needed.
                 } else {
                     throw new Error(`Failed to scale`);
                 }

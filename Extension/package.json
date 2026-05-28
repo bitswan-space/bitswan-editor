@@ -134,11 +134,6 @@
         "icon": "$(cloud-upload)"
       },
       {
-        "command": "bitswan.startLiveDevServer",
-        "title": "Start Live Dev Server",
-        "icon": "$(debug-start)"
-      },
-      {
         "command": "bitswan.startBitswanKernel",
         "title": "Start Bitswan Kernel",
         "icon": "$(play)"
@@ -238,11 +233,6 @@
         "icon": "$(terminal-kill)"
       },
       {
-        "command": "bitswan.removeAllOrphaned",
-        "title": "Remove All Orphaned",
-        "icon": "$(trash)"
-      },
-      {
         "command": "bitswan.stopAutomation",
         "title": "Stop Automation",
         "icon": "$(debug-stop)"
@@ -283,16 +273,6 @@
         "icon": "$(output)"
       },
       {
-        "command": "bitswan.buildImage",
-        "title": "Build Image",
-        "icon": "$(cloud-upload)"
-      },
-      {
-        "command": "bitswan.buildImageFromToolbar",
-        "title": "Build Image",
-        "icon": "$(cloud-upload)"
-      },
-      {
         "command": "bitswan.openDevelopmentGuide",
         "title": "Open Development Guide",
         "icon": "$(book)"
@@ -308,11 +288,6 @@
         "icon": "$(graph)"
       },
       {
-        "command": "bitswan.promoteToDev",
-        "title": "Promote to Dev",
-        "icon": "$(arrow-right)"
-      },
-      {
         "command": "bitswan.promoteToStaging",
         "title": "Promote to Staging",
         "icon": "$(arrow-right)"
@@ -321,36 +296,6 @@
         "command": "bitswan.promoteToProduction",
         "title": "Promote to Production",
         "icon": "$(arrow-right)"
-      },
-      {
-        "command": "bitswan.createAutomationFile",
-        "title": "New File",
-        "icon": "$(new-file)"
-      },
-      {
-        "command": "bitswan.createAutomationFolder",
-        "title": "New Folder",
-        "icon": "$(new-folder)"
-      },
-      {
-        "command": "bitswan.renameAutomationResource",
-        "title": "Rename",
-        "icon": "$(edit)"
-      },
-      {
-        "command": "bitswan.deleteAutomationResource",
-        "title": "Delete",
-        "icon": "$(trash)"
-      },
-      {
-        "command": "bitswan.revealAutomationResource",
-        "title": "Reveal in Explorer",
-        "icon": "$(go-to-file)"
-      },
-      {
-        "command": "bitswan.openAutomationTerminal",
-        "title": "Open in Terminal",
-        "icon": "$(terminal)"
       },
       {
         "command": "bitswan.openCouchDBAdmin",
@@ -413,11 +358,6 @@
     "menus": {
       "view/item/context": [
         {
-          "command": "bitswan.startLiveDevServer",
-          "when": "false",
-          "group": "inline@1"
-        },
-        {
           "command": "bitswan.showImageLogs",
           "when": "view == bitswan-unified-images && viewItem == image",
           "group": "inline@5"
@@ -426,11 +366,6 @@
           "command": "bitswan.showOrphanedImageLogs",
           "when": "view == bitswan-orphaned-images && viewItem == image",
           "group": "inline@5"
-        },
-        {
-          "command": "bitswan.buildImage",
-          "when": "view == bitswan-unified-images && viewItem == imageSource",
-          "group": "inline"
         },
         {
           "command": "bitswan.deleteImage",
@@ -505,13 +440,6 @@
           "command": "bitswan.stopBitswanKernel",
           "when": "notebookType == 'jupyter-notebook' && bitswan.kernelRunning",
           "group": "navigation@1"
-        }
-      ],
-      "editor/title": [
-        {
-          "command": "bitswan.buildImageFromToolbar",
-          "when": "resourceLangId == dockerfile",
-          "group": "navigation"
         }
       ],
       "commandPalette": [

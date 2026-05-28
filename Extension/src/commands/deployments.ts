@@ -1,77 +1,41 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
-import * as os from 'os';
-import FormData from 'form-data';
 import urlJoin from 'proper-url-join';
-import axios from 'axios';
 
-import { FolderItem } from '../views/sources_view';
-import { activateDeployment, bufferStreamToBuffer, deploy, createStreamingTar, createStreamingTarFromDir, uploadAsset, uploadAssetStream, promoteAutomation, startLiveDev, calculateGitTreeHash, calculateMergedGitTreeHash, getImages, getAutomations, getDeployStatus, DeployResponse } from '../lib';
+import { getDeployStatus } from '../lib';
+import { GitopsClient } from '../services/gitops_client';
 import { getDeployDetails } from '../deploy_details';
-import { getUserEmail } from '../services/user_info';
 import { outputChannel } from '../extension';
-import { AutomationSourcesViewProvider } from '../views/automation_sources_view';
-import { UnifiedBusinessProcessesViewProvider } from '../views/unified_business_processes_view';
-import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
-import { sanitizeName } from '../utils/nameUtils';
-import { refreshAutomationsCommand } from './automations';
-import { ensureAutomationImageReady, getAutomationDeployConfig, checkImageDirectoryPreflight } from '../utils/automationImageBuilder';
+import { getAutomationDeployConfig, checkImageDirectoryPreflight } from '../utils/automationImageBuilder';
 import { deployState } from '../services/deploy_state';
 
 /**
- * Recursively copies all files and directories from srcDir to destDir, preserving the directory structure.
- * Equivalent to `cp -r srcDir/* destDir/`
+ * Workspace-relative path of `folderPath`, with `worktrees/<name>/` re-prefixed
+ * when the source lives inside a worktree. Matches the `relative_path` shape
+ * gitops uses across `automations` events and `/automations/start-deploy`.
  */
-function copyDirectoryRecursive(srcDir: string, destDir: string): void {
-    if (!fs.existsSync(srcDir)) {
-        return;
+function workspaceRelativePath(workspaceRoot: string, folderPath: string): { relative_path: string; worktree?: string } {
+    const rel = path.relative(workspaceRoot, folderPath);
+    if (rel.startsWith('worktrees/')) {
+        const parts = rel.split('/');
+        return { relative_path: rel, worktree: parts[1] };
     }
-    
-    fs.mkdirSync(destDir, { recursive: true });
-    const entries = fs.readdirSync(srcDir, { withFileTypes: true });
-    
-    for (const entry of entries) {
-        const srcPath = path.join(srcDir, entry.name);
-        const destPath = path.join(destDir, entry.name);
-        
-        if (entry.isDirectory()) {
-            // Recursively copy subdirectory, preserving structure
-            copyDirectoryRecursive(srcPath, destPath);
-        } else if (entry.isFile()) {
-            // Copy file to corresponding location in destDir
-            const data = fs.readFileSync(srcPath);
-            fs.writeFileSync(destPath, data);
-        }
-    }
+    return { relative_path: rel };
 }
 
 export async function deployCommandAbstract(
-    context: vscode.ExtensionContext, 
-    folderPath: string, 
-    itemSet: string, 
-    treeDataProvider: AutomationSourcesViewProvider | null,
-    businessProcessesProvider?: UnifiedBusinessProcessesViewProvider,
-    unifiedImagesProvider?: UnifiedImagesViewProvider,
-    orphanedImagesProvider?: OrphanedImagesViewProvider
+    context: vscode.ExtensionContext,
+    folderPath: string,
+    itemSet: string,
 ) {
-    var messages: { [key: string]: { [key: string]: string } } = {
-        "automations": {
-            "deploy": "Deploying automation",
-            "url": "Deploy URL:",
-            "item;": "automation"
-        },
-        "images": {
-            "deploy": "Building image",
-            "url": "Build URL:",
-            "item": "image"
-        }
+    if (itemSet !== 'automations') {
+        // Image-build flow was removed — gitops builds images during deploy.
+        vscode.window.showErrorMessage(`Unsupported deploy itemSet: ${itemSet}`);
+        return;
     }
 
+    outputChannel.appendLine(`Deploying automation: ${folderPath}`);
 
-    outputChannel.appendLine(messages[itemSet]["deploy"] + `: ${folderPath}`);
-
-    // get deployURL and deploySecret
     const details = await getDeployDetails(context);
     if (!details) {
         return;
@@ -83,344 +47,118 @@ export async function deployCommandAbstract(
         return;
     }
 
-
-
-    // folderName is the name of the folder immediately containing the item being deployed so /bar/foo → foo
     const folderName = path.basename(folderPath);
 
-    // Read automation config early so we have ignore patterns for pre-flight and image build
     let ignorePatterns: string[] | undefined;
-    if (itemSet === "automations") {
-        try {
-            const automationConfig = getAutomationDeployConfig(folderPath);
-            ignorePatterns = automationConfig.ignore;
-            if (ignorePatterns && ignorePatterns.length > 0) {
-                outputChannel.appendLine(`Ignore patterns from config: ${ignorePatterns.join(', ')}`);
-            }
-        } catch (configError: any) {
-            vscode.window.showErrorMessage(`Syntax error in automation.toml: ${configError.message}`);
-            return;
+    try {
+        const automationConfig = getAutomationDeployConfig(folderPath);
+        ignorePatterns = automationConfig.ignore;
+        if (ignorePatterns && ignorePatterns.length > 0) {
+            outputChannel.appendLine(`Ignore patterns from config: ${ignorePatterns.join(', ')}`);
         }
+    } catch (configError: any) {
+        vscode.window.showErrorMessage(`Syntax error in automation.toml: ${configError.message}`);
+        return;
+    }
 
-        // Pre-flight check on image/ directory
-        const preflightWarning = checkImageDirectoryPreflight(folderPath, ignorePatterns);
-        if (preflightWarning) {
-            const choice = await vscode.window.showWarningMessage(
-                preflightWarning,
-                { modal: true },
-                'Continue Anyway'
-            );
-            if (choice !== 'Continue Anyway') {
-                return;
-            }
+    const preflightWarning = checkImageDirectoryPreflight(folderPath, ignorePatterns);
+    if (preflightWarning) {
+        const choice = await vscode.window.showWarningMessage(
+            preflightWarning,
+            { modal: true },
+            'Continue Anyway'
+        );
+        if (choice !== 'Continue Anyway') {
+            return;
         }
     }
 
-    // deployment of pipeline
     await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
-        title: messages[itemSet]["deploy"] ,
+        title: `Deploying ${folderName}`,
         cancellable: false
     }, async (progress, _token) => {
-        // Declare deployUrl outside try block so it's accessible in catch block
-        let deployUrl: string | undefined;
         try {
-            const form = new FormData();
-            // The folder name must be all lowercase and have any characters not allowed in image tags removed
-            const normalizedFolderName = sanitizeName(folderName);
-            deployUrl = urlJoin(details.deployUrl, itemSet, normalizedFolderName).toString();
+            const { relative_path, worktree } = workspaceRelativePath(workspaceFolders[0].uri.fsPath, folderPath);
+            outputChannel.appendLine(`Starting deploy: relative_path=${relative_path}${worktree ? `, worktree=${worktree}` : ''}`);
 
-            outputChannel.appendLine(messages[itemSet]["url"] + `: ${deployUrl}`);
-            let checksum: string; // calculate checksum after bitswan_lib added to automation source
+            progress.report({ increment: 20, message: 'Starting deploy on gitops...' });
 
-            try {
-                checksum = calculateGitTreeHash(folderPath, outputChannel);
-                outputChannel.appendLine(`Calculated checksum: ${checksum}`);
-            } catch (error: any) {
-                outputChannel.appendLine(`Warning: Failed to calculate git tree hash: ${error.message}`);
-                throw new Error(`Failed to calculate checksum: ${error.message}`);
+            const client = new GitopsClient(details.deployUrl, details.deploySecret);
+            const result = await client.startDeploy({
+                relative_path,
+                stage: 'dev',
+                ...(worktree ? { worktree } : {}),
+            });
+
+            if (!result.ok || !result.body || typeof result.body !== 'object') {
+                throw new Error(`Failed to start deploy: HTTP ${result.status}`);
+            }
+            const body = result.body as { task_id?: string; deployment_id?: string };
+            const taskId = body.task_id;
+            const deploymentId = body.deployment_id;
+            if (!taskId || !deploymentId) {
+                throw new Error('Gitops /start-deploy did not return task_id and deployment_id');
             }
 
-            if (itemSet === "automations") {
-                progress.report({ increment: 5, message: "Preparing automation image..." });
-                let imageBuildResult: Awaited<ReturnType<typeof ensureAutomationImageReady>> = null;
-                try {
-                    imageBuildResult = await ensureAutomationImageReady(details, folderPath, outputChannel, ignorePatterns);
-                } catch (imageError: any) {
-                    throw new Error(`Failed to prepare automation image: ${imageError.message || imageError}`);
-                }
+            deployState.markDeploying(deploymentId, taskId);
+            progress.report({ increment: 30, message: 'Building and deploying...' });
 
-                // Recalculate checksum with ignore patterns
-                checksum = calculateGitTreeHash(folderPath, outputChannel, ignorePatterns);
+            const waitResult = await waitForDeployCompletion(deploymentId, taskId, progress, details, 240_000);
 
-                // Check if bitswan_lib exists - this determines if we need to merge directories
-                const workspacePath = path.join(workspaceFolders[0].uri.fsPath, 'workspace');
-                const bitswanLibPath = path.join(workspacePath, 'bitswan_lib');
-                const hasBitswanLib = fs.existsSync(bitswanLibPath);
-
-                // Build the list of directories to merge (bitswan_lib overrides automation files)
-                const dirsToMerge = hasBitswanLib ? [folderPath, bitswanLibPath] : [folderPath];
-
-                if (hasBitswanLib) {
-                    outputChannel.appendLine(`bitswan_lib found at ${bitswanLibPath}`);
-                } else {
-                    outputChannel.appendLine(`No bitswan_lib found at ${bitswanLibPath}`);
-                }
-
-                // Calculate merged checksum without copying files
-                if (hasBitswanLib) {
-                    progress.report({ increment: 5, message: "Calculating merged checksum..." });
-                    checksum = calculateMergedGitTreeHash(dirsToMerge, outputChannel, ignorePatterns);
-                }
-
-                // Check if asset already exists BEFORE doing any file operations
-                progress.report({ increment: 10, message: "Checking if asset already exists..." });
-                let assetExists = false;
-                try {
-                    const automationsUrl = urlJoin(details.deployUrl, "automations").toString();
-                    const automations = await getAutomations(automationsUrl, details.deploySecret);
-
-                    assetExists = automations.some((automation: any) =>
-                        automation.version_hash === checksum || automation.versionHash === checksum
-                    );
-
-                    if (assetExists) {
-                        outputChannel.appendLine(`Asset with checksum ${checksum} already exists, skipping upload`);
-                        progress.report({ increment: 50, message: "Asset already exists, skipping upload" });
-                    }
-                } catch (error: any) {
-                    outputChannel.appendLine(`Warning: Failed to check asset existence: ${error.message}, proceeding with upload`);
-                }
-
-                // Only create zip if we actually need to upload - stream directly from source, no copying
-                if (!assetExists) {
-                    progress.report({ increment: 10, message: "Packing..." });
-                    outputChannel.appendLine(`Creating streaming tar from ${dirsToMerge.length} directories...`);
-
-                    // Create true streaming tar — files are compressed as the stream is consumed.
-                    // Symlinks are preserved as link entries; gitops validates targets on extract.
-                    const stream = createStreamingTar(dirsToMerge, outputChannel, ignorePatterns);
-                    outputChannel.appendLine(`Streaming tar created, starting upload...`);
-
-                    progress.report({ increment: 40, message: "Uploading asset..." });
-                    // Use the streaming upload endpoint that handles chunked transfer encoding
-                    const streamUploadUrl = urlJoin(details.deployUrl, "automations", "assets", "upload-stream").toString();
-                    outputChannel.appendLine(`Starting streaming upload to ${streamUploadUrl}...`);
-
-                    const uploadResult = await uploadAssetStream(streamUploadUrl, stream, checksum, details.deploySecret);
-                    outputChannel.appendLine(`Upload completed, response: ${JSON.stringify(uploadResult)}`);
-
-                    if (!uploadResult || uploadResult.error) {
-                        throw new Error(`Failed to upload asset: ${uploadResult?.error || 'No response'}`);
-                    }
-
-                    if (!uploadResult.checksum) {
-                        throw new Error(`Failed to upload asset: missing checksum in response`);
-                    }
-
-                    if (uploadResult.checksum !== checksum) {
-                        outputChannel.appendLine(`Warning: Server checksum (${uploadResult.checksum}) differs from calculated checksum (${checksum})`);
-                    }
-                    outputChannel.appendLine(`Asset uploaded with checksum: ${checksum}`);
-                }
-
-                // For automations, use the promotion workflow
-                const relativePath = path.relative(workspaceFolders[0].uri.fsPath, folderPath);
-
-                // Extract BP name for deployment context
-                const devRelParts = relativePath.replace(/\\/g, '/').split('/');
-                const devBpName = devRelParts.length >= 2 ? sanitizeName(devRelParts[0]) : '';
-                const devBpPrefix = devBpName ? `${devBpName}-` : '';
-                const devDeploymentId = `${normalizedFolderName}-${devBpPrefix}dev`;
-                if (deployState.isDeploying(devDeploymentId)) {
-                    vscode.window.showWarningMessage(`Deployment ${devDeploymentId} is already in progress`);
-                    return;
-                }
-
-                progress.report({ increment: 75, message: "Deploying to dev stage..." });
-
-                // Deploy to dev stage with -dev suffix
-                const devDeployUrl = urlJoin(details.deployUrl, "automations", devDeploymentId, "deploy").toString();
-                const deployedBy = await getUserEmail(context);
-                const deployResult = await promoteAutomation(devDeployUrl, details.deploySecret, checksum, 'dev', relativePath, undefined, undefined, deployedBy, normalizedFolderName, devBpName);
-
-                if (deployResult.alreadyDeploying) {
-                    vscode.window.showWarningMessage(`Deployment ${devDeploymentId} is already in progress`);
-                    return;
-                }
-
-                if (deployResult.success && deployResult.task_id) {
-                    // Optimistically mark as deploying and wait for SSE completion
-                    deployState.markDeploying(devDeploymentId, deployResult.task_id);
-
-                    const result = await waitForDeployCompletion(
-                        devDeploymentId, deployResult.task_id, progress, details, 120_000
-                    );
-
-                    if (result.outcome === 'completed') {
-                        progress.report({ increment: 100, message: `Successfully deployed automation to dev stage` });
-                        vscode.window.showInformationMessage(`Successfully deployed automation to dev stage`);
-                        const providerForRefresh = (businessProcessesProvider || treeDataProvider);
-                        if (providerForRefresh) {
-                            await refreshAutomationsCommand(context, providerForRefresh as any);
-                        }
-                    } else {
-                        throw new Error(result.error || `Deployment to dev stage ${result.outcome}`);
-                    }
-                } else if (deployResult.success) {
-                    // Legacy 200 response path
-                    progress.report({ increment: 100, message: `Successfully deployed automation to dev stage` });
-                    vscode.window.showInformationMessage(`Successfully deployed automation to dev stage`);
-                    const providerForRefresh = (businessProcessesProvider || treeDataProvider);
-                    if (providerForRefresh) {
-                        await refreshAutomationsCommand(context, providerForRefresh as any);
-                    }
-                } else {
-                    throw new Error(`Failed to deploy automation to dev stage`);
-                }
+            if (waitResult.outcome === 'completed') {
+                progress.report({ increment: 100, message: 'Successfully deployed automation to dev stage' });
+                vscode.window.showInformationMessage('Successfully deployed automation to dev stage');
+                // SSE will push the fresh `automations` snapshot to update views.
             } else {
-                // For images, check if image already exists by looking at the images list
-                progress.report({ increment: 10, message: "Checking if image already exists..." });
-                let imageExists = false;
-                try {
-                    // Get the images list from the server
-                    const imagesUrl = urlJoin(details.deployUrl, "images").toString();
-                    const images = await getImages(imagesUrl, details.deploySecret);
-                    
-                    // Check if an image with the expected tag exists
-                    const expectedTag = `internal/${normalizedFolderName}:sha${checksum}`;
-                    imageExists = images.some((img: any) => img.tag === expectedTag);
-                    
-                    if (imageExists) {
-                        outputChannel.appendLine(`Image with checksum ${checksum} already exists, skipping upload`);
-                        progress.report({ increment: 100, message: "Image already exists, skipping upload" });
-                        vscode.window.showInformationMessage("Image already exists, skipping upload");
-                        
-                        // Refresh image views
-                        if (unifiedImagesProvider && orphanedImagesProvider) {
-                            unifiedImagesProvider.refresh();
-                            orphanedImagesProvider.refresh();
-                        }
-                        return;
-                    }
-                } catch (error: any) {
-                    // If check fails, proceed with upload
-                    outputChannel.appendLine(`Warning: Failed to check image existence: ${error.message}, proceeding with upload`);
-                }
-
-                // Image doesn't exist, proceed with upload
-                progress.report({ increment: 20, message: "Packing..." });
-
-                // Tar the pipeline config folder and buffer it before posting.
-                // archiver's Transform stream has no knownLength, so handing it
-                // to form-data directly produces an unparsable multipart body
-                // (server reports body.file missing).
-                const stream = createStreamingTarFromDir(folderPath, outputChannel);
-                const buffer = await bufferStreamToBuffer(stream);
-                form.append('file', buffer, {
-                    filename: 'deployment.tar.gz',
-                    contentType: 'application/gzip',
-                });
-                // Add checksum to form
-                form.append('checksum', checksum);
-
-                progress.report({ increment: 50, message: "Uploading to server " + deployUrl });
-
-                const success = await deploy(deployUrl, form, details.deploySecret, outputChannel);
-
-                if (success) {
-                    progress.report({ increment: 100, message: "Successfully uploaded "+messages[itemSet]["item"]+" to GitOps" });
-                    vscode.window.showInformationMessage("Successfully uploaded "+messages[itemSet]["item"]+" to GitOps");
-                    
-                    // Refresh image views if this was an image build
-                    if (itemSet === "images" && unifiedImagesProvider && orphanedImagesProvider) {
-                        unifiedImagesProvider.refresh();
-                        orphanedImagesProvider.refresh();
-                    }
-                } else {
-                    throw new Error("Failed to upload "+messages[itemSet]["item"]+" to GitOps");
-                }
+                throw new Error(waitResult.error || `Deployment ${waitResult.outcome}`);
             }
-
         } catch (error: any) {
-            let errorMessage: string;
-            if (error.response) {
-                const status = error.response.status;
-                // Log full error details for 500 errors
-                if (status >= 500) {
-                    outputChannel.appendLine("=".repeat(60));
-                    outputChannel.appendLine(`Deployment Error (${status})`);
-                    outputChannel.appendLine("=".repeat(60));
-                    outputChannel.appendLine(`URL: ${deployUrl || details.deployUrl}`);
-                    outputChannel.appendLine(`Status: ${status} ${error.response.statusText}`);
-                    outputChannel.appendLine(`Response Data:`);
-                    outputChannel.appendLine(JSON.stringify(error.response.data, null, 2));
-                    outputChannel.appendLine(`Response Headers:`);
-                    outputChannel.appendLine(JSON.stringify(error.response.headers, null, 2));
-                    outputChannel.appendLine("=".repeat(60));
-                    outputChannel.show(true);
-                } else {
-                    outputChannel.appendLine(`Error response data: ${JSON.stringify(error.response.data)}`);
-                }
-                errorMessage = `Server responded with status ${status}`;
-            } else if (error.request) {
-                errorMessage = 'No response received from server';
-            } else {
-                errorMessage = error.message;
-            }
+            const errorMessage = error?.message || String(error);
+            outputChannel.appendLine(`Deploy error: ${errorMessage}`);
             vscode.window.showErrorMessage(`Deployment error: ${errorMessage}`);
-            return;
         }
     });
-
 }
 
 
 export async function deployFromToolbarCommand(
-    context: vscode.ExtensionContext, 
-    item: vscode.Uri, 
+    context: vscode.ExtensionContext,
+    item: vscode.Uri,
     itemSet: string,
-    businessProcessesProvider?: UnifiedBusinessProcessesViewProvider,
-    unifiedImagesProvider?: UnifiedImagesViewProvider,
-    orphanedImagesProvider?: OrphanedImagesViewProvider
 ) {
-    deployCommandAbstract(context, path.dirname(item.path), itemSet, null, businessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider);
+    return deployCommandAbstract(context, path.dirname(item.path), itemSet);
 }
 
 export async function deployFromNotebookToolbarCommand(
-    context: vscode.ExtensionContext, 
-    item: any, 
-    itemSet: string,
-    businessProcessesProvider?: UnifiedBusinessProcessesViewProvider,
-    unifiedImagesProvider?: UnifiedImagesViewProvider,
-    orphanedImagesProvider?: OrphanedImagesViewProvider
-) {
-    deployCommandAbstract(context, path.dirname(item.notebookEditor.notebookUri.path), itemSet, null, businessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider);
-}
-
-export async function deployCommand(
     context: vscode.ExtensionContext,
-    treeDataProvider: AutomationSourcesViewProvider,
-    folderItem: FolderItem,
+    item: any,
     itemSet: string,
-    businessProcessesProvider?: UnifiedBusinessProcessesViewProvider,
-    unifiedImagesProvider?: UnifiedImagesViewProvider,
-    orphanedImagesProvider?: OrphanedImagesViewProvider
 ) {
-    var item : string = folderItem.resourceUri.fsPath;
-    deployCommandAbstract(context, item, itemSet, treeDataProvider, businessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider);
+    return deployCommandAbstract(context, path.dirname(item.notebookEditor.notebookUri.path), itemSet);
 }
 
 /**
- * Start a live dev server for an automation.
- * This deploys the automation with stage="live-dev" which:
- * - Mounts source code directly from the workspace for live editing
- * - Runs with auto-reload enabled (hot module replacement for frontend, uvicorn --reload for backend)
+ * Entry point for the dashboard panel's deploy button. The caller passes a
+ * `{ resourceUri }`-shaped object so we don't need a tree-item class.
+ */
+export async function deployCommand(
+    context: vscode.ExtensionContext,
+    item: { resourceUri: vscode.Uri },
+    itemSet: string,
+) {
+    return deployCommandAbstract(context, item.resourceUri.fsPath, itemSet);
+}
+
+/**
+ * Start a live-dev deployment via gitops `/automations/start-deploy` (stage=live-dev).
+ * Gitops mounts the source from the bind-mounted workspace, builds the
+ * runtime image if a `image/` Dockerfile is present, and runs the container
+ * with auto-reload enabled.
  */
 export async function startLiveDevServerCommand(
     context: vscode.ExtensionContext,
     folderPath: string,
-    businessProcessesProvider?: UnifiedBusinessProcessesViewProvider,
     worktreeName?: string
 ) {
     const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -436,22 +174,18 @@ export async function startLiveDevServerCommand(
     }
 
     const folderName = path.basename(folderPath);
-    const normalizedFolderName = sanitizeName(folderName);
 
-    // Read automation config before withProgress so we have ignore patterns for pre-flight
-    let automationConfig: ReturnType<typeof getAutomationDeployConfig>;
+    let ignorePatterns: string[] | undefined;
     try {
-        automationConfig = getAutomationDeployConfig(folderPath);
+        ignorePatterns = getAutomationDeployConfig(folderPath).ignore;
     } catch (configError: any) {
         vscode.window.showErrorMessage(`Syntax error in automation.toml: ${configError.message}`);
         return;
     }
-    const ignorePatterns = automationConfig.ignore;
     if (ignorePatterns && ignorePatterns.length > 0) {
         outputChannel.appendLine(`Ignore patterns from config: ${ignorePatterns.join(', ')}`);
     }
 
-    // Pre-flight check on image/ directory
     const preflightWarning = checkImageDirectoryPreflight(folderPath, ignorePatterns);
     if (preflightWarning) {
         const choice = await vscode.window.showWarningMessage(
@@ -470,80 +204,48 @@ export async function startLiveDevServerCommand(
         cancellable: true
     }, async (progress, token) => {
         try {
-            progress.report({ increment: 20, message: "Preparing automation image..." });
-
             if (token.isCancellationRequested) { return; }
 
-            // Build image if needed
-            const imageResult = await ensureAutomationImageReady(details, folderPath, outputChannel, ignorePatterns);
-            // imageResult is null if no image folder exists, which is fine
+            const { relative_path, worktree: detectedWt } = workspaceRelativePath(workspaceFolders[0].uri.fsPath, folderPath);
+            const worktree = worktreeName || detectedWt;
 
-            if (token.isCancellationRequested) { return; }
+            progress.report({ increment: 30, message: 'Starting live-dev on gitops...' });
 
-            progress.report({ increment: 50, message: "Reading automation config..." });
+            const client = new GitopsClient(details.deployUrl, details.deploySecret);
+            const result = await client.startDeploy({
+                relative_path,
+                stage: 'live-dev',
+                ...(worktree ? { worktree } : {}),
+            });
 
-            // Re-read automation config after image build, since the build may have
-            // updated automation.toml with the newly built image tag.
-            const updatedConfig = getAutomationDeployConfig(folderPath);
-
-            // Get relative path for source mounting
-            // For worktree stages, construct the path explicitly so the gitops server
-            // mounts from {workspace}/worktrees/{name}/... (matching the editor mount)
-            const relativePath = worktreeName
-                ? path.join('worktrees', worktreeName, path.relative(
-                    path.join(workspaceFolders[0].uri.fsPath, 'worktrees', worktreeName), folderPath))
-                : path.relative(workspaceFolders[0].uri.fsPath, folderPath);
-
-            outputChannel.appendLine(`Live-dev config: image=${updatedConfig.image}, expose=${updatedConfig.expose}, port=${updatedConfig.port}, mountPath=${updatedConfig.mountPath}, secretGroups=${updatedConfig.secretGroups?.join(',') || 'none'}, automationId=${updatedConfig.automationId || 'none'}, auth=${updatedConfig.auth ?? false}`);
-
-            if (token.isCancellationRequested) { return; }
-
-            progress.report({ increment: 70, message: "Starting live dev server..." });
-
-            // Deploy to live-dev stage.
-            // The server constructs the deployment ID — we send structured data.
-            const deployResult = await startLiveDev(
-                details.deployUrl, details.deploySecret, relativePath, worktreeName
-            );
-            const liveDevDeploymentId = deployResult.deployment_id || relativePath;
-
-            if (deployResult.alreadyDeploying) {
-                vscode.window.showWarningMessage(`Deployment ${liveDevDeploymentId} is already in progress`);
-                return;
+            if (!result.ok || !result.body || typeof result.body !== 'object') {
+                throw new Error(`Failed to start live-dev: HTTP ${result.status}`);
+            }
+            const body = result.body as { task_id?: string; deployment_id?: string };
+            const taskId = body.task_id;
+            const deploymentId = body.deployment_id;
+            if (!taskId || !deploymentId) {
+                throw new Error('Gitops /start-deploy did not return task_id and deployment_id');
             }
 
-            if (deployResult.success && deployResult.task_id) {
-                deployState.markDeploying(liveDevDeploymentId, deployResult.task_id);
+            deployState.markDeploying(deploymentId, taskId);
+            progress.report({ increment: 30, message: 'Building and starting container...' });
 
-                const result = await waitForDeployCompletion(
-                    liveDevDeploymentId, deployResult.task_id, progress, details, 120_000
-                );
+            const waitResult = await waitForDeployCompletion(deploymentId, taskId, progress, details, 240_000);
 
-                if (result.outcome === 'completed') {
-                    progress.report({ increment: 100, message: "Live dev server started!" });
-                    vscode.window.showInformationMessage(
-                        `Live dev server started for ${folderName}. Changes to source files will auto-reload.`
-                    );
-                    if (businessProcessesProvider) {
-                        await refreshAutomationsCommand(context, businessProcessesProvider);
-                    }
-                } else {
-                    throw new Error(result.error || `Failed to start live dev server: ${result.outcome}`);
-                }
-            } else if (deployResult.success) {
-                progress.report({ increment: 100, message: "Live dev server started!" });
+            if (waitResult.outcome === 'completed') {
+                progress.report({ increment: 100, message: 'Live dev server started!' });
                 vscode.window.showInformationMessage(
                     `Live dev server started for ${folderName}. Changes to source files will auto-reload.`
                 );
-                if (businessProcessesProvider) {
-                    await refreshAutomationsCommand(context, businessProcessesProvider);
-                }
+                // SSE pushes the fresh `automations` snapshot.
             } else {
-                throw new Error('Failed to start live dev server');
+                throw new Error(waitResult.error || `Failed to start live dev server: ${waitResult.outcome}`);
             }
         } catch (error: any) {
-            vscode.window.showErrorMessage(`Failed to start live dev server: ${error.message}`);
-            outputChannel.appendLine(`Live dev server error: ${error.message}`);
+            const errorMessage = error?.message || String(error);
+            outputChannel.appendLine(`Live dev server error: ${errorMessage}`);
+            vscode.window.showErrorMessage(`Failed to start live dev server: ${errorMessage}`);
         }
     });
 }

@@ -1,57 +1,11 @@
 import * as vscode from 'vscode';
 
-export class AutomationsViewProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
-    private _onDidChangeTreeData: vscode.EventEmitter<vscode.TreeItem | undefined | null | void> = new vscode.EventEmitter<vscode.TreeItem | undefined | null | void>();
-    readonly onDidChangeTreeData: vscode.Event<vscode.TreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
-
-    constructor(private context: vscode.ExtensionContext) {}
-
-    refresh(): void {
-        this._onDidChangeTreeData.fire();
-    }
-
-    getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
-        return element;
-    }
-
-    async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
-        const activeInstance = this.context.globalState.get<any>('activeGitOpsInstance');
-        if (!activeInstance) {
-            return [];
-        }
-
-        if (element instanceof StatusCategory) {
-            return element.items;
-        }
-
-        const automations = this.context.globalState.get<any[]>('automations', []);
-        const automationItems = automations.map(automation => 
-            new AutomationItem(
-                automation.name,
-                automation.state,
-                automation.status,
-                automation.deploymentId,
-                automation.active,
-                automation.automationUrl,
-                automation.relativePath
-            )
-        );
-
-        const statusMap: { [key: string]: AutomationItem[] } = {};
-        automationItems.forEach(automation => {
-            const status = automation.active ? 'Active' : 'Inactive';
-            if (!statusMap[status]) {
-                statusMap[status] = [];
-            }
-            statusMap[status].push(automation);
-        });
-
-        return Object.keys(statusMap).map(status => 
-            new StatusCategory(status, statusMap[status])
-        );
-    }
-} 
-
+/**
+ * Plain data carrier for a deployed automation, used by command handlers as
+ * a typed payload (no longer rendered in a tree view). It still extends
+ * `vscode.TreeItem` so callers that do `instanceof AutomationItem` keep
+ * working — the tree-item bits are unused.
+ */
 export class AutomationItem extends vscode.TreeItem {
     constructor(
         public readonly name: string,
@@ -63,45 +17,9 @@ export class AutomationItem extends vscode.TreeItem {
         public readonly relativePath: string
     ) {
         super(name, vscode.TreeItemCollapsibleState.None);
-        this.tooltip = `${this.name}`;
-        this.description = `${this.status ?? ''}`;
-        this.contextValue = this.getContextValue();
-        this.iconPath = this.statusIcon(state);
     }
 
     public urlSlug(): string {
-        return this.name
-    }
-
-    private getContextValue(): string {
-        const status = this.active ? 'active' : 'inactive';
-        const state = this.state ?? 'exited';
-        const urlStatus = this.automationUrl ? 'url' : 'nourl';
-        return `automation,${status},${state} urlStatus:${urlStatus}`;
-    }
-
-    private statusIcon(status?: string): vscode.ThemeIcon {
-        switch (status) {
-            // created - gray filled circle
-            case 'created': return new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.gray'));
-            // running - green filled circle
-            case 'running': return new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.green'));
-            case 'paused': return new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.orange'));
-            case 'restarting': return new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.orange'));
-            case 'exited': return new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.red'));
-            case 'removing': return new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.red'));
-            case 'dead': return new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.red'));
-            default: return new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('bitswan.statusIcon.red'));
-        }
-    }
-}
-
-export class StatusCategory extends vscode.TreeItem {
-    constructor(
-        public readonly name: string,
-        public readonly items: AutomationItem[],
-    ) {
-        super(name, vscode.TreeItemCollapsibleState.Expanded);
-        this.contextValue = 'statusCategory';
+        return this.name;
     }
 }

@@ -1,23 +1,25 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import urlJoin from 'proper-url-join';
-import { AutomationsViewProvider} from '../views/automations_view';
 import { ImageItem, UnifiedImagesViewProvider, OrphanedImagesViewProvider } from '../views/unified_images_view';
 import { AutomationItem } from '../views/automations_view';
 import { GitOpsItem } from '../views/workspaces_view';
-import { outputChannel, outputChannelsMap, setRefreshPaused } from '../extension';
-import { refreshAutomationsCommand } from './automations';
-import { refreshImagesCommand } from './images';
+import { outputChannel, outputChannelsMap } from '../extension';
 
 export interface RefreshOptions {
     silent?: boolean;
 }
 
+/**
+ * Build a command handler that POSTs to `<base>/<entityGroup>/<itemSlug>/<urlPath>`
+ * and surfaces progress/notifications. SSE drives view refreshes — this no longer
+ * needs a tree-view provider.
+ */
 export function makeItemCommand(
     commandConfig: {
         title: string;
         initialProgress: string;
         urlPath: string;
+        entityGroup: 'automations' | 'images';
         apiFunction: (url: string, secret: string) => Promise<boolean>;
         successProgress: string;
         successMessage: string;
@@ -26,7 +28,7 @@ export function makeItemCommand(
         prompt?: boolean;
     }
 ) {
-    return async function (context: vscode.ExtensionContext, treeDataProvider: AutomationsViewProvider | UnifiedImagesViewProvider | OrphanedImagesViewProvider, item: AutomationItem | ImageItem) {
+    return async function (context: vscode.ExtensionContext, item: AutomationItem | ImageItem) {
         const activeInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
         if (!activeInstance) {
             vscode.window.showErrorMessage('No active GitOps instance');
@@ -37,11 +39,8 @@ export function makeItemCommand(
             const confirmName = await vscode.window.showInputBox({
                 prompt: `Type "${item.name}" to confirm the action`,
                 placeHolder: item.name,
-                validateInput: (value) => {
-                    return value === item.name ? null : 'Name does not match';
-                }
+                validateInput: (value) => value === item.name ? null : 'Name does not match',
             });
-
             if (!confirmName || confirmName !== item.name) {
                 return;
             }
@@ -50,50 +49,33 @@ export function makeItemCommand(
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: commandConfig.title,
-            cancellable: false
+            cancellable: false,
         }, async (progress) => {
-            setRefreshPaused(true);
             try {
                 progress.report({ increment: 25, message: commandConfig.initialProgress });
 
-                var group="";
-                if (treeDataProvider instanceof AutomationsViewProvider) {
-                    var group = "automations";
-                } else if (treeDataProvider instanceof UnifiedImagesViewProvider || treeDataProvider instanceof OrphanedImagesViewProvider) {
-                    var group = "images";
-                }
-
-                const url = urlJoin(activeInstance.url, group, item.urlSlug(), commandConfig.urlPath).toString();
+                const url = urlJoin(activeInstance.url, commandConfig.entityGroup, item.urlSlug(), commandConfig.urlPath).toString();
                 outputChannel.appendLine(`${commandConfig.title}: ${item.name} at URL: ${url}`);
                 const response = await commandConfig.apiFunction(url, activeInstance.secret);
 
                 if (response) {
                     progress.report({ increment: 100, message: commandConfig.successProgress });
                     vscode.window.showInformationMessage(commandConfig.successMessage);
-                    if (treeDataProvider instanceof AutomationsViewProvider) {
-                        refreshAutomationsCommand(context, treeDataProvider);
-                    } else if (treeDataProvider instanceof UnifiedImagesViewProvider || treeDataProvider instanceof OrphanedImagesViewProvider) {
-                        refreshImagesCommand(context, treeDataProvider);
-                    }
-                    treeDataProvider.refresh();
                 } else {
                     vscode.window.showErrorMessage(`${commandConfig.errorMessage} ${item.name}`);
                 }
-
             } catch (error: any) {
-                let errorMessage = error.message || 'Unknown error occurred';
+                const errorMessage = error.message || 'Unknown error occurred';
                 outputChannel.appendLine(`${commandConfig.errorLogPrefix}: ${errorMessage}`);
                 vscode.window.showErrorMessage(`${commandConfig.errorMessage}: ${errorMessage}`);
-            } finally {
-                setRefreshPaused(false);
             }
         });
-    }
+    };
 }
 
 export async function showLogsCommand<T extends AutomationItem | ImageItem>(
-    context: vscode.ExtensionContext, 
-    treeDataProvider: AutomationsViewProvider | UnifiedImagesViewProvider | OrphanedImagesViewProvider, 
+    context: vscode.ExtensionContext,
+    _treeDataProvider: UnifiedImagesViewProvider | OrphanedImagesViewProvider | undefined,
     item: T,
     config: {
         entityType: string;
@@ -109,14 +91,11 @@ export async function showLogsCommand<T extends AutomationItem | ImageItem>(
     try {
         outputChannel.appendLine(`Fetching logs for ${config.entityType}: ${item.name}`);
 
-        // Determine the correct URL path based on entity type
         let logsUri: string;
         if (config.entityType === 'image build process') {
-            // For images, extract the tag from the name
             const imageTag = item.name.split('/')[1];
             logsUri = urlJoin(activeInstance.url, "images", imageTag, "logs").toString();
         } else {
-            // For automations or other entities
             logsUri = urlJoin(activeInstance.url, config.entityType + 's', item.name, "logs").toString();
         }
 
@@ -126,56 +105,51 @@ export async function showLogsCommand<T extends AutomationItem | ImageItem>(
             throw new Error('Failed to fetch logs from server');
         }
 
-        // Create a dedicated output channel for this entity's logs
         const logChannelName = `BitSwan: ${item.name} Logs`;
 
-        // Check if the channel already exists in our map
         let logChannel: vscode.OutputChannel;
         if (outputChannelsMap.has(logChannelName)) {
             outputChannel.appendLine(`Using existing output channel: ${logChannelName}`);
             logChannel = outputChannelsMap.get(logChannelName)!;
-            logChannel.clear(); // Clear existing content
+            logChannel.clear();
         } else {
             outputChannel.appendLine(`Creating new output channel: ${logChannelName}`);
             logChannel = vscode.window.createOutputChannel(logChannelName);
             outputChannelsMap.set(logChannelName, logChannel);
         }
 
-        // Display logs in the output channel
         logChannel.appendLine('='.repeat(80));
         logChannel.appendLine(`Logs for ${config.entityType}: ${item.name}`);
         logChannel.appendLine(`Fetched at: ${new Date().toISOString()}`);
         logChannel.appendLine('='.repeat(80));
         logChannel.appendLine('');
 
-        // Handle the specific JSON response format
         if (typeof logsResponse === 'object' && Array.isArray(logsResponse.logs)) {
-            // Join the logs array with newlines
             logsResponse.logs.forEach((logLine: string) => {
                 logChannel.appendLine(logLine);
             });
         } else if (typeof logsResponse === 'string') {
-            // If the response is a string, display it directly
             logChannel.appendLine(logsResponse);
         } else {
-            // If the response is in an unexpected format, stringify it
             logChannel.appendLine(JSON.stringify(logsResponse, null, 2));
         }
 
-        // Show the output channel
         logChannel.show(true);
-
         outputChannel.appendLine(`Logs for ${item.name} displayed successfully`);
     } catch (error: any) {
-        let errorMessage = error.message || 'Unknown error occurred';
+        const errorMessage = error.message || 'Unknown error occurred';
         outputChannel.appendLine(`Error fetching logs: ${errorMessage}`);
         vscode.window.showErrorMessage(`Failed to fetch logs: ${errorMessage}`);
     }
 }
 
+/**
+ * Force-refresh an entity list from REST (instead of relying on SSE). Used by
+ * explicit "refresh" buttons; SSE keeps the cached state in sync otherwise.
+ */
 export async function refreshItemsCommand(
     context: vscode.ExtensionContext,
-    treeDataProvider: { refresh(): void; refreshAutomations?(): void },
+    treeDataProvider: { refresh(): void; refreshAutomations?(): void } | undefined,
     config: {
         entityType: string;
         getItemsFunction: (url: string, secret: string) => Promise<any>;
@@ -192,11 +166,10 @@ export async function refreshItemsCommand(
 
     try {
         const items = await config.getItemsFunction(
-            (urlJoin(activeInstance.url, config.entityType + 's', { trailingSlash: true }).toString()),
-            activeInstance.secret
+            urlJoin(activeInstance.url, config.entityType + 's', { trailingSlash: true }).toString(),
+            activeInstance.secret,
         );
 
-        // In silent mode, skip refresh if data hasn't changed
         if (options?.silent) {
             const current = context.globalState.get(config.entityType + 's', []);
             if (JSON.stringify(current) === JSON.stringify(items)) {
@@ -209,15 +182,14 @@ export async function refreshItemsCommand(
         if (!options?.silent) {
             vscode.window.showErrorMessage(`Failed to get ${config.entityType}s from GitOps: ${error.message}`);
         }
-        // Keep existing data on error — stale data is better than an empty sidebar
         return;
     }
 
-    // Use targeted refresh for automations (only updates stage items),
-    // full refresh for other entity types
-    if (config.entityType === 'automation' && treeDataProvider.refreshAutomations) {
-        treeDataProvider.refreshAutomations();
-    } else {
-        treeDataProvider.refresh();
+    if (treeDataProvider) {
+        if (config.entityType === 'automation' && treeDataProvider.refreshAutomations) {
+            treeDataProvider.refreshAutomations();
+        } else {
+            treeDataProvider.refresh();
+        }
     }
 }

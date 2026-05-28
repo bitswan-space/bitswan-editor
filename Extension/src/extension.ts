@@ -1,13 +1,9 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import urlJoin from 'proper-url-join';
 
 import { AutomationItem } from './views/automations_view';
 import { ImageItem } from './views/unified_images_view';
-import { FolderItem } from './views/sources_view';
 import { GitOpsItem } from './views/workspaces_view';
-import { BusinessProcessItem, AutomationSourceFileItem, OtherAutomationsItem } from './views/unified_business_processes_view';
-import { AutomationSourceItem, StageItem } from './views/unified_business_processes_view';
 
 // Import commands from the new command modules
 import * as imageCommands from './commands/images';
@@ -19,23 +15,16 @@ import * as businessProcessCommands from './commands/business_processes';
 import * as promotionCommands from './commands/promotions';
 
 // Import view providers
-import { AutomationSourcesViewProvider } from './views/automation_sources_view';
 import { WorkspacesViewProvider } from './views/workspaces_view';
-import { AutomationsViewProvider } from './views/automations_view';
 import { UnifiedImagesViewProvider, OrphanedImagesViewProvider } from './views/unified_images_view';
-import { UnifiedBusinessProcessesViewProvider } from './views/unified_business_processes_view';
 import { openAutomationTemplates } from './views/templates_gallery';
 import { SecretsTreeViewProvider, SecretsEditorPanel, SecretGroupItem } from './views/secrets_view';
 import { activateAutomation, deactivateAutomation, deleteAutomation, restartAutomation, startAutomation, stopAutomation, deleteImage, setGitOpsOutputChannel, getServiceStatus } from './lib';
-import { sanitizeName } from './utils/nameUtils';
-import { StageInfo } from './commands/log_viewer';
 import { getDeployDetails } from './deploy_details';
 import { Jupyter } from '@vscode/jupyter-extension';
 import { getJupyterServers } from './commands/jupyter-server';
 import { startBitswanKernel, stopBitswanKernel, checkAndUpdateKernelStatus, updateKernelStatusContext } from './commands/kernel';
-import * as filesystemCommands from './commands/filesystem';
 import { initUserInfo, getUserEmail } from './services/user_info';
-import { WorktreesViewProvider } from './views/worktrees_view';
 import { deleteWorktreeCommand as deleteWorktreeCmd } from './commands/worktrees';
 import { DashboardPanel } from './views/dashboard_panel';
 import { BackupsPanel } from './views/backups_view';
@@ -49,30 +38,6 @@ export let gitopsPollingOutputChannel: vscode.OutputChannel;
 
 // Map to track output channels
 export const outputChannelsMap = new Map<string, vscode.OutputChannel>();
-
-// Pause auto-refresh during user actions to prevent race conditions
-export let refreshPaused = false;
-export function setRefreshPaused(paused: boolean) {
-    refreshPaused = paused;
-}
-
-// Store the refresh interval IDs
-export let automationRefreshInterval: NodeJS.Timer | undefined;
-export let imageRefreshInterval: NodeJS.Timer | undefined;
-
-export function setAutomationRefreshInterval(interval: NodeJS.Timer | undefined) {
-    if (automationRefreshInterval) {
-        clearInterval(automationRefreshInterval);
-    }
-    automationRefreshInterval = interval;
-}
-
-export function setImageRefreshInterval(interval: NodeJS.Timer | undefined) {
-    if (imageRefreshInterval) {
-        clearInterval(imageRefreshInterval);
-    }
-    imageRefreshInterval = interval;
-}
 
 // SSE client reference for lifecycle management
 import { GitOpsSSEClient } from './services/sse_client';
@@ -137,18 +102,14 @@ export function activate(context: vscode.ExtensionContext) {
 
 
     // Create view providers
-    const automationSourcesProvider = new AutomationSourcesViewProvider(context);
     const workspacesProvider = new WorkspacesViewProvider(context);
-    const automationsProvider = new AutomationsViewProvider(context);
     const unifiedImagesProvider = new UnifiedImagesViewProvider(context);
     const orphanedImagesProvider = new OrphanedImagesViewProvider(context);
-    const unifiedBusinessProcessesProvider = new UnifiedBusinessProcessesViewProvider(context);
     const secretsTreeProvider = new SecretsTreeViewProvider(context);
 
-    // The Business Processes tree view was retired in favor of the Dashboard
-    // panel; only the Workspaces view remains in the activity-bar container
-    // (now titled "Bitswan Workspace"). The provider stays alive so other
-    // commands that call `.refresh()` on it continue to no-op cleanly.
+    // The activitybar "Bitswan Workspace" container only hosts the
+    // bitswan-workspaces welcome view, whose welcome content is a single link
+    // ("Open Bitswan Workspace panel") that opens the dashboard panel.
     vscode.window.createTreeView('bitswan-workspaces', {
         treeDataProvider: workspacesProvider,
     });
@@ -168,20 +129,16 @@ export function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(secretsTreeProvider);
 
-    // Worktrees provider (used by BP sidebar's Worktrees section, no standalone view)
-    const worktreesProvider = new WorktreesViewProvider(context);
-    unifiedBusinessProcessesProvider.setWorktreesProvider(worktreesProvider);
-
     // Dashboard / panel commands. The dashboard handles worktree creation
     // inline; only deletion still goes through a registered command.
     context.subscriptions.push(
-        vscode.commands.registerCommand('bitswan.deleteWorktree', (item) => deleteWorktreeCmd(context, item, worktreesProvider)),
+        vscode.commands.registerCommand('bitswan.deleteWorktree', (item) => deleteWorktreeCmd(context, item)),
         vscode.commands.registerCommand('bitswan.openRequirementsEditor', () => DashboardPanel.createOrShow(context)),
         vscode.commands.registerCommand('bitswan.openBackups', () => BackupsPanel.createOrShow(context)),
     );
 
-    let deployFromToolbarCommand = vscode.commands.registerCommand('bitswan.deployAutomationFromToolbar', 
-        async (item: string) => deploymentCommands.deployFromNotebookToolbarCommand(context, item, "automations", unifiedBusinessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider));
+    let deployFromToolbarCommand = vscode.commands.registerCommand('bitswan.deployAutomationFromToolbar',
+        async (item: any) => deploymentCommands.deployFromNotebookToolbarCommand(context, item, "automations"));
     
     let startKernelCommand = vscode.commands.registerCommand('bitswan.startBitswanKernel',
         async (item: any) => await startBitswanKernel(context, item));
@@ -229,59 +186,15 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Register commands using the new command modules
     let deployCommand = vscode.commands.registerCommand('bitswan.deployAutomation',
-        async (item: FolderItem | AutomationSourceItem) => {
-            if (!item) {
-                vscode.window.showErrorMessage('No automation selected. Please click the deploy button on a specific automation.');
+        async (item: { resourceUri: vscode.Uri }) => {
+            if (!item?.resourceUri) {
+                vscode.window.showErrorMessage('No automation selected.');
                 return;
             }
-            // Convert AutomationSourceItem to FolderItem if needed
-            const folderItem = item instanceof AutomationSourceItem
-                ? new FolderItem(item.name, item.resourceUri)
-                : item;
-            return deploymentCommands.deployCommand(context, automationSourcesProvider, folderItem, "automations", unifiedBusinessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider);
+            return deploymentCommands.deployCommand(context, item, 'automations');
         });
 
-    let startLiveDevServerCommand = vscode.commands.registerCommand('bitswan.startLiveDevServer',
-        async (item: FolderItem | AutomationSourceItem | StageItem) => {
-            if (!item) {
-                vscode.window.showErrorMessage('No automation selected. Please click the live dev button on a specific automation.');
-                return;
-            }
-            // Extract `<wt>` from a path that contains `.../worktrees/<wt>/...`.
-            // More reliable than reading `selectedWorktree` (the BP-view tree
-            // can show worktree rows even when nothing is "selected").
-            const inferWorktreeFromPath = (p: string): string | undefined => {
-                const segs = p.split(path.sep);
-                const idx = segs.lastIndexOf('worktrees');
-                return idx >= 0 && idx + 1 < segs.length ? segs[idx + 1] : undefined;
-            };
-            let folderPath: string;
-            let worktreeName: string | undefined;
-            if (item instanceof StageItem) {
-                // StageItem has sourceUri which points to the automation source directory
-                if (!item.sourceUri) {
-                    vscode.window.showErrorMessage('Cannot determine source path for this stage');
-                    return;
-                }
-                folderPath = item.sourceUri.fsPath;
-                worktreeName = item.worktreeName ?? inferWorktreeFromPath(folderPath);
-            } else if (item instanceof AutomationSourceItem) {
-                folderPath = item.resourceUri.fsPath;
-                worktreeName = inferWorktreeFromPath(folderPath) ?? unifiedBusinessProcessesProvider.selectedWorktree;
-            } else {
-                folderPath = item.resourceUri.fsPath;
-                worktreeName = inferWorktreeFromPath(folderPath) ?? unifiedBusinessProcessesProvider.selectedWorktree;
-            }
-            return deploymentCommands.startLiveDevServerCommand(context, folderPath, unifiedBusinessProcessesProvider, worktreeName);
-        });
-
-    let buildImageFromToolbarCommand = vscode.commands.registerCommand('bitswan.buildImageFromToolbar', 
-        async (item: vscode.Uri) => deploymentCommands.deployFromToolbarCommand(context, item, "images", unifiedBusinessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider));
- 
-    let buildImageCommand = vscode.commands.registerCommand('bitswan.buildImage', 
-        async (item: FolderItem) => deploymentCommands.deployCommand(context, automationSourcesProvider, item, "images", unifiedBusinessProcessesProvider, unifiedImagesProvider, orphanedImagesProvider));
-    
-    let addGitOpsCommand = vscode.commands.registerCommand('bitswan.addGitOps', 
+    let addGitOpsCommand = vscode.commands.registerCommand('bitswan.addGitOps',
         async () => workspaceCommands.addGitOpsCommand(context, workspacesProvider));
     
     let editGitOpsCommand = vscode.commands.registerCommand('bitswan.editGitOps', 
@@ -290,21 +203,19 @@ export function activate(context: vscode.ExtensionContext) {
     let deleteGitOpsCommand = vscode.commands.registerCommand('bitswan.deleteGitOps', 
         async (item: GitOpsItem) => workspaceCommands.deleteGitOpsCommand(context, workspacesProvider, item));
     
-    let activateGitOpsCommand = vscode.commands.registerCommand('bitswan.activateGitOps', 
+    let activateGitOpsCommand = vscode.commands.registerCommand('bitswan.activateGitOps',
         async (item: GitOpsItem) => {
             await workspaceCommands.activateGitOpsCommand(
                 context,
                 workspacesProvider,
                 item,
-                automationsProvider,
-                unifiedBusinessProcessesProvider,
                 unifiedImagesProvider,
-                orphanedImagesProvider
+                orphanedImagesProvider,
             );
         });
     
-    let refreshAutomationsCommand = vscode.commands.registerCommand('bitswan.refreshAutomations', 
-        async () => automationCommands.refreshAutomationsCommand(context, automationsProvider));
+    let refreshAutomationsCommand = vscode.commands.registerCommand('bitswan.refreshAutomations',
+        async () => automationCommands.refreshAutomationsCommand(context, { refresh: () => DashboardPanel.currentPanel?.onAutomationsChanged() }));
 
     let refreshImagesCommand = vscode.commands.registerCommand('bitswan.refreshImages', 
         async () => {
@@ -468,99 +379,74 @@ export function activate(context: vscode.ExtensionContext) {
 
     let openExternalUrlCommand = vscode.commands.registerCommand(
         "bitswan.openExternalUrl",
-        async (item: AutomationItem | StageItem) => {
+        async (item: AutomationItem) => {
             if (!item) { return; }
-            const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
-            const url = automationItem.automationUrl;
+            const url = item.automationUrl;
             if (!url) {
-                vscode.window.showWarningMessage(`No URL available for ${automationItem.name}`);
+                vscode.window.showWarningMessage(`No URL available for ${item.name}`);
                 return;
             }
             try {
                 await vscode.env.openExternal(vscode.Uri.parse(url));
-                vscode.window.showInformationMessage(`Opened ${automationItem.name} in browser`);
+                vscode.window.showInformationMessage(`Opened ${item.name} in browser`);
             } catch (err) {
                 vscode.window.showErrorMessage(`Failed to open URL: ${url}`);
             }
         },
     );
-    
+
     let startAutomationCommand = vscode.commands.registerCommand('bitswan.startAutomation',
-        async (item: AutomationItem | StageItem) => {
+        async (item: AutomationItem) => {
             if (!item) { return; }
-            const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
             return itemCommands.makeItemCommand({
-                title: `Starting Automation ${automationItem.name}`,
+                title: `Starting Automation ${item.name}`,
                 initialProgress: 'Sending request to GitOps...',
                 urlPath: 'start',
+                entityGroup: 'automations',
                 apiFunction: startAutomation,
-                successProgress: `Automation ${automationItem.name} started successfully`,
-                successMessage: `Automation ${automationItem.name} started successfully`,
-                errorMessage: `Failed to start automation ${automationItem.name}:`,
+                successProgress: `Automation ${item.name} started successfully`,
+                successMessage: `Automation ${item.name} started successfully`,
+                errorMessage: `Failed to start automation ${item.name}:`,
                 errorLogPrefix: 'Automation Start Error:'
-            })(context, automationsProvider, automationItem);
+            })(context, item);
         });
-    
+
     let stopAutomationCommand = vscode.commands.registerCommand('bitswan.stopAutomation',
-        async (item: AutomationItem | StageItem) => {
+        async (item: AutomationItem) => {
             if (!item) { return; }
-            const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
             return itemCommands.makeItemCommand({
-                title: `Stopping Automation ${automationItem.name}`,
+                title: `Stopping Automation ${item.name}`,
                 initialProgress: 'Sending request to GitOps...',
                 urlPath: 'stop',
+                entityGroup: 'automations',
                 apiFunction: stopAutomation,
-                successProgress: `Automation ${automationItem.name} stopped successfully`,
-                successMessage: `Automation ${automationItem.name} stopped successfully`,
-                errorMessage: `Failed to stop automation ${automationItem.name}:`,
+                successProgress: `Automation ${item.name} stopped successfully`,
+                successMessage: `Automation ${item.name} stopped successfully`,
+                errorMessage: `Failed to stop automation ${item.name}:`,
                 errorLogPrefix: 'Automation Stop Error:'
-            })(context, automationsProvider, automationItem);
+            })(context, item);
         });
-    
+
     let restartAutomationCommand = vscode.commands.registerCommand('bitswan.restartAutomation',
-        async (item: AutomationItem | StageItem) => {
+        async (item: AutomationItem) => {
             if (!item) { return; }
-            const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
             return itemCommands.makeItemCommand({
-                title: `Restarting Automation ${automationItem.name}`,
+                title: `Restarting Automation ${item.name}`,
                 initialProgress: 'Sending request to GitOps...',
                 urlPath: 'restart',
+                entityGroup: 'automations',
                 apiFunction: restartAutomation,
-                successProgress: `Automation ${automationItem.name} restarted successfully`,
-                successMessage: `Automation ${automationItem.name} restarted successfully`,
-                errorMessage: `Failed to restart automation ${automationItem.name}:`,
+                successProgress: `Automation ${item.name} restarted successfully`,
+                successMessage: `Automation ${item.name} restarted successfully`,
+                errorMessage: `Failed to restart automation ${item.name}:`,
                 errorLogPrefix: 'Automation Restart Error:'
-            })(context, automationsProvider, automationItem);
+            })(context, item);
         });
-    
+
     let showAutomationLogsCommand = vscode.commands.registerCommand('bitswan.showAutomationLogs',
-        async (item: AutomationItem | StageItem) => {
+        async (item: AutomationItem) => {
             if (!item) { return; }
-            if (item instanceof StageItem && item.automation) {
-                const baseSourceName = sanitizeName(item.automationSourceName.split('/').pop() || item.automationSourceName);
-                const automations = context.globalState.get<any[]>('automations', []);
-                const stageDeploymentIds: Record<string, string> = {
-                    'live-dev': `${baseSourceName}-live-dev`,
-                    'dev': `${baseSourceName}-dev`,
-                    'staging': `${baseSourceName}-staging`,
-                    'production': baseSourceName,
-                };
-                const stagesList = ['live-dev', 'dev', 'staging', 'production'];
-                const stages: StageInfo[] = stagesList.map(stage => ({
-                    stage,
-                    deploymentId: stageDeploymentIds[stage],
-                    deployed: automations.some((a: any) =>
-                        (a.deployment_id === stageDeploymentIds[stage] || a.deploymentId === stageDeploymentIds[stage])
-                    ),
-                }));
-                await automationCommands.showAutomationLogsCommand(context, automationsProvider, item.automation, {
-                    baseSourceName,
-                    currentStage: item.stage,
-                    stages,
-                });
-            } else if (item instanceof AutomationItem) {
-                await automationCommands.showAutomationLogsCommand(context, automationsProvider, item);
-            }
+            await automationCommands.showAutomationLogsCommand(context, item);
         });
 
     let jumpToSourceCommand = vscode.commands.registerCommand('bitswan.jumpToSource',
@@ -572,59 +458,26 @@ export function activate(context: vscode.ExtensionContext) {
     let openDevelopmentGuideCommand = vscode.commands.registerCommand('bitswan.openDevelopmentGuide',
         async () => businessProcessCommands.openDevelopmentGuideCommand(context));
 
-    let promoteToDevCommand = vscode.commands.registerCommand('bitswan.promoteToDev',
-        async (item: StageItem | any) => {
-            if (!item || (typeof item !== 'object')) {
-                vscode.window.showErrorMessage('Invalid item selected for promotion');
-                return;
-            }
-            // Check if it looks like a StageItem with sourceUri
-            if (!('stage' in item) || !('sourceUri' in item) || !item.sourceUri) {
-                vscode.window.showErrorMessage('Cannot promote: source path not available');
-                return;
-            }
-            // Use the deploy flow to calculate fresh checksum from current source files
-            return deploymentCommands.deployCommandAbstract(
-                context,
-                item.sourceUri.fsPath,
-                'automations',
-                null,
-                unifiedBusinessProcessesProvider,
-                unifiedImagesProvider,
-                orphanedImagesProvider
-            );
-        });
-
     let promoteToStagingCommand = vscode.commands.registerCommand('bitswan.promoteToStaging',
-        async (item: StageItem | any) => {
-            if (!item || (typeof item !== 'object')) {
+        async (item: promotionCommands.PromoteStageItem) => {
+            if (!item || typeof item !== 'object' || !('stage' in item) || !('deploymentId' in item)) {
                 vscode.window.showErrorMessage('Invalid item selected for promotion');
                 return;
             }
-            // Check if it looks like a StageItem (has stage and deploymentId properties)
-            if (!('stage' in item) || !('deploymentId' in item)) {
-                vscode.window.showErrorMessage('Invalid item selected for promotion');
-                return;
-            }
-            return promotionCommands.promoteStageCommand(context, item as StageItem, 'staging', unifiedBusinessProcessesProvider);
+            return promotionCommands.promoteStageCommand(context, item, 'staging');
         });
 
     let promoteToProductionCommand = vscode.commands.registerCommand('bitswan.promoteToProduction',
-        async (item: StageItem | any) => {
-            if (!item || (typeof item !== 'object')) {
+        async (item: promotionCommands.PromoteStageItem) => {
+            if (!item || typeof item !== 'object' || !('stage' in item) || !('deploymentId' in item)) {
                 vscode.window.showErrorMessage('Invalid item selected for promotion');
                 return;
             }
-            // Check if it looks like a StageItem (has stage and deploymentId properties)
-            if (!('stage' in item) || !('deploymentId' in item)) {
-                vscode.window.showErrorMessage('Invalid item selected for promotion');
-                return;
-            }
-            return promotionCommands.promoteStageCommand(context, item as StageItem, 'production', unifiedBusinessProcessesProvider);
+            return promotionCommands.promoteStageCommand(context, item, 'production');
         });
 
     let openPromotionManagerCommand = vscode.commands.registerCommand('bitswan.openPromotionManager',
-        async (item: AutomationSourceItem) => { if (!item) { return; } return promotionCommands.openPromotionManagerCommand(context, item.name); });
+        async (item: { name: string }) => { if (!item) { return; } return promotionCommands.openPromotionManagerCommand(context, item.name); });
 
     let showImageLogsCommand = vscode.commands.registerCommand('bitswan.showImageLogs', 
         async (item: ImageItem) => {
@@ -646,247 +499,97 @@ export function activate(context: vscode.ExtensionContext) {
 
 
     let activateAutomationCommand = vscode.commands.registerCommand('bitswan.activateAutomation',
-        async (item: AutomationItem | StageItem) => {
+        async (item: AutomationItem) => {
             if (!item) { return; }
-            const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
             return itemCommands.makeItemCommand({
-                title: `Activating Automation ${automationItem.name}`,
+                title: `Activating Automation ${item.name}`,
                 initialProgress: 'Sending request to GitOps...',
                 urlPath: 'activate',
+                entityGroup: 'automations',
                 apiFunction: activateAutomation,
-                successProgress: `Automation ${automationItem.name} activated successfully`,
-                successMessage: `Automation ${automationItem.name} activated successfully`,
-                errorMessage: `Failed to activate automation ${automationItem.name}:`,
+                successProgress: `Automation ${item.name} activated successfully`,
+                successMessage: `Automation ${item.name} activated successfully`,
+                errorMessage: `Failed to activate automation ${item.name}:`,
                 errorLogPrefix: 'Automation Activate Error:'
-            })(context, automationsProvider, automationItem);
+            })(context, item);
         });
-    
+
     let deactivateAutomationCommand = vscode.commands.registerCommand('bitswan.deactivateAutomation',
-        async (item: AutomationItem | StageItem) => {
+        async (item: AutomationItem) => {
             if (!item) { return; }
-            const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
             return itemCommands.makeItemCommand({
-                title: `Deactivating Automation ${automationItem.name}`,
+                title: `Deactivating Automation ${item.name}`,
                 initialProgress: 'Sending request to GitOps...',
                 urlPath: 'deactivate',
+                entityGroup: 'automations',
                 apiFunction: deactivateAutomation,
-                successProgress: `Automation ${automationItem.name} deactivated successfully`,
-                successMessage: `Automation ${automationItem.name} deactivated successfully`,
-                errorMessage: `Failed to deactivate automation ${automationItem.name}:`,
+                successProgress: `Automation ${item.name} deactivated successfully`,
+                successMessage: `Automation ${item.name} deactivated successfully`,
+                errorMessage: `Failed to deactivate automation ${item.name}:`,
                 errorLogPrefix: 'Automation Deactivate Error:'
-            })(context, automationsProvider, automationItem);
+            })(context, item);
         });
-    
+
     let deleteAutomationCommand = vscode.commands.registerCommand('bitswan.deleteAutomation',
-        async (item: AutomationItem | StageItem | AutomationSourceItem) => {
+        async (item: AutomationItem) => {
             if (!item) {
-                vscode.window.showErrorMessage('No automation selected. Please click the delete button on a specific automation.');
+                vscode.window.showErrorMessage('No automation selected.');
                 return;
             }
-
-            // BP-view worktree-automation rows pass an AutomationSourceItem,
-            // which doesn't implement urlSlug(). Look up the matching
-            // deployment in globalState and DELETE it directly.
-            if (item instanceof AutomationSourceItem) {
-                const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '/workspace/workspace';
-                const relPath = path.relative(workspaceRoot, item.resourceUri.fsPath);
-                const automations = context.globalState.get<any[]>('automations', []) || [];
-                const match = automations.find(a => {
-                    const aPath = a.relative_path || a.relativePath || '';
-                    return aPath === relPath || aPath.endsWith('/' + relPath);
-                });
-                if (!match) {
-                    vscode.window.showErrorMessage(`Automation "${item.name}" is not deployed; nothing to remove.`);
-                    return;
-                }
-                const choice = await vscode.window.showWarningMessage(
-                    `Remove automation "${item.name}"? This deletes the deployment.`,
-                    { modal: true },
-                    'Remove',
-                );
-                if (choice !== 'Remove') { return; }
-                const activeInstance = context.globalState.get<any>('activeGitOpsInstance');
-                if (!activeInstance?.url || !activeInstance?.secret) {
-                    vscode.window.showErrorMessage('No active GitOps instance.');
-                    return;
-                }
-                const deploymentId = match.deployment_id || match.deploymentId;
-                try {
-                    const url = urlJoin(activeInstance.url, 'automations', deploymentId).toString();
-                    await deleteAutomation(url, activeInstance.secret);
-                    // Don't wait for SSE — pull fresh state and re-decorate the
-                    // sidebar leaf rows + dashboard immediately.
-                    await automationCommands.refreshAutomationsCommand(context, unifiedBusinessProcessesProvider);
-                    DashboardPanel.currentPanel?.onAutomationsChanged();
-                } catch (err: any) {
-                    vscode.window.showErrorMessage(`Failed to remove automation: ${err?.response?.data?.detail || err?.message || err}`);
-                }
-                return;
-            }
-
-            const automationItem = item instanceof StageItem && item.automation ? item.automation : item as AutomationItem;
-            // Type-the-name prompt only on production stages (genuine safety guard).
-            // Everything else gets a single-click yes/no modal, matching the
-            // dashboard panel's "Remove" UX.
-            const isProduction = item instanceof StageItem && item.stage === 'production';
-            if (!isProduction) {
-                const choice = await vscode.window.showWarningMessage(
-                    `Remove automation "${automationItem.name}"? This deletes the deployment.`,
-                    { modal: true },
-                    'Remove',
-                );
-                if (choice !== 'Remove') { return; }
-            }
+            const choice = await vscode.window.showWarningMessage(
+                `Remove automation "${item.name}"? This deletes the deployment.`,
+                { modal: true },
+                'Remove',
+            );
+            if (choice !== 'Remove') { return; }
             return itemCommands.makeItemCommand({
-                title: `Deleting Automation ${automationItem.name}`,
+                title: `Deleting Automation ${item.name}`,
                 initialProgress: 'Sending request to GitOps...',
                 urlPath: '',
+                entityGroup: 'automations',
                 apiFunction: deleteAutomation,
-                successProgress: `Automation ${automationItem.name} deleted successfully`,
-                successMessage: `Automation ${automationItem.name} deleted successfully`,
-                errorMessage: `Failed to delete automation ${automationItem.name}:`,
+                successProgress: `Automation ${item.name} deleted successfully`,
+                successMessage: `Automation ${item.name} deleted successfully`,
+                errorMessage: `Failed to delete automation ${item.name}:`,
                 errorLogPrefix: 'Automation Delete Error:',
-                prompt: isProduction,
-            })(context, automationsProvider, automationItem);
+            })(context, item);
         });
 
-    let removeAllOrphanedCommand = vscode.commands.registerCommand('bitswan.removeAllOrphaned',
-        async (item: OtherAutomationsItem) => {
-            const activeInstance = context.globalState.get<any>('activeGitOpsInstance');
-            if (!activeInstance) {
-                vscode.window.showErrorMessage('No active GitOps instance');
-                return;
-            }
-
-            // Get orphaned items from the unified view provider
-            const children = await unifiedBusinessProcessesProvider.getChildren(item);
-            const orphaned = (children || []).filter(
-                (child): child is AutomationItem => child instanceof AutomationItem
-            );
-
-            if (orphaned.length === 0) {
-                vscode.window.showInformationMessage('No orphaned automations to remove.');
-                return;
-            }
-
-            const confirm = await vscode.window.showWarningMessage(
-                `Remove ${orphaned.length} orphaned automation(s)?`,
-                { modal: true },
-                'Remove All'
-            );
-            if (confirm !== 'Remove All') { return; }
-
-            let removed = 0;
-            let failed = 0;
-            await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: 'Removing orphaned automations',
-                cancellable: false,
-            }, async (progress) => {
-                for (const orphan of orphaned) {
-                    try {
-                        // Use the same URL pattern as the working single-delete:
-                        // urlJoin(activeInstance.url, "automations", item.name)
-                        const url = urlJoin(activeInstance.url, "automations", orphan.name).toString();
-                        const success = await deleteAutomation(url, activeInstance.secret);
-                        if (success) {
-                            removed++;
-                        } else {
-                            outputChannel.appendLine(`Failed to remove: ${orphan.name}`);
-                            failed++;
-                        }
-                        progress.report({ message: `${removed + failed}/${orphaned.length}` });
-                    } catch (err: any) {
-                        outputChannel.appendLine(`Error removing ${orphan.name}: ${err.message}`);
-                        failed++;
-                    }
-                }
-            });
-
-            if (failed > 0) {
-                vscode.window.showWarningMessage(`Removed ${removed}, ${failed} failed.`);
-            } else {
-                vscode.window.showInformationMessage(`Removed ${removed} orphaned automations.`);
-            }
-            await automationCommands.refreshAutomationsCommand(context, automationsProvider);
-            unifiedBusinessProcessesProvider.refresh();
-        });
-
-    let createAutomationFileCommand = vscode.commands.registerCommand(
-        'bitswan.createAutomationFile',
-        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
-            filesystemCommands.createAutomationFileCommand(context, item)
-    );
-
-    let createAutomationFolderCommand = vscode.commands.registerCommand(
-        'bitswan.createAutomationFolder',
-        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
-            filesystemCommands.createAutomationFolderCommand(context, item)
-    );
-
-    let renameAutomationResourceCommand = vscode.commands.registerCommand(
-        'bitswan.renameAutomationResource',
-        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
-            filesystemCommands.renameAutomationResourceCommand(context, item)
-    );
-
-    let deleteAutomationResourceCommand = vscode.commands.registerCommand(
-        'bitswan.deleteAutomationResource',
-        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
-            filesystemCommands.deleteAutomationResourceCommand(context, item)
-    );
-
-    let revealAutomationResourceCommand = vscode.commands.registerCommand(
-        'bitswan.revealAutomationResource',
-        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
-            filesystemCommands.revealAutomationResourceCommand(context, item)
-    );
-
-    let openAutomationTerminalCommand = vscode.commands.registerCommand(
-        'bitswan.openAutomationTerminal',
-        async (item: AutomationSourceItem | AutomationSourceFileItem | StageItem) =>
-            filesystemCommands.openAutomationTerminalCommand(context, item)
-    );
-
-    let deleteImageCommand = vscode.commands.registerCommand('bitswan.deleteImage', 
+    let deleteImageCommand = vscode.commands.registerCommand('bitswan.deleteImage',
         async (item: ImageItem) => {
             if (!item) {
                 vscode.window.showErrorMessage('No image selected');
                 return;
             }
-            const provider = item.owner === 'orphanedImages'
-                ? orphanedImagesProvider
-                : unifiedImagesProvider;
             await itemCommands.makeItemCommand({
                 title: `Removing image ${item.name}`,
                 initialProgress: 'Sending request to GitOps...',
                 urlPath: '',
+                entityGroup: 'images',
                 apiFunction: deleteImage,
                 successProgress: `Image ${item.name} deleted successfully`,
                 successMessage: `Image ${item.name} deleted successfully`,
                 errorMessage: `Failed to delete image ${item.name}:`,
                 errorLogPrefix: 'Image Delete Error:',
-                prompt: false 
-            })(context, provider, item);
-            if (item.owner === 'businessProcesses') {
-                unifiedBusinessProcessesProvider.refresh();
-            }
+                prompt: false,
+            })(context, item);
         });
 
-    let deleteOrphanedImageCommand = vscode.commands.registerCommand('bitswan.deleteOrphanedImage', 
+    let deleteOrphanedImageCommand = vscode.commands.registerCommand('bitswan.deleteOrphanedImage',
         async (item: ImageItem) => itemCommands.makeItemCommand({
             title: `Removing image ${item.name}`,
             initialProgress: 'Sending request to GitOps...',
             urlPath: '',
+            entityGroup: 'images',
             apiFunction: deleteImage,
             successProgress: `Image ${item.name} deleted successfully`,
             successMessage: `Image ${item.name} deleted successfully`,
             errorMessage: `Failed to delete image ${item.name}:`,
             errorLogPrefix: 'Image Delete Error:',
-            prompt: false 
-        })(context, orphanedImagesProvider, item));
+            prompt: false,
+        })(context, item));
 
-    let copyImageTagCommand = vscode.commands.registerCommand('bitswan.copyImageTag', 
+    let copyImageTagCommand = vscode.commands.registerCommand('bitswan.copyImageTag',
         async (item: ImageItem) => {
             try {
                 await vscode.env.clipboard.writeText(item.name);
@@ -895,178 +598,92 @@ export function activate(context: vscode.ExtensionContext) {
                 vscode.window.showErrorMessage(`Failed to copy image tag: ${error}`);
             }
         });
- 
-    
-    // Helper to map automation stage to service realm
-    const serviceStageFor = (stage: string): string => {
-        if (stage === 'live-dev') { return 'dev'; }
-        return stage;
+
+    // Per-stage service helpers (CouchDB / Kafka / PostgreSQL / MinIO).
+    // The BP-sidebar context-menu entries that used to trigger these were
+    // removed; the commands themselves are kept (callable via
+    // `vscode.commands.executeCommand` with `{ stage }`) so a future UI can
+    // re-wire them without re-implementing the gitops calls.
+    type ServiceTarget = { stage?: string };
+    const serviceStageFor = (stage: string): string => stage === 'live-dev' ? 'dev' : stage;
+
+    const openServiceUi = async (
+        item: ServiceTarget,
+        serviceType: 'couchdb' | 'kafka' | 'postgres' | 'minio',
+        uiField: 'admin_ui' | 'ui_url',
+        label: string,
+    ): Promise<void> => {
+        if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
+        const details = await getDeployDetails(context);
+        if (!details) { return; }
+        const svcStage = serviceStageFor(item.stage);
+        try {
+            const status = await getServiceStatus(details.deployUrl, details.deploySecret, serviceType, svcStage, true);
+            const url = status?.connection_info?.[uiField];
+            if (!url) {
+                vscode.window.showWarningMessage(`${label} is not enabled or has no UI for stage "${item.stage}"`);
+                return;
+            }
+            await vscode.env.openExternal(vscode.Uri.parse(url));
+        } catch (err: any) {
+            vscode.window.showErrorMessage(`Failed to get ${label} status: ${err.message || err}`);
+        }
+    };
+
+    const copyServicePassword = async (
+        item: ServiceTarget,
+        serviceType: 'couchdb' | 'kafka' | 'postgres' | 'minio',
+        passwordField: 'password' | 'ui_password',
+        label: string,
+        copiedMessage: string,
+    ): Promise<void> => {
+        if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
+        const details = await getDeployDetails(context);
+        if (!details) { return; }
+        const svcStage = serviceStageFor(item.stage);
+        try {
+            const status = await getServiceStatus(details.deployUrl, details.deploySecret, serviceType, svcStage, true);
+            const password = status?.connection_info?.[passwordField];
+            if (!password) {
+                vscode.window.showWarningMessage(`${label} is not enabled for stage "${item.stage}"`);
+                return;
+            }
+            await vscode.env.clipboard.writeText(password);
+            vscode.window.showInformationMessage(copiedMessage);
+        } catch (err: any) {
+            vscode.window.showErrorMessage(`Failed to get ${label} status: ${err.message || err}`);
+        }
     };
 
     let openCouchDBAdminCommand = vscode.commands.registerCommand('bitswan.openCouchDBAdmin',
-        async (item: StageItem) => {
-            if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
-            const details = await getDeployDetails(context);
-            if (!details) { return; }
-            const svcStage = serviceStageFor(item.stage);
-            try {
-                const status = await getServiceStatus(details.deployUrl, details.deploySecret, 'couchdb', svcStage, true);
-                const adminUi = status?.connection_info?.admin_ui;
-                if (!adminUi) {
-                    vscode.window.showWarningMessage(`CouchDB is not enabled or has no admin UI for stage "${item.stage}"`);
-                    return;
-                }
-                await vscode.env.openExternal(vscode.Uri.parse(adminUi));
-            } catch (err: any) {
-                vscode.window.showErrorMessage(`Failed to get CouchDB status: ${err.message || err}`);
-            }
-        });
+        (item: ServiceTarget) => openServiceUi(item, 'couchdb', 'admin_ui', 'CouchDB'));
 
     let openKafkaUICommand = vscode.commands.registerCommand('bitswan.openKafkaUI',
-        async (item: StageItem) => {
-            if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
-            const details = await getDeployDetails(context);
-            if (!details) { return; }
-            const svcStage = serviceStageFor(item.stage);
-            try {
-                const status = await getServiceStatus(details.deployUrl, details.deploySecret, 'kafka', svcStage, true);
-                const uiUrl = status?.connection_info?.ui_url;
-                if (!uiUrl) {
-                    vscode.window.showWarningMessage(`Kafka UI is not enabled or has no URL for stage "${item.stage}"`);
-                    return;
-                }
-                await vscode.env.openExternal(vscode.Uri.parse(uiUrl));
-            } catch (err: any) {
-                vscode.window.showErrorMessage(`Failed to get Kafka status: ${err.message || err}`);
-            }
-        });
+        (item: ServiceTarget) => openServiceUi(item, 'kafka', 'ui_url', 'Kafka UI'));
 
     let copyCouchDBPasswordCommand = vscode.commands.registerCommand('bitswan.copyCouchDBPassword',
-        async (item: StageItem) => {
-            if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
-            const details = await getDeployDetails(context);
-            if (!details) { return; }
-            const svcStage = serviceStageFor(item.stage);
-            try {
-                const status = await getServiceStatus(details.deployUrl, details.deploySecret, 'couchdb', svcStage, true);
-                const password = status?.connection_info?.password;
-                if (!password) {
-                    vscode.window.showWarningMessage(`CouchDB is not enabled for stage "${item.stage}"`);
-                    return;
-                }
-                await vscode.env.clipboard.writeText(password);
-                vscode.window.showInformationMessage('CouchDB admin password copied to clipboard');
-            } catch (err: any) {
-                vscode.window.showErrorMessage(`Failed to get CouchDB status: ${err.message || err}`);
-            }
-        });
+        (item: ServiceTarget) => copyServicePassword(item, 'couchdb', 'password', 'CouchDB', 'CouchDB admin password copied to clipboard'));
 
     let copyKafkaPasswordCommand = vscode.commands.registerCommand('bitswan.copyKafkaPassword',
-        async (item: StageItem) => {
-            if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
-            const details = await getDeployDetails(context);
-            if (!details) { return; }
-            const svcStage = serviceStageFor(item.stage);
-            try {
-                const status = await getServiceStatus(details.deployUrl, details.deploySecret, 'kafka', svcStage, true);
-                const password = status?.connection_info?.ui_password;
-                if (!password) {
-                    vscode.window.showWarningMessage(`Kafka is not enabled for stage "${item.stage}"`);
-                    return;
-                }
-                await vscode.env.clipboard.writeText(password);
-                vscode.window.showInformationMessage('Kafka UI password copied to clipboard');
-            } catch (err: any) {
-                vscode.window.showErrorMessage(`Failed to get Kafka status: ${err.message || err}`);
-            }
-        });
+        (item: ServiceTarget) => copyServicePassword(item, 'kafka', 'ui_password', 'Kafka', 'Kafka UI password copied to clipboard'));
 
     let openPostgresAdminCommand = vscode.commands.registerCommand('bitswan.openPostgresAdmin',
-        async (item: StageItem) => {
-            if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
-            const details = await getDeployDetails(context);
-            if (!details) { return; }
-            const svcStage = serviceStageFor(item.stage);
-            try {
-                const status = await getServiceStatus(details.deployUrl, details.deploySecret, 'postgres', svcStage, true);
-                const adminUi = status?.connection_info?.admin_ui;
-                if (!adminUi) {
-                    vscode.window.showWarningMessage(`PostgreSQL is not enabled or has no admin UI for stage "${item.stage}"`);
-                    return;
-                }
-                await vscode.env.openExternal(vscode.Uri.parse(adminUi));
-            } catch (err: any) {
-                vscode.window.showErrorMessage(`Failed to get PostgreSQL status: ${err.message || err}`);
-            }
-        });
+        (item: ServiceTarget) => openServiceUi(item, 'postgres', 'admin_ui', 'PostgreSQL'));
 
     let copyPostgresPasswordCommand = vscode.commands.registerCommand('bitswan.copyPostgresPassword',
-        async (item: StageItem) => {
-            if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
-            const details = await getDeployDetails(context);
-            if (!details) { return; }
-            const svcStage = serviceStageFor(item.stage);
-            try {
-                const status = await getServiceStatus(details.deployUrl, details.deploySecret, 'postgres', svcStage, true);
-                const password = status?.connection_info?.password;
-                if (!password) {
-                    vscode.window.showWarningMessage(`PostgreSQL is not enabled for stage "${item.stage}"`);
-                    return;
-                }
-                await vscode.env.clipboard.writeText(password);
-                vscode.window.showInformationMessage('PostgreSQL admin password copied to clipboard');
-            } catch (err: any) {
-                vscode.window.showErrorMessage(`Failed to get PostgreSQL status: ${err.message || err}`);
-            }
-        });
+        (item: ServiceTarget) => copyServicePassword(item, 'postgres', 'password', 'PostgreSQL', 'PostgreSQL admin password copied to clipboard'));
 
     let openMinioConsoleCommand = vscode.commands.registerCommand('bitswan.openMinioConsole',
-        async (item: StageItem) => {
-            if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
-            const details = await getDeployDetails(context);
-            if (!details) { return; }
-            const svcStage = serviceStageFor(item.stage);
-            try {
-                const status = await getServiceStatus(details.deployUrl, details.deploySecret, 'minio', svcStage, true);
-                const adminUi = status?.connection_info?.admin_ui;
-                if (!adminUi) {
-                    vscode.window.showWarningMessage(`MinIO is not enabled or has no console UI for stage "${item.stage}"`);
-                    return;
-                }
-                await vscode.env.openExternal(vscode.Uri.parse(adminUi));
-            } catch (err: any) {
-                vscode.window.showErrorMessage(`Failed to get MinIO status: ${err.message || err}`);
-            }
-        });
+        (item: ServiceTarget) => openServiceUi(item, 'minio', 'admin_ui', 'MinIO'));
 
     let copyMinioPasswordCommand = vscode.commands.registerCommand('bitswan.copyMinioPassword',
-        async (item: StageItem) => {
-            if (!item?.stage) { vscode.window.showErrorMessage('No stage selected'); return; }
-            const details = await getDeployDetails(context);
-            if (!details) { return; }
-            const svcStage = serviceStageFor(item.stage);
-            try {
-                const status = await getServiceStatus(details.deployUrl, details.deploySecret, 'minio', svcStage, true);
-                const password = status?.connection_info?.password;
-                if (!password) {
-                    vscode.window.showWarningMessage(`MinIO is not enabled for stage "${item.stage}"`);
-                    return;
-                }
-                await vscode.env.clipboard.writeText(password);
-                vscode.window.showInformationMessage('MinIO root password copied to clipboard');
-            } catch (err: any) {
-                vscode.window.showErrorMessage(`Failed to get MinIO status: ${err.message || err}`);
-            }
-        });
+        (item: ServiceTarget) => copyServicePassword(item, 'minio', 'password', 'MinIO', 'MinIO root password copied to clipboard'));
 
     // Register all commands
     context.subscriptions.push(deployCommand);
-    context.subscriptions.push(startLiveDevServerCommand);
     context.subscriptions.push(deployFromToolbarCommand);
     context.subscriptions.push(startKernelCommand);
     context.subscriptions.push(stopKernelCommand);
-    context.subscriptions.push(buildImageCommand);
-    context.subscriptions.push(buildImageFromToolbarCommand);
     context.subscriptions.push(addGitOpsCommand);
     context.subscriptions.push(editGitOpsCommand);
     context.subscriptions.push(deleteGitOpsCommand);
@@ -1089,23 +706,14 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(activateAutomationCommand);
     context.subscriptions.push(deactivateAutomationCommand);
     context.subscriptions.push(deleteAutomationCommand);
-    context.subscriptions.push(removeAllOrphanedCommand);
-    context.subscriptions.push(createAutomationFileCommand);
-    context.subscriptions.push(createAutomationFolderCommand);
-    context.subscriptions.push(renameAutomationResourceCommand);
-    context.subscriptions.push(deleteAutomationResourceCommand);
-    context.subscriptions.push(revealAutomationResourceCommand);
-    context.subscriptions.push(openAutomationTerminalCommand);
     context.subscriptions.push(deleteImageCommand);
     context.subscriptions.push(deleteOrphanedImageCommand);
     context.subscriptions.push(copyImageTagCommand);
     context.subscriptions.push(jumpToSourceCommand);
     context.subscriptions.push(openAutomationTemplatesCommand);
     context.subscriptions.push(openDevelopmentGuideCommand);
-    context.subscriptions.push(promoteToDevCommand);
     context.subscriptions.push(promoteToStagingCommand);
     context.subscriptions.push(promoteToProductionCommand);
-    context.subscriptions.push(openPromotionManagerCommand);
     context.subscriptions.push(openCouchDBAdminCommand);
     context.subscriptions.push(openKafkaUICommand);
     context.subscriptions.push(copyCouchDBPasswordCommand);
@@ -1114,24 +722,12 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(copyPostgresPasswordCommand);
     context.subscriptions.push(openMinioConsoleCommand);
     context.subscriptions.push(copyMinioPasswordCommand);
-
-    // Refresh the tree views when files change in the workspace
-    const watcher = vscode.workspace.createFileSystemWatcher('**/*');
-    watcher.onDidCreate(() => automationSourcesProvider.refresh());
-    watcher.onDidCreate(() => unifiedImagesProvider.refresh());
-    watcher.onDidCreate(() => orphanedImagesProvider.refresh());
-    watcher.onDidDelete(() => automationSourcesProvider.refresh());
-    watcher.onDidDelete(() => unifiedImagesProvider.refresh());
-    watcher.onDidDelete(() => orphanedImagesProvider.refresh());
-    watcher.onDidChange(() => automationSourcesProvider.refresh());
-    watcher.onDidChange(() => unifiedImagesProvider.refresh());
-    watcher.onDidChange(() => orphanedImagesProvider.refresh());
-    
+    context.subscriptions.push(openPromotionManagerCommand);
 
     const activeGitOpsInstance = context.globalState.get<GitOpsItem>('activeGitOpsInstance');
 
     if (process.env.BITSWAN_DEPLOY_URL && process.env.BITSWAN_DEPLOY_SECRET) {
-        const activeGitOpsInstance = new GitOpsItem(
+        const envInstance = new GitOpsItem(
             'Active GitOps Instance',
             process.env.BITSWAN_DEPLOY_URL,
             process.env.BITSWAN_DEPLOY_SECRET,
@@ -1140,27 +736,19 @@ export function activate(context: vscode.ExtensionContext) {
         workspaceCommands.activateGitOpsCommand(
             context,
             workspacesProvider,
-            activeGitOpsInstance,
-            automationsProvider,
-            unifiedBusinessProcessesProvider,
+            envInstance,
             unifiedImagesProvider,
-            orphanedImagesProvider
+            orphanedImagesProvider,
         );
-        automationsProvider.refresh();
     } else if (activeGitOpsInstance) {
         workspaceCommands.activateGitOpsCommand(
             context,
             workspacesProvider,
             activeGitOpsInstance,
-            automationsProvider,
-            unifiedBusinessProcessesProvider,
             unifiedImagesProvider,
-            orphanedImagesProvider
+            orphanedImagesProvider,
         );
-        automationsProvider.refresh();
     }
-
-    context.subscriptions.push(watcher);
 
     outputChannel.appendLine('Tree views registered');
 
@@ -1195,19 +783,6 @@ export function activate(context: vscode.ExtensionContext) {
  * This method is called when the extension is deactivated
  */
 export function deactivate() {
-    // Clean up the refresh intervals
-    if (automationRefreshInterval) {
-        clearInterval(automationRefreshInterval);
-        automationRefreshInterval = undefined;
-        outputChannel.appendLine('Stopped automatic refresh of automations');
-    }
-
-    if (imageRefreshInterval) {
-        clearInterval(imageRefreshInterval);
-        imageRefreshInterval = undefined;
-        outputChannel.appendLine('Stopped automatic refresh of images');
-    }
-
     // Clean up SSE client
     if (sseClient) {
         sseClient.disconnect();
