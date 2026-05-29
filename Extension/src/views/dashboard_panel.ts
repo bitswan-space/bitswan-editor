@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as cp from 'child_process';
+import { promises as dnsPromises } from 'dns';
 import * as toml from '@iarna/toml';
 import axios from 'axios';
 import { getUserEmail } from '../services/user_info';
@@ -625,8 +625,10 @@ export class DashboardPanel {
     // ---- Terminals ----
 
     /**
-     * Ensure the coding agent container is running, auto-starting it if needed.
-     * Returns the agent hostname, or null if it couldn't be started.
+     * Return the coding-agent hostname once it is reachable via Docker's
+     * embedded DNS. The container itself is provisioned and started by
+     * the automation-server during workspace init; this method just waits
+     * for the brief gap between container start and DNS registration.
      */
     private async ensureAgentRunning(): Promise<string | null> {
         const workspaceName = process.env.BITSWAN_WORKSPACE_NAME;
@@ -636,39 +638,33 @@ export class DashboardPanel {
         }
         const agentHost = `${workspaceName}-coding-agent`;
 
-        const isReachable = () => new Promise<boolean>(resolve => {
-            cp.exec(`getent hosts ${agentHost}`, (err) => resolve(!err));
-        });
+        const isReachable = async (): Promise<boolean> => {
+            try {
+                await dnsPromises.lookup(agentHost);
+                return true;
+            } catch {
+                return false;
+            }
+        };
 
         if (await isReachable()) { return agentHost; }
 
-        const started = await vscode.window.withProgress({
+        const ready = await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: 'Starting coding agent container...',
+            title: 'Waiting for coding agent container...',
             cancellable: false,
-        }, async (progress) => {
-            const details = await getDeployDetails(this.context);
-            if (!details) { return false; }
-            try {
-                await axios.post(
-                    `${details.deployUrl}/worktrees/coding-agent/ensure`,
-                    {},
-                    { headers: { Authorization: `Bearer ${details.deploySecret}` }, timeout: 120000 },
-                );
-            } catch (err: any) {
-                vscode.window.showErrorMessage(`Failed to start coding agent: ${err?.response?.data?.detail || err?.message}`);
-                return false;
-            }
-            progress.report({ message: 'Waiting for SSH to become ready...' });
-            for (let i = 0; i < 15; i++) {
-                await new Promise(r => setTimeout(r, 2000));
+        }, async () => {
+            // ~15s total budget (30 × 500ms). Check first, sleep after, so
+            // we return the moment Docker's DNS publishes the host.
+            for (let i = 0; i < 30; i++) {
                 if (await isReachable()) { return true; }
+                await new Promise(r => setTimeout(r, 500));
             }
-            vscode.window.showErrorMessage('Coding agent started but SSH is not reachable yet.');
+            vscode.window.showErrorMessage(`Coding agent host ${agentHost} did not become reachable.`);
             return false;
         });
 
-        return started ? agentHost : null;
+        return ready ? agentHost : null;
     }
 
     /**
